@@ -352,6 +352,27 @@ function doGet(e) {
   return HtmlService.createHtmlOutput("<h2>Backend đang chạy!</h2><p>Vui lòng gửi dữ liệu từ giao diện chính.</p>");
 }
 
+// Apps Script silently truncates individual e.parameter values around 1MB
+// when it parses an application/x-www-form-urlencoded POST body. Voucher
+// payloads with a base64 signature/attachment routinely cross that after
+// URL-encoding, so e.parameter.data gets cut off mid-string and
+// JSON.parse(e.parameter.data) fails with "Unterminated string in JSON".
+// e.postData.contents holds the untruncated raw body, so decode the 'data'
+// param ourselves from there first and only fall back to e.parameter.data
+// (e.g. multipart/form-data requests) when that isn't possible.
+function extractRawDataParam_(e) {
+  if (!e.postData || !e.postData.contents || !e.postData.type) return null;
+  if (e.postData.type.indexOf('x-www-form-urlencoded') === -1) return null;
+  const match = e.postData.contents.match(/(?:^|&)data=([^&]*)/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1].replace(/\+/g, ' '));
+  } catch (err) {
+    Logger.log('❌ Failed to decode raw postData "data" param: ' + err.toString());
+    return null;
+  }
+}
+
 function doPost(e) {
   console.log('🔴🔴🔴 === doPost called === 🔴🔴🔴');
   Logger.log('🔴🔴🔴 === doPost called === 🔴🔴🔴');
@@ -375,19 +396,27 @@ function doPost(e) {
     let requestBody;
     let action;
 
+    // Prefer the raw postData 'data' param (untruncated) over e.parameter.data,
+    // which Apps Script silently truncates around 1MB — see extractRawDataParam_.
+    const rawDataParam = extractRawDataParam_(e);
+    const dataParam = rawDataParam !== null ? rawDataParam : (e.parameter && e.parameter.data);
+    if (rawDataParam !== null) {
+      Logger.log('✅ Using untruncated data param from e.postData.contents (' + rawDataParam.length + ' chars)');
+    }
+
     // Parse FormData - frontend sends JSON in 'data' field as FormData
-    if (e.parameter && e.parameter.data) {
+    if (dataParam) {
       try {
-        const dataString = e.parameter.data;
+        const dataString = dataParam;
         // Check if data might be truncated (common issue with large payloads)
         if (typeof dataString === 'string') {
           Logger.log('Received data field length: ' + dataString.length + ' characters');
-          
+
           // Check for unterminated strings (common JSON parse error with large payloads)
           if (dataString.length > 1000000) {
             Logger.log('⚠️ WARNING: Large payload detected (' + Math.round(dataString.length / 1024 / 1024) + 'MB). This may cause parsing issues.');
           }
-          
+
           // Check for common truncation signs
           const openBraces = (dataString.match(/\{/g) || []).length;
           const closeBraces = (dataString.match(/\}/g) || []).length;
@@ -395,20 +424,20 @@ function doPost(e) {
             Logger.log('⚠️ WARNING: JSON structure may be malformed. Open braces: ' + openBraces + ', Close braces: ' + closeBraces);
           }
         }
-        
-        requestBody = JSON.parse(e.parameter.data);
+
+        requestBody = JSON.parse(dataParam);
         action = requestBody.action;
         console.log('🟢🟢🟢 Parsed action from data field: ' + action);
         Logger.log('🟢🟢🟢 Parsed action from data field: ' + action);
       } catch (parseError) {
         Logger.log('❌ JSON Parse Error: ' + parseError.toString());
-        Logger.log('❌ Data length: ' + (e.parameter.data ? e.parameter.data.length : 'N/A'));
+        Logger.log('❌ Data length: ' + (dataParam ? dataParam.length : 'N/A'));
         Logger.log('❌ Error position: ' + parseError.message);
-        Logger.log('❌ First 200 chars of data: ' + (e.parameter.data ? e.parameter.data.substring(0, 200) : 'N/A'));
-        Logger.log('❌ Last 200 chars of data: ' + (e.parameter.data && e.parameter.data.length > 200 ? e.parameter.data.substring(e.parameter.data.length - 200) : 'N/A'));
-        
+        Logger.log('❌ First 200 chars of data: ' + (dataParam ? dataParam.substring(0, 200) : 'N/A'));
+        Logger.log('❌ Last 200 chars of data: ' + (dataParam && dataParam.length > 200 ? dataParam.substring(dataParam.length - 200) : 'N/A'));
+
         // Return more detailed error message
-        return createResponse(false, msg_('errParseData') + parseError.message + '. Payload size: ' + (e.parameter.data ? Math.round(e.parameter.data.length / 1024) : 'unknown') + 'KB. Có thể payload quá lớn hoặc bị cắt.');
+        return createResponse(false, msg_('errParseData') + parseError.message + '. Payload size: ' + (dataParam ? Math.round(dataParam.length / 1024) : 'unknown') + 'KB. Có thể payload quá lớn hoặc bị cắt.');
       }
     } else if (e.parameter && e.parameter.action) {
       // Extract action and ensure it's a clean string
