@@ -45,7 +45,8 @@ var MSG_ = {
     amAlreadyUsed: 'Biên bản nghiệm thu này đã được sử dụng trong đề nghị thanh toán khác.',
     exceedsCeiling: 'Tổng thanh toán vượt quá giá trị hợp đồng/PR ({0} ₫).',
     prInvalidDirect: 'PR không hợp lệ cho thanh toán trực tiếp.',
-    needAmOrPr: 'Vui lòng nhập số Biên Bản Nghiệm Thu (AM No) hoặc số PR (hàng hóa < 2tr).',
+    needAmOrPr: 'Vui lòng nhập số Biên Bản Nghiệm Thu (AM No), hoặc chọn thanh toán dưới 2.000.000₫ không cần đề nghị mua hàng.',
+    smallPaymentOverLimit: 'Hàng hóa hoặc dịch vụ từ 2.000.000₫ cần đề nghị mua hàng.',
     supplierExists: 'Supplier "{0}" already exists',
     sheetMissing: 'Sheet "{0}" không tồn tại',
     roleNotAssignedForRequest: 'Vai trò "{0}" chưa được phân công cho đề nghị này.',
@@ -153,7 +154,8 @@ var MSG_ = {
     amAlreadyUsed: 'These Acceptance Minutes have already been used in another payment request.',
     exceedsCeiling: 'Total payment exceeds the contract/PR value ({0} ₫).',
     prInvalidDirect: 'This PR is not eligible for direct payment.',
-    needAmOrPr: 'Please enter an Acceptance Minutes number (AM No) or a PR number (goods < 2M).',
+    needAmOrPr: 'Enter an Acceptance Minutes number, or choose a payment under 2,000,000₫ with no purchase request.',
+    smallPaymentOverLimit: 'Goods or services of 2,000,000₫ or more require a purchase request.',
     supplierExists: 'Supplier "{0}" already exists',
     sheetMissing: 'The "{0}" sheet does not exist',
     roleNotAssignedForRequest: 'The "{0}" role has not been assigned for this request.',
@@ -605,6 +607,13 @@ function handleSendPaymentRequest(data) {
       }
       p2pBranch = 'simplified';
       contractCeiling = parseFloat(directResult.data.grandTotal) || 0;
+    } else if (data.noPurchaseRequest === true || data.noPurchaseRequest === 'true') {
+      var smallAmount = parseFloat(data.totalAmount) || 0;
+      var payCurrency = (data.currency || 'VND').toString().trim().toUpperCase();
+      if (payCurrency !== 'VND' || !(smallAmount > 0 && smallAmount < 2000000)) {
+        return createResponse(false, msg_('smallPaymentOverLimit'));
+      }
+      p2pBranch = 'simplified';
     } else {
       return createResponse(false, msg_('needAmOrPr'));
     }
@@ -625,6 +634,7 @@ function handleSendPaymentRequest(data) {
       isNewVendor: data.isNewVendor === true || data.isNewVendor === 'true',
       amNo: amNo,
       amPrNo: amRecord ? (amRecord.prNo || '') : prRequestNo,
+      noPurchaseRequest: !amNo && !prRequestNo,
       p2pBranch: p2pBranch,
       installmentNo: amNo ? (getPMTsByPR_(amRecord.prNo || '').filter(function(p) {
         return p.status !== 'Rejected' && p.status !== 'Từ chối';
@@ -695,6 +705,27 @@ function handleSendPaymentRequest(data) {
 
 // ==================== APPROVE PAYMENT REQUEST ====================
 
+function activePmtStage_(row) {
+  var stages = [
+    { key: 'budget', status: row[CONFIG.COLUMNS.BUDGET_STATUS], approver: row[CONFIG.COLUMNS.BUDGET_APPROVER] },
+    { key: 'supplier', status: row[CONFIG.COLUMNS.SUPPLIER_STATUS], approver: row[CONFIG.COLUMNS.SUPPLIER_APPROVER] },
+    { key: 'legal', status: row[CONFIG.COLUMNS.LEGAL_STATUS], approver: row[CONFIG.COLUMNS.LEGAL_APPROVER] },
+    { key: 'accounting', status: row[CONFIG.COLUMNS.ACCOUNTING_STATUS], approver: row[CONFIG.COLUMNS.ACCOUNTING_APPROVER] },
+    { key: 'director', status: row[CONFIG.COLUMNS.DIRECTOR_STATUS], approver: row[CONFIG.COLUMNS.DIRECTOR_APPROVER] },
+    { key: 'final', status: row[CONFIG.COLUMNS.FINAL_STATUS], approver: row[CONFIG.COLUMNS.FINAL_APPROVER] }
+  ];
+  for (var i = 0; i < stages.length; i++) {
+    var status = (stages[i].status || '').toString().trim();
+    var approver = (stages[i].approver || '').toString().trim();
+    var statusKey = status.toLowerCase();
+    if (statusKey === 'n/a') continue;
+    if (!approver && !status) continue;
+    if (statusKey === 'approved') continue;
+    return stages[i].key;
+  }
+  return '';
+}
+
 function handleApprovePaymentRequest(data) {
   try {
     Logger.log('[Payment Request] Processing approval...');
@@ -762,6 +793,11 @@ function handleApprovePaymentRequest(data) {
     }
     if (currentStatus === 'Rejected') {
       return createResponse(false, stageName + ' already rejected. Cannot approve.');
+    }
+
+    var activeStage = activePmtStage_(row);
+    if (data.stage !== activeStage) {
+      return createResponse(false, 'Chưa đến lượt duyệt của bạn. Giai đoạn hiện tại: ' + (activeStage || 'không có'));
     }
     
     // Validate signature
@@ -976,14 +1012,23 @@ function handleGetPaymentRequestHistory(data) {
 function handleGetRecentPaymentRequests(data) {
   try {
     const sheet = getOrCreateSheet(CONFIG.SHEET_NAME);
-    const values = sheet.getDataRange().getValues();
-    if (values.length <= 1) return createResponse(true, 'No requests found', { requests: [] });
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return createResponse(true, 'No requests found', { requests: [] });
+
+    // getRange 3rd arg is a row count. Last 5000 data rows, columns A through
+    // SUBMITTED_AT. Skip METADATA (large JSON) and do not scan the whole sheet.
+    var PMT_LIST_WINDOW = 5000;
+    var startRow = Math.max(2, lastRow - PMT_LIST_WINDOW + 1);
+    var numRows = lastRow - startRow + 1;
+    var numCols = CONFIG.COLUMNS.SUBMITTED_AT + 1;
+    const values = sheet.getRange(startRow, 1, numRows, numCols).getValues();
+    if (!values.length) return createResponse(true, 'No requests found', { requests: [] });
 
     const C = CONFIG.COLUMNS;
     const emailFilter = (data.requestorEmail || '').toString().trim().toLowerCase();
     const requests = [];
 
-    for (let i = 1; i < values.length; i++) {
+    for (let i = 0; i < values.length; i++) {
       const row = values[i];
       if (!row[C.REQUEST_ID]) continue;
       if (emailFilter && (row[C.REQUESTOR_EMAIL] || '').toString().trim().toLowerCase() !== emailFilter) continue;
@@ -1414,7 +1459,7 @@ function appendHistory(requestId, action, actor, note) {
 }
 
 function getOrCreateSheet(sheetName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   let sheet = ss.getSheetByName(sheetName);
   
   if (!sheet) {

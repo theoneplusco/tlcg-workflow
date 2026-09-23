@@ -639,7 +639,7 @@
                                     <input type="radio" name="pmt_gate_mode" value="am" checked onchange="onPMTGateModeChange()"> <span data-i18n="modeByAm">Theo Biên bản nghiệm thu (AM)</span>
                                 </label>
                                 <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-                                    <input type="radio" name="pmt_gate_mode" value="pr" onchange="onPMTGateModeChange()"> <span data-i18n="modeByPr">Trực tiếp theo PR (hàng hóa &lt; 2tr)</span>
+                                    <input type="radio" name="pmt_gate_mode" value="small" onchange="onPMTGateModeChange()"> <span data-i18n="modeByPr">Không cần đề nghị mua hàng (hàng hóa hoặc dịch vụ &lt; 2tr)</span>
                                 </label>
                             </div>
                         </div>
@@ -670,21 +670,9 @@
                         </div>
                     </div>
                     <div id="pmt-gate-pr" style="display:none;">
-                        <div class="form-row">
-                            <div class="form-group w2">
-                                <label for="direct_pr_no"><span data-i18n="labelDirectPr">Số PR (hàng hóa &lt; 2.000.000₫)</span> <span class="req">*</span></label>
-                                <div style="display:flex;gap:8px;">
-                                    <input type="text" id="direct_pr_no" placeholder="PR-YYYYMMDD-XXXXXX" oninput="onDirectPRInput()" style="flex:1;">
-                                    <button type="button" onclick="validateDirectPR()" style="white-space:nowrap;padding:9px 14px;font-size:13px;background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.12);border-radius:8px;cursor:pointer;">
-                                        <i class="fas fa-search"></i> <span data-i18n="verify">Xác minh</span>
-                                    </button>
-                                </div>
-                                <p id="direct-pr-status" style="font-size:12px;margin-top:5px;color:var(--text-secondary);"></p>
-                            </div>
-                        </div>
-                        <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;padding:8px 12px;background:rgba(255,149,0,0.08);border-radius:8px;">
-                            <i class="fas fa-info-circle" style="margin-right:4px;color:var(--warning);"></i>
-                            <span data-i18n="grnNotice">Biên bản nhận hàng sẽ được tạo sau khi thanh toán được phê duyệt.</span>
+                        <p style="font-size:13px;color:var(--text-secondary);padding:8px 12px;background:rgba(52,199,89,0.08);border-radius:8px;">
+                            <i class="fas fa-info-circle" style="margin-right:4px;color:#34C759;"></i>
+                            <span data-i18n="smallPaymentNotice">Hàng hóa hoặc dịch vụ dưới 2.000.000₫ không cần đề nghị mua hàng. Số tiền ở bước thanh toán phải dưới 2.000.000₫.</span>
                         </p>
                     </div>
                 </div>
@@ -1015,7 +1003,8 @@
             secRefLink: 'Liên Kết Phiếu Tham Chiếu',
             labelPmtMode: 'Loại đề nghị thanh toán',
             modeByAm: 'Theo Biên bản nghiệm thu (AM)',
-            modeByPr: 'Trực tiếp theo PR (hàng hóa < 2tr)',
+            modeByPr: 'Không cần đề nghị mua hàng (hàng hóa hoặc dịch vụ < 2tr)',
+            smallPaymentNotice: 'Hàng hóa hoặc dịch vụ dưới 2.000.000₫ không cần đề nghị mua hàng. Số tiền ở bước thanh toán phải dưới 2.000.000₫.',
             labelAmNo: 'Số Biên Bản Nghiệm Thu (AM No)',
             phAmNo: 'Ví dụ: AM-20260618-000001',
             verify: 'Xác minh',
@@ -1066,7 +1055,8 @@
             secRefLink: 'Reference Document Link',
             labelPmtMode: 'Payment request type',
             modeByAm: 'By Acceptance Minutes (AM)',
-            modeByPr: 'Directly by PR (goods < 2M)',
+            modeByPr: 'No purchase request (goods or services < 2M)',
+            smallPaymentNotice: 'Goods or services under 2,000,000₫ do not need a purchase request. The amount on the payment step must be under 2,000,000₫.',
             labelAmNo: 'Acceptance Minutes No. (AM No)',
             phAmNo: 'Example: AM-20260618-000001',
             verify: 'Verify',
@@ -1807,6 +1797,8 @@
         if (!transferNote) { showToast('Vui lòng nhập nội dung chuyển khoản.', 'error'); return; }
         if (!finalAmount || finalAmount <= 0) { showToast('Vui lòng nhập số tiền đề nghị.', 'error'); return; }
         if (!dueDate)     { showToast('Vui lòng chọn ngày đáo hạn.', 'error'); return; }
+        const smallPaymentMsg = smallPaymentBlockReason();
+        if (smallPaymentMsg) { showToast(smallPaymentMsg, 'error', 5000); return; }
 
         const requestId = document.getElementById('request_id').value;
         if (!requestId) { showToast('Vui lòng chọn công ty để tạo số phiếu.', 'error'); return; }
@@ -1819,15 +1811,8 @@
         // Reference gate — AM or direct PR
         const gateMode = getPMTGateMode();
         const amNoVal = gateMode === 'am' ? (document.getElementById('am_no_field')?.value || '').trim() : '';
-        const directPr = gateMode === 'pr' ? (document.getElementById('direct_pr_no')?.value || '').trim() : '';
         if (gateMode === 'am' && (!amNoVal || !_amValidated)) {
             showToast('Vui lòng xác minh Biên Bản Nghiệm Thu trước khi gửi.', 'error');
-            isSubmitting = false;
-            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> <span data-i18n="submitRequest">Gửi đề nghị</span>'; }
-            return;
-        }
-        if (gateMode === 'pr' && (!directPr || !_directPRValidated)) {
-            showToast('Vui lòng xác minh PR trước khi gửi.', 'error');
             isSubmitting = false;
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> <span data-i18n="submitRequest">Gửi đề nghị</span>'; }
             return;
@@ -1839,7 +1824,8 @@
             requestorEmail:   loggedInUser?.email || '',
             requestorName:    loggedInUser?.name  || '',
             amNo:             amNoVal,
-            prRequestNo:      gateMode === 'pr' ? directPr : (document.getElementById('pm_pr_no')?.value || (_amData?.prNo || '')),
+            prRequestNo:      gateMode === 'am' ? (document.getElementById('pm_pr_no')?.value || (_amData?.prNo || '')) : '',
+            noPurchaseRequest: gateMode === 'small',
             installmentNote:  document.getElementById('installment_note')?.value?.trim() || '',
             companyCode:      getSelectedCompanyMaj() || companyCode,
             companyName:      document.getElementById('company_name').value,
@@ -2026,10 +2012,19 @@
         return document.querySelector('input[name="pmt_gate_mode"]:checked')?.value || 'am';
     }
 
+    function smallPaymentBlockReason() {
+        if (getPMTGateMode() !== 'small') return '';
+        const currency = document.getElementById('currency')?.value || 'VND';
+        const amount = parseFloat(document.getElementById('final_amount')?.value);
+        if (currency !== 'VND') return 'Thanh toán không cần đề nghị mua hàng chỉ dùng VND.';
+        if (!(amount > 0 && amount < 2000000)) return 'Từ 2.000.000₫ cần đề nghị mua hàng. Hàng hóa hoặc dịch vụ dưới 2.000.000₫ mới bỏ qua phiếu mua hàng.';
+        return '';
+    }
+
     function onPMTGateModeChange() {
         const mode = getPMTGateMode();
         document.getElementById('pmt-gate-am').style.display = mode === 'am' ? 'block' : 'none';
-        document.getElementById('pmt-gate-pr').style.display = mode === 'pr' ? 'block' : 'none';
+        document.getElementById('pmt-gate-pr').style.display = mode === 'small' ? 'block' : 'none';
         _amValidated = false; _amData = null; _directPRValidated = false; _directPRData = null;
         onAMNoInput();
         onDirectPRInput();
@@ -2040,35 +2035,6 @@
         _directPRData = null;
         const el = document.getElementById('direct-pr-status');
         if (el) el.textContent = '';
-    }
-
-    async function validateDirectPR() {
-        const prNo = (document.getElementById('direct_pr_no')?.value || '').trim();
-        const statusEl = document.getElementById('direct-pr-status');
-        if (!prNo) { showToast('Vui lòng nhập số PR.', 'error'); return; }
-        statusEl.textContent = 'Đang xác minh...';
-        try {
-            const params = new URLSearchParams();
-            params.append('data', JSON.stringify({ action: 'validatePRForDirectPayment', prNo: prNo }));
-            const res = await fetch('/api/voucher', { method: 'POST', mode: 'cors', redirect: 'follow', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() });
-            const result = JSON.parse(await res.text());
-            if (!result.success) {
-                _directPRValidated = false; _directPRData = null;
-                statusEl.textContent = '❌ ' + (result.message || 'PR không hợp lệ');
-                statusEl.style.color = 'var(--error)';
-                return;
-            }
-            _directPRValidated = true;
-            _directPRData = result.data;
-            document.getElementById('pm_pr_no').value = prNo;
-            statusEl.textContent = `✅ ${result.data.vendorName || ''} · ${Number(result.data.grandTotal||0).toLocaleString('vi-VN')} ₫`;
-            statusEl.style.color = '#1a7a3c';
-            showToast('PR hợp lệ cho thanh toán trực tiếp!', 'success');
-        } catch (e) {
-            _directPRValidated = false;
-            statusEl.textContent = '❌ ' + e.message;
-            statusEl.style.color = 'var(--error)';
-        }
     }
 
     async function loadPaymentProgress(prNo) {
@@ -2167,10 +2133,6 @@
                 const amNo = (document.getElementById('am_no_field').value || '').trim();
                 if (!amNo) { showToast('Vui lòng nhập số Biên Bản Nghiệm Thu.', 'error'); return; }
                 if (!_amValidated) { showToast('Vui lòng nhấn "Xác minh" AM trước khi tiếp tục.', 'error'); return; }
-            } else {
-                const prNo = (document.getElementById('direct_pr_no').value || '').trim();
-                if (!prNo) { showToast('Vui lòng nhập số PR.', 'error'); return; }
-                if (!_directPRValidated) { showToast('Vui lòng xác minh PR trước khi tiếp tục.', 'error'); return; }
             }
         }
         if (currentStep === 2) {
@@ -2191,6 +2153,8 @@
             if (!amount || amount <= 0) {
                 showToast('Vui lòng nhập số tiền đề nghị.', 'error'); return;
             }
+            const smallPaymentMsg = smallPaymentBlockReason();
+            if (smallPaymentMsg) { showToast(smallPaymentMsg, 'error', 5000); return; }
             if (!document.getElementById('due_date').value) {
                 showToast('Vui lòng chọn ngày đáo hạn.', 'error'); return;
             }
