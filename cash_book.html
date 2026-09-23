@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sổ quỹ — Bảng kiểm kê quỹ</title>
+    <style>
+        :root { --ink: #1c1917; --muted: #57534e; --line: #e7e5e4; --paper: #fafaf9; --sky: #0369a1; --red: #b91c1c; --amber: #b45309; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
+        header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 24px; background: white; border-bottom: 1px solid var(--line); }
+        header a { color: var(--sky); text-decoration: none; font-weight: 600; }
+        main { max-width: 980px; margin: 0 auto; padding: 20px 16px 96px; display: flex; flex-direction: column; gap: 16px; }
+        section, .filters { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+        h1 { font-size: 22px; margin: 0; }
+        h2 { font-size: 16px; margin: 0 0 12px; }
+        label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+        select, input[type="date"], input[type="number"], input[type="text"], textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+        .filters { display: grid; grid-template-columns: 1.4fr 0.8fr; gap: 12px; }
+        .balance { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; }
+        .balance strong { font-size: 28px; }
+        .meta { color: var(--muted); font-size: 14px; }
+        .pending-note { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th { color: var(--muted); font-weight: 600; }
+        .row-off { display: none; }
+        .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+        button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: white; padding: 8px 12px; cursor: pointer; }
+        button.primary { background: var(--sky); color: white; border-color: var(--sky); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .denom td input { max-width: 120px; margin-left: auto; display: block; }
+        .diff-thieu { color: var(--red); font-weight: 700; }
+        .diff-thua { color: var(--amber); font-weight: 700; }
+        .field-hot { outline: 2px solid var(--amber); }
+        .rep { display: grid; grid-template-columns: 180px 1fr 220px; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+        .rep img { max-height: 64px; max-width: 180px; background: white; }
+        .bar { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 24px; background: white; border-top: 1px solid var(--line); }
+        .error { color: var(--red); }
+        .banner { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+        @media (max-width: 720px) {
+            .filters, .rep, .balance { grid-template-columns: 1fr; display: grid; }
+            .bar { flex-direction: column; align-items: stretch; }
+        }
+        @media print {
+            header, .filters, .pager, .bar, .no-print { display: none !important; }
+            body { background: white; }
+            main { max-width: none; padding: 0; display: flex; }
+            #count-form { order: 1; }
+            #book-section { order: 2; }
+            #pending-section { order: 3; }
+            #balance-section, #reps { display: none !important; }
+            section { border: none; }
+            tr.row-off { display: table-row !important; }
+        }
+    </style>
+</head>
+<body>
+    <header class="no-print">
+        <h1>Sổ quỹ</h1>
+        <a href="index.html">Về trang chủ</a>
+    </header>
+    <main>
+        <div class="filters no-print">
+            <div>
+                <label for="company">Công ty</label>
+                <select id="company"><option value="">Chọn công ty</option></select>
+            </div>
+            <div>
+                <label for="end-date">Số dư đến ngày</label>
+                <input id="end-date" type="date">
+            </div>
+        </div>
+        <p id="status" class="meta no-print"></p>
+
+        <section id="balance-section">
+            <div class="balance">
+                <div>
+                    <div class="meta">Số dư theo sổ quỹ</div>
+                    <strong id="book-balance">—</strong>
+                </div>
+                <div class="meta" id="book-meta"></div>
+            </div>
+            <div class="pending-note">
+                <div class="meta">Phiếu chưa vào quỹ</div>
+                <div id="pending-meta">—</div>
+            </div>
+        </section>
+
+        <section id="book-section">
+            <h2>Phiếu đã vào quỹ</h2>
+            <table>
+                <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
+                <tbody id="book-rows"></tbody>
+            </table>
+            <div class="pager no-print"><button type="button" id="book-prev">Trước</button><span id="book-page"></span><button type="button" id="book-next">Sau</button></div>
+        </section>
+
+        <section id="pending-section">
+            <h2>Phiếu chưa vào quỹ</h2>
+            <table>
+                <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
+                <tbody id="pending-rows"></tbody>
+            </table>
+            <div class="pager no-print"><button type="button" id="pending-prev">Trước</button><span id="pending-page"></span><button type="button" id="pending-next">Sau</button></div>
+        </section>
+
+        <section id="count-form">
+            <h2>Bảng kiểm kê quỹ (Dùng cho VNĐ)</h2>
+            <p id="saved-banner" class="banner" hidden>Đã có bảng kiểm kê ngày này.</p>
+            <p class="meta">Bộ phận: Kế toán · Số: 08</p>
+            <p id="form-date">Hôm nay, vào … giờ … phút, ngày … tháng … năm …</p>
+            <div class="filters no-print" style="border: none; padding: 0; background: transparent;">
+                <div><label for="hour">Giờ</label><input id="hour" type="number" min="0" max="23" step="1" value="0"></div>
+                <div><label for="minute">Phút</label><input id="minute" type="number" min="0" max="59" step="1" value="0"></div>
+            </div>
+            <table class="denom">
+                <thead><tr><th>STT</th><th>Diễn giải</th><th class="num">Số lượng (tờ)</th><th class="num">Số tiền</th></tr></thead>
+                <tbody id="denom-rows"></tbody>
+                <tfoot>
+                    <tr><td>I</td><td>Số dư theo sổ quỹ</td><td></td><td class="num" id="line-i">—</td></tr>
+                    <tr><td>II</td><td>Số kiểm kê thực tế</td><td></td><td class="num" id="line-ii">0</td></tr>
+                    <tr><td>III</td><td>Chênh lệch (I − II)</td><td></td><td class="num" id="line-iii">—</td></tr>
+                </tfoot>
+            </table>
+            <div>
+                <label for="reason-thua">Lý do — Thừa</label>
+                <input id="reason-thua" type="text">
+            </div>
+            <div>
+                <label for="reason-thieu">Lý do — Thiếu</label>
+                <input id="reason-thieu" type="text">
+            </div>
+            <div>
+                <label for="conclusion">Kết luận sau khi kiểm kê quỹ</label>
+                <textarea id="conclusion" rows="2"></textarea>
+            </div>
+            <h2 style="margin-top: 16px;">Chúng tôi gồm</h2>
+            <div id="reps"></div>
+            <div id="print-sigs"></div>
+        </section>
+    </main>
+    <div class="bar no-print">
+        <span id="save-hint" class="meta"></span>
+        <div>
+            <button type="button" id="print-btn">In</button>
+            <button type="button" id="save-btn" class="primary" disabled>Lưu bảng kiểm kê</button>
+        </div>
+    </div>
+    <script>
+        var FACES = [500000, 200000, 100000, 50000, 20000, 10000, 5000, 2000, 1000, 500];
+        var PAGE = 20;
+        var user = null;
+        try { user = JSON.parse(localStorage.getItem('tlc_current_user') || 'null'); } catch (e) { user = null; }
+        if (!user || !user.email) location.href = 'index.html';
+
+        var companies = [];
+        var employees = [];
+        var approvers = null;
+        var book = null;
+        var savedCount = null;
+        var pages = { book: 0, pending: 0 };
+        var reps = [
+            { key: 'keToan', label: 'Đại diện kế toán', name: '', email: '', signatureUrl: '', signatureData: '' },
+            { key: 'keToanTruong', label: 'Kế toán trưởng', name: '', email: '', signatureUrl: '', signatureData: '' },
+            { key: 'thuQuy', label: 'Thủ quỹ', name: '', email: '', signatureUrl: '', signatureData: '' },
+            { key: 'giamDoc', label: 'Giám đốc', name: '', email: '', signatureUrl: '', signatureData: '' }
+        ];
+        var sigCache = {};
+
+        function vnd(n) {
+            var value = Math.round(Number(n) || 0);
+            return value.toLocaleString('vi-VN') + ' ₫';
+        }
+        function todayVN() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        }
+        function setStatus(text, isError) {
+            var el = document.getElementById('status');
+            el.textContent = text || '';
+            el.className = isError ? 'error' : 'meta no-print';
+        }
+        async function post(payload) {
+            var body = new URLSearchParams({ data: JSON.stringify(payload) });
+            var res = await fetch('/api/voucher', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+            return JSON.parse(await res.text());
+        }
+        function selectedCompany() {
+            var sel = document.getElementById('company');
+            return companies[sel.selectedIndex - 1] || null;
+        }
+        function norm(s) { return String(s || '').trim().toLowerCase(); }
+        function fold(s) {
+            return norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        }
+        function empOf(emp, company) {
+            var c = norm(emp.company);
+            if (!c || !company) return false;
+            return c === norm(company.name) || c === norm(company.code) || c === norm(company.key);
+        }
+        function isStaffAccountant(emp) {
+            var source = emp.position ? emp.position : emp.department;
+            var raw = norm(source);
+            var plain = fold(source);
+            var hit = raw.indexOf('kế toán') !== -1 || plain.indexOf('ke toan') !== -1;
+            var chief = raw.indexOf('trưởng') !== -1 || plain.indexOf('truong') !== -1 || plain.indexOf('chief') !== -1;
+            return hit && !chief;
+        }
+        function masterEmails() {
+            if (!approvers) return [];
+            return [approvers.accountant, approvers.treasurer, approvers.legalRep].map(function(p) { return p && p.email; }).filter(Boolean);
+        }
+        function maySave() {
+            if (!user) return false;
+            var email = norm(user.email);
+            if (employees.some(function(emp) { return norm(emp.email) === email && emp.isAdmin; })) return true;
+            if (masterEmails().some(function(item) { return norm(item) === email; })) return true;
+            var company = selectedCompany();
+            var rep = reps[0];
+            return norm(rep.email) === email && employees.some(function(emp) { return norm(emp.email) === email && empOf(emp, company); });
+        }
+        function firstGap() {
+            var hour = Number(document.getElementById('hour').value);
+            var minute = Number(document.getElementById('minute').value);
+            if (!selectedCompany() || !document.getElementById('end-date').value) return 'Chọn công ty và ngày kết thúc.';
+            if (!isFinite(hour) || hour < 0 || hour > 23 || !isFinite(minute) || minute < 0 || minute > 59) return 'Giờ phải từ 0 đến 23 và phút từ 0 đến 59.';
+            for (var i = 0; i < reps.length; i++) {
+                if (!reps[i].name) return 'Còn thiếu tên ' + reps[i].label + '.';
+                if (!reps[i].signatureUrl && !reps[i].signatureData) return 'Còn thiếu chữ ký ' + reps[i].label + '.';
+            }
+            if (!maySave()) return 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.';
+            return '';
+        }
+        function renderSaveBar() {
+            var gap = firstGap();
+            document.getElementById('save-hint').textContent = gap;
+            document.getElementById('save-btn').disabled = !!gap || !book;
+        }
+        function renderDateLine() {
+            var end = document.getElementById('end-date').value;
+            var hour = document.getElementById('hour').value || '…';
+            var minute = document.getElementById('minute').value || '…';
+            var parts = end ? end.split('-') : [];
+            var text = 'Hôm nay, vào ' + hour + ' giờ ' + minute + ' phút, ngày ' + (parts[2] || '…') + ' tháng ' + (parts[1] || '…') + ' năm ' + (parts[0] || '…');
+            document.getElementById('form-date').textContent = text;
+        }
+        function lineTotals() {
+            var qty = FACES.map(function(_, i) {
+                var input = document.querySelector('[data-qty="' + i + '"]');
+                var n = input ? Number(input.value || 0) : 0;
+                return isFinite(n) && n > 0 ? Math.floor(n) : 0;
+            });
+            var ii = 0;
+            qty.forEach(function(n, i) {
+                ii += n * FACES[i];
+                var cell = document.querySelector('[data-amt="' + i + '"]');
+                if (cell) cell.textContent = vnd(n * FACES[i]);
+            });
+            var iBal = book ? book.bookBalance : 0;
+            var iii = iBal - ii;
+            document.getElementById('line-i').textContent = book ? vnd(iBal) : '—';
+            document.getElementById('line-ii').textContent = vnd(ii);
+            var diff = document.getElementById('line-iii');
+            diff.textContent = book ? vnd(iii) : '—';
+            diff.className = 'num ' + (iii > 0 ? 'diff-thieu' : iii < 0 ? 'diff-thua' : '');
+            document.getElementById('reason-thieu').classList.toggle('field-hot', iii > 0);
+            document.getElementById('reason-thua').classList.toggle('field-hot', iii < 0);
+            return { qty: qty, ii: ii };
+        }
+        function renderList(lines, bodyId, pageKey, labelId) {
+            var body = document.getElementById(bodyId);
+            body.innerHTML = '';
+            var start = pages[pageKey] * PAGE;
+            lines.forEach(function(line, index) {
+                var tr = document.createElement('tr');
+                if (index < start || index >= start + PAGE) tr.className = 'row-off';
+                [line.voucherNumber, line.createdDate, line.type, line.description, vnd(line.amount), line.status].forEach(function(value, col) {
+                    var td = document.createElement('td');
+                    td.textContent = value || '';
+                    if (col === 4) td.className = 'num';
+                    tr.appendChild(td);
+                });
+                body.appendChild(tr);
+            });
+            var pagesCount = Math.max(1, Math.ceil(lines.length / PAGE));
+            if (pages[pageKey] > pagesCount - 1) pages[pageKey] = pagesCount - 1;
+            document.getElementById(labelId).textContent = (pages[pageKey] + 1) + ' / ' + pagesCount;
+        }
+        function renderBook() {
+            if (!book) {
+                document.getElementById('book-balance').textContent = '—';
+                document.getElementById('book-meta').textContent = '';
+                document.getElementById('pending-meta').textContent = '—';
+                renderList([], 'book-rows', 'book', 'book-page');
+                renderList([], 'pending-rows', 'pending', 'pending-page');
+                lineTotals();
+                renderSaveBar();
+                return;
+            }
+            document.getElementById('book-balance').textContent = vnd(book.bookBalance);
+            document.getElementById('book-meta').textContent = 'Số dư đến ngày ' + document.getElementById('end-date').value + ' · Thu ' + vnd(book.bookThu) + ' · Chi ' + vnd(book.bookChi) + ' · ' + book.bookCount + ' phiếu';
+            document.getElementById('pending-meta').textContent = 'Thu ' + vnd(book.pendingThu) + ' · Chi ' + vnd(book.pendingChi) + ' · Chênh lệch ' + vnd(book.pendingNet);
+            renderList(book.bookLines, 'book-rows', 'book', 'book-page');
+            renderList(book.pendingLines, 'pending-rows', 'pending', 'pending-page');
+            lineTotals();
+            renderSaveBar();
+        }
+        function sigSrc(rep) {
+            if (rep.signatureData) return rep.signatureData;
+            if (rep.signatureUrl && sigCache[rep.signatureUrl]) return sigCache[rep.signatureUrl];
+            return '';
+        }
+        async function hydrateSig(url) {
+            if (!url || sigCache[url]) return sigCache[url] || '';
+            var result = await post({ action: 'fetchSignatureImage', imageUrl: url });
+            if (result.success && result.data && result.data.imageBase64) sigCache[url] = result.data.imageBase64;
+            return sigCache[url] || '';
+        }
+        function shareSignatures() {
+            var byEmail = {};
+            reps.forEach(function(rep) {
+                if (!rep.email) return;
+                var key = norm(rep.email);
+                if (rep.signatureUrl) byEmail[key] = rep.signatureUrl;
+            });
+            reps.forEach(function(rep) {
+                var shared = rep.email && byEmail[norm(rep.email)];
+                if (shared && !rep.signatureUrl) rep.signatureUrl = shared;
+            });
+        }
+        function renderReps() {
+            shareSignatures();
+            var root = document.getElementById('reps');
+            root.innerHTML = '';
+            var printSigs = document.getElementById('print-sigs');
+            printSigs.innerHTML = '';
+            var titles = ['Thủ quỹ', 'Kế toán trưởng', 'Người chịu trách nhiệm kiểm kê quỹ', 'Giám đốc'];
+            var printOrder = [2, 1, 0, 3];
+            reps.forEach(function(rep, index) {
+                var row = document.createElement('div');
+                row.className = 'rep';
+                var role = document.createElement('div');
+                role.textContent = rep.label;
+                var select = document.createElement('select');
+                var empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = 'Chọn tên';
+                select.appendChild(empty);
+                var options = rep.options || [];
+                options.forEach(function(opt) {
+                    var o = document.createElement('option');
+                    o.value = opt.email || opt.name;
+                    o.textContent = opt.name;
+                    if (rep.email ? norm(opt.email) === norm(rep.email) : opt.name === rep.name) o.selected = true;
+                    select.appendChild(o);
+                });
+                if (options.length === 1) select.selectedIndex = 1;
+                select.addEventListener('change', function() {
+                    var picked = options[select.selectedIndex - 1];
+                    rep.name = picked ? picked.name : '';
+                    rep.email = picked ? (picked.email || '') : '';
+                    rep.signatureUrl = picked && picked.signatureUrl ? picked.signatureUrl : '';
+                    rep.signatureData = '';
+                    renderReps();
+                    renderSaveBar();
+                });
+                var sig = document.createElement('div');
+                var img = document.createElement('img');
+                img.alt = '';
+                var src = sigSrc(rep);
+                if (src) img.src = src;
+                else img.hidden = true;
+                sig.appendChild(img);
+                if (!rep.signatureUrl || index === 0) {
+                    var file = document.createElement('input');
+                    file.type = 'file';
+                    file.accept = 'image/png,image/jpeg,image/jpg';
+                    file.className = 'no-print';
+                    file.addEventListener('change', function() { onSigFile(rep, file.files[0], img); });
+                    if (rep.signatureUrl && index !== 0) file.hidden = true;
+                    sig.appendChild(file);
+                }
+                row.appendChild(role);
+                row.appendChild(select);
+                row.appendChild(sig);
+                root.appendChild(row);
+                if (rep.signatureUrl && !sigCache[rep.signatureUrl]) {
+                    hydrateSig(rep.signatureUrl).then(function() { renderReps(); });
+                }
+            });
+            printOrder.forEach(function(index) {
+                var block = document.createElement('div');
+                block.style.marginTop = '12px';
+                var title = document.createElement('div');
+                title.textContent = titles[printOrder.indexOf(index)];
+                var name = document.createElement('div');
+                name.textContent = reps[index].name || '';
+                var img = document.createElement('img');
+                var src = sigSrc(reps[index]);
+                if (src) img.src = src;
+                block.appendChild(title);
+                block.appendChild(name);
+                block.appendChild(img);
+                printSigs.appendChild(block);
+            });
+        }
+        function onSigFile(rep, file, img) {
+            if (!file) return;
+            if (['image/png', 'image/jpeg', 'image/jpg'].indexOf(file.type) === -1) {
+                setStatus('Vui lòng chọn file hình ảnh PNG hoặc JPG', true);
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function() {
+                var image = new Image();
+                image.onload = function() {
+                    var scale = Math.min(800 / image.width, 400 / image.height, 1);
+                    var canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round(image.width * scale));
+                    canvas.height = Math.max(1, Math.round(image.height * scale));
+                    var ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    var data = canvas.toDataURL('image/jpeg', 0.7);
+                    if (data.length > 500 * 1024) {
+                        setStatus('Chữ ký vẫn quá lớn sau khi nén (tối đa 500KB). Vui lòng chọn ảnh nhỏ hơn.', true);
+                        return;
+                    }
+                    rep.signatureData = data;
+                    img.src = data;
+                    img.hidden = false;
+                    setStatus('');
+                    renderSaveBar();
+                };
+                image.src = reader.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        function buildDenom() {
+            var body = document.getElementById('denom-rows');
+            FACES.forEach(function(face, i) {
+                var tr = document.createElement('tr');
+                var qty = document.createElement('input');
+                qty.type = 'number';
+                qty.min = '0';
+                qty.step = '1';
+                qty.value = '0';
+                qty.dataset.qty = String(i);
+                qty.addEventListener('input', function() { lineTotals(); });
+                [String(i + 1), 'Loại ' + face.toLocaleString('vi-VN')].forEach(function(text) {
+                    var td = document.createElement('td');
+                    td.textContent = text;
+                    tr.appendChild(td);
+                });
+                var qtd = document.createElement('td');
+                qtd.className = 'num';
+                qtd.appendChild(qty);
+                var amt = document.createElement('td');
+                amt.className = 'num';
+                amt.dataset.amt = String(i);
+                amt.textContent = vnd(0);
+                tr.appendChild(qtd);
+                tr.appendChild(amt);
+                body.appendChild(tr);
+            });
+        }
+        function applyCount(count) {
+            savedCount = count;
+            document.getElementById('saved-banner').hidden = !count;
+            if (!count) return;
+            document.getElementById('hour').value = count.countHour;
+            document.getElementById('minute').value = count.countMinute;
+            (count.quantities || []).forEach(function(n, i) {
+                var input = document.querySelector('[data-qty="' + i + '"]');
+                if (input) input.value = n;
+            });
+            document.getElementById('reason-thua').value = count.reasonThua || '';
+            document.getElementById('reason-thieu').value = count.reasonThieu || '';
+            document.getElementById('conclusion').value = count.conclusion || '';
+            (count.reps || []).forEach(function(saved, i) {
+                if (!reps[i]) return;
+                reps[i].name = saved.name || '';
+                reps[i].email = saved.email || '';
+                reps[i].signatureUrl = saved.signatureUrl || '';
+                reps[i].signatureData = '';
+            });
+            renderDateLine();
+            renderReps();
+            lineTotals();
+        }
+        function fillRepOptions() {
+            var company = selectedCompany();
+            var staff = employees.filter(function(emp) { return empOf(emp, company) && isStaffAccountant(emp); });
+            var pool = staff.length ? staff : employees.filter(function(emp) { return empOf(emp, company); });
+            reps[0].options = pool.map(function(emp) { return { name: emp.name, email: emp.email, signatureUrl: '' }; });
+            if (staff.length === 1 && !savedCount) {
+                reps[0].name = staff[0].name;
+                reps[0].email = staff[0].email;
+            } else if (!savedCount) {
+                reps[0].name = '';
+                reps[0].email = '';
+            }
+            var map = [
+                { index: 1, person: approvers && approvers.accountant },
+                { index: 2, person: approvers && approvers.treasurer },
+                { index: 3, person: approvers && approvers.legalRep }
+            ];
+            map.forEach(function(item) {
+                var person = item.person || {};
+                reps[item.index].options = person.name ? [{ name: person.name, email: person.email || '', signatureUrl: person.signature || '' }] : [];
+                if (!savedCount || !reps[item.index].name) {
+                    reps[item.index].name = person.name || '';
+                    reps[item.index].email = person.email || '';
+                    reps[item.index].signatureUrl = person.signature || reps[item.index].signatureUrl || '';
+                }
+            });
+            shareSignatures();
+            renderReps();
+            renderSaveBar();
+        }
+        async function loadBook() {
+            var company = selectedCompany();
+            var endDate = document.getElementById('end-date').value;
+            book = null;
+            savedCount = null;
+            document.getElementById('saved-banner').hidden = true;
+            pages.book = 0;
+            pages.pending = 0;
+            if (!company || !endDate) {
+                renderBook();
+                return;
+            }
+            if (endDate > todayVN()) {
+                setStatus('Ngày kết thúc không được ở tương lai.', true);
+                renderBook();
+                return;
+            }
+            setStatus('Đang tải sổ quỹ…');
+            var payload = { companyName: company.name, companyKey: company.key, endDate: endDate, callerEmail: user.email, repEmail: reps[0].email || '' };
+            var bookRes = await post(Object.assign({ action: 'getCashBook' }, payload));
+            if (!bookRes.success) {
+                setStatus(bookRes.message || 'Không tải được sổ quỹ.', true);
+                renderBook();
+                return;
+            }
+            var countRes = await post(Object.assign({ action: 'getCashCount' }, payload));
+            if (!countRes.success) {
+                setStatus(countRes.message || 'Không tải được bảng kiểm kê.', true);
+                renderBook();
+                return;
+            }
+            book = bookRes.data;
+            setStatus('');
+            applyCount(countRes.data && countRes.data.count);
+            fillRepOptions();
+            renderBook();
+        }
+        async function save() {
+            var gap = firstGap();
+            if (gap || !book) return;
+            if (savedCount && !confirm('Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.')) return;
+            var company = selectedCompany();
+            var totals = lineTotals();
+            document.getElementById('save-btn').disabled = true;
+            setStatus('Đang lưu…');
+            var result = await post({
+                action: 'saveCashCount',
+                companyName: company.name,
+                companyKey: company.key,
+                endDate: document.getElementById('end-date').value,
+                callerEmail: user.email,
+                countHour: Number(document.getElementById('hour').value),
+                countMinute: Number(document.getElementById('minute').value),
+                quantities: totals.qty,
+                bookBalance: book.bookBalance,
+                reasonThua: document.getElementById('reason-thua').value,
+                reasonThieu: document.getElementById('reason-thieu').value,
+                conclusion: document.getElementById('conclusion').value,
+                reps: reps.map(function(rep) {
+                    return { role: rep.key, name: rep.name, email: rep.email, signatureUrl: rep.signatureUrl, signatureData: rep.signatureData || '' };
+                })
+            });
+            if (!result.success) {
+                setStatus(result.message || 'Không lưu được.', true);
+                renderSaveBar();
+                return;
+            }
+            setStatus('Đã lưu bảng kiểm kê.');
+            await loadBook();
+        }
+        async function init() {
+            var end = document.getElementById('end-date');
+            end.max = todayVN();
+            end.value = todayVN();
+            buildDenom();
+            renderDateLine();
+            var companyRes = await post({ action: 'getCompanies' });
+            if (!companyRes.success) {
+                setStatus(companyRes.message || 'Không tải được danh sách công ty.', true);
+                return;
+            }
+            companies = (companyRes.data.companies_data || []).map(function(row) {
+                return { name: row['Tên công ty'], code: row['Mã công ty'], key: row['Mã định danh'] };
+            });
+            var sel = document.getElementById('company');
+            companies.forEach(function(company) {
+                var opt = document.createElement('option');
+                opt.value = company.key || company.name;
+                opt.textContent = company.name;
+                sel.appendChild(opt);
+            });
+            var empRes = await post({ action: 'getEmployees' });
+            employees = (empRes.success && empRes.data && empRes.data.employees) || [];
+            sel.addEventListener('change', async function() {
+                var company = selectedCompany();
+                approvers = null;
+                reps.forEach(function(rep) { rep.name = ''; rep.email = ''; rep.signatureUrl = ''; rep.signatureData = ''; });
+                if (company) {
+                    var res = await post({ action: 'getCompanyApprovers', companyName: company.name, companyKey: company.key });
+                    approvers = res.success && res.data ? res.data.approvers : null;
+                    if (!res.success) setStatus(res.message || 'Không tải được người đại diện.', true);
+                }
+                fillRepOptions();
+                loadBook();
+            });
+            end.addEventListener('change', function() { renderDateLine(); loadBook(); });
+            document.getElementById('hour').addEventListener('input', function() { renderDateLine(); renderSaveBar(); });
+            document.getElementById('minute').addEventListener('input', function() { renderDateLine(); renderSaveBar(); });
+            document.getElementById('book-prev').addEventListener('click', function() { if (pages.book > 0) { pages.book--; renderBook(); } });
+            document.getElementById('book-next').addEventListener('click', function() { pages.book++; renderBook(); });
+            document.getElementById('pending-prev').addEventListener('click', function() { if (pages.pending > 0) { pages.pending--; renderBook(); } });
+            document.getElementById('pending-next').addEventListener('click', function() { pages.pending++; renderBook(); });
+            document.getElementById('save-btn').addEventListener('click', save);
+            document.getElementById('print-btn').addEventListener('click', function() { window.print(); });
+            renderBook();
+        }
+        init();
+    </script>
+</body>
+</html>

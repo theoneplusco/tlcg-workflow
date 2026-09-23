@@ -549,6 +549,15 @@ function doPost(e) {
       case 'fetchSignatureImage':
         Logger.log('✅ Matched fetchSignatureImage case');
         return handleFetchSignatureImage(requestBody);
+      case 'getCompanies':
+        return handleGetCompanies();
+      case 'getCashBook':
+      case 'getCashCount':
+      case 'saveCashCount':
+        // Handlers live in TLCG_CASH_BOOK.gs (same Cash project).
+        if (normalizedAction === 'getCashBook') return handleGetCashBook(requestBody);
+        if (normalizedAction === 'getCashCount') return handleGetCashCount(requestBody);
+        return handleSaveCashCount(requestBody);
       case 'createVoucherUploadSession':
         return handleCreateVoucherUploadSession_(requestBody);
       case 'finalizeVoucherUpload':

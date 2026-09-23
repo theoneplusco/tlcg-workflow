@@ -3343,7 +3343,7 @@
                 </div>
 
                 <!-- Top-line Summary: Voucher vs Cash Book -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div class="grid grid-cols-1 gap-4 mb-6">
                     <!-- Voucher Topline -->
                     <div class="form-section-container">
                         <div class="p-4 flex items-center justify-between">
@@ -3364,28 +3364,6 @@
                                 class="inline-flex items-center gap-2 bg-purple-50 text-purple-700 hover:bg-purple-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition">
                                 <span>Open Vouchers</span>
                                 <i class="fas fa-arrow-up-right-from-square text-xs"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Cash Book Topline -->
-                    <div class="form-section-container">
-                        <div class="p-4 flex items-center justify-between">
-                            <div>
-                                <p class="text-xs font-semibold text-sky-600 uppercase tracking-wide mb-1">
-                                    Cash Book Summary
-                                </p>
-                                <p class="text-sm text-slate-600">
-                                    Balance today: <span id="topline-cashbook-balance">145,000,000 ₫</span> •
-                                    Entries today: <span id="topline-cashbook-entries">1</span>
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onclick="showToast('Cash Book detail view will be implemented in the next phase.', 'info')"
-                                class="inline-flex items-center gap-2 bg-sky-50 text-sky-700 hover:bg-sky-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition">
-                                <span>View Cash Book</span>
-                                <i class="fas fa-up-right-from-square text-xs"></i>
                             </button>
                         </div>
                     </div>
@@ -3485,7 +3463,7 @@
                         <!-- Cash Book (Sổ quỹ) Card -->
                         <button
                             type="button"
-                            onclick="showToast('Cash Book detail view will be implemented in the next phase.', 'info')"
+                            onclick="window.open('cash_book.html', '_blank')"
                             class="w-full text-left form-section-container hover:shadow-xl transition transform hover:-translate-y-0.5">
                             <div class="p-6 flex items-center justify-between">
                                 <div>
@@ -3493,10 +3471,10 @@
                                         Cash Book (Sổ quỹ)
                                     </p>
                                     <h3 class="text-lg font-bold text-slate-800 mb-1">
-                                        Cash Book Summary
+                                        Open Cash Book
                                     </h3>
                                     <p class="text-sm text-slate-500">
-                                        <span data-i18n="ixCashCardDesc">Màn hình chi tiết sổ quỹ (bảng giao dịch, lọc, phân trang) sẽ được mở rộng sau.</span>
+                                        <span data-i18n="ixCashCardDesc">Mở sổ quỹ và bảng kiểm kê quỹ của công ty đã chọn.</span>
                                     </p>
                                 </div>
                                 <div class="flex items-center gap-3">
@@ -3968,7 +3946,7 @@
                 ixJobTitle: 'Chức vụ',
                 ixPhone: 'Điện thoại',
                 ixVoucherCardDesc: 'Xem, tạo mới và theo dõi toàn bộ phiếu thu/chi trong tab mới.',
-                ixCashCardDesc: 'Màn hình chi tiết sổ quỹ (bảng giao dịch, lọc, phân trang) sẽ được mở rộng sau.',
+                ixCashCardDesc: 'Mở sổ quỹ và bảng kiểm kê quỹ của công ty đã chọn.',
                 ixPartyA: 'Bên A',
                 ixPartyB: 'Bên B',
                 ixPhSupplier: 'Nhà cung cấp / Supplier…',
@@ -4008,7 +3986,7 @@
                 ixJobTitle: 'Job title',
                 ixPhone: 'Phone',
                 ixVoucherCardDesc: 'View, create and track all receipt/payment vouchers in a new tab.',
-                ixCashCardDesc: 'The detailed cash book screen (transaction table, filters, pagination) will be expanded later.',
+                ixCashCardDesc: 'Open the cash book and cash count for the selected company.',
                 ixPartyA: 'Party A',
                 ixPartyB: 'Party B',
                 ixPhSupplier: 'Supplier…',

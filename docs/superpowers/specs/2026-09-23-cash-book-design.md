@@ -18,7 +18,13 @@ Print shows the Mẫu 08a-TT form first (Thông tư 99/2025/TT-BTC), then the bo
 
 The page uses the same signed-in user as the other workflow pages (`tlc_current_user`). Anyone who can open Cash & Vouchers can view the book and the count.
 
-Save is allowed only when the signed-in user is an admin, or their email is one of the four representatives on the form (Đại diện kế toán, Kế toán trưởng, Thủ quỹ, Giám đốc). The button and `saveCashCount` both enforce this. Anyone else sees the form and the message “Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.”
+`saveCashCount` does not trust the representative list sent by the browser. It looks up the caller’s email on Master Employee. Save is allowed when any of these is true:
+
+- That employee row has `isAdmin` true.
+- The email is Master Company column I (Kế toán trưởng), column M (Thủ quỹ), or column E (Giám đốc) for the selected company.
+- The email is the selected Đại diện kế toán, and that same email is an active employee of the selected company.
+
+Anyone else sees the form and the message “Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.” The button uses the same rule.
 
 ## Page order
 
@@ -45,9 +51,9 @@ Voucher_History appends a new row for every action on a voucher. `appendHistory_
 
 A voucher is a candidate when all of these are true:
 
-- Company matches the selected company. Prefer Voucher_History column D (company key) when the picker has a key. Otherwise match column C to the company name.
-- The created date is on or before the end date. Compare calendar dates in Asia/Ho_Chi_Minh. A voucher created on the end date counts for that whole day. There is no start cutoff. `due_date` and approval time are not used.
-- Voucher number, type (Thu or Chi), and amount are all present on the latest row.
+- Company matches the selected company. When the voucher’s column D has a company key, that key must equal the selected company key. When column D is blank, column C must match the company name.
+- The created date is on or before the end date. A Date in column H is formatted in Asia/Ho_Chi_Minh. A text date is read as `yyyy-MM-dd` or `dd/MM/yyyy`. A voucher created on the end date counts for that whole day. There is no start cutoff. `due_date` and approval time are not used.
+- Voucher number is present. Type contains `THU` (Thu) or `CHI` (Chi); any other type is out. Amount parses with the rule above and is greater than zero.
 
 Candidates then split:
 
@@ -55,7 +61,7 @@ Candidates then split:
 - **Pending** (Phiếu chưa vào quỹ): latest status is `Pending`, `Đang treo`, `Chờ duyệt`, `Đang duyệt (1/3)`, or `Đang duyệt (2/3)`.
 - **Out**: latest status or action is `Rejected` or `Đã từ chối`, or the latest status is empty or anything else. A voucher rejected on a later row is out, even if an earlier row was pending.
 
-**Số dư theo sổ quỹ** is book Thu minus book Chi. Pending amounts are not in that sum and are not in line III. An empty book has a balance of 0, and the count form still opens. Pending totals still show when the book is empty.
+**Số dư theo sổ quỹ** is book Thu minus book Chi. Pending Thu minus pending Chi is the pending net. Pending amounts are not in the book sum and are not in line III. An empty book has a balance of 0, and the count form still opens. Pending totals still show when the book is empty.
 
 List columns, newest created date first: voucher number, created date, Thu/Chi, description, amount, status. The created date is the earliest column H for that voucher number.
 
@@ -113,8 +119,8 @@ Signatures:
 
 - Rows 2–4 use the signature URL already on Master Company (columns F, J, and N). No new upload is required when that URL exists.
 - A role with a name and no signature URL needs an upload before save.
-- Row 1 always needs an upload. Master Employee has no signature column.
-- One image per person. If that person holds two roles, the same URL is used on both rows.
+- Row 1 needs an upload unless that person’s email already has a Master Company signature on another row. One image per person. The same URL is used on every row that person holds.
+- The page shows a Master Company signature through `fetchSignatureImage`, not by pointing an image tag at the Drive link.
 - This page does not run the 75% similarity check.
 
 Accepted uploads follow `.cursor/rules/signature-upload.mdc` (PNG or JPG, max 800×400, JPEG quality 0.7, white canvas fill, 500 KB after compression). A new upload goes through `uploadFilesToDrive_` into a `Cash_Count` subfolder via `/api/voucher`, not `/api/drive-upload`. The sheet stores the file URL. Voucher signatures stored as base64 in MetaJSON are not copied into this sheet.
@@ -132,7 +138,7 @@ The header “Chúng tôi gồm” lists all four names with those roles.
 
 The screen shows one current count per company and end date. The key is the company key (company name when the key is missing) plus the end date `YYYY-MM-DD`.
 
-Saving appends a new row with `row_status` `current`. If a current row already exists for that key, the user must confirm “Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.” Confirm marks the previous row `replaced` and appends the new row. Cancel leaves the sheet unchanged. Rows are not deleted. Voucher_History is not changed. This is not a voucher status change, so it does not call `_appendAuditLog_`. The replaced rows are the history.
+Saving appends a new row with `row_status` `current`. If a current row already exists for that key, the user must confirm “Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.” Confirm marks every current row for that key `replaced` and appends the new row. If two saves overlap and more than one `current` row remains, the older `saved_at` rows are marked `replaced`. Cancel leaves the sheet unchanged. Rows are not deleted. Voucher_History is not changed. This is not a voucher status change, so it does not call `_appendAuditLog_`. The replaced rows are the history.
 
 Save is blocked, with a message that names the missing piece, when any of these is missing: company, end date, a valid hour and minute, one of the four names, or a signature for a role that has none on file. The caller must also be allowed to save. Thừa, Thiếu, and Kết luận may be blank.
 
@@ -189,7 +195,7 @@ The browser print dialog prints the Mẫu 08a form first, then every book vouche
 
 ## Deploy
 
-The HTML ships with the Ubuntu app (`deploy/update.sh`). `TLCG_CASH_BACKEND.gs` is pasted only into the Cash Apps Script project, then deployed as a new version of the existing web app, Execute as: Me. It is not pasted into Core or P2P.
+The HTML ships with the Ubuntu app (`deploy/update.sh`). Cash book handlers live in `TLCG_CASH_BOOK.gs`. In the Cash Apps Script project, add that file with **+**, paste it, keep the existing `doPost` routes in `TLCG_CASH_BACKEND.gs`, then deploy a new version of the existing web app, Execute as: Me. Neither file is pasted into Core or P2P. Do not create a second web app.
 
 ## Out of scope
 
