@@ -163,6 +163,26 @@
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
+        /* Qty stays a normal number field: type a value, or use the arrows. */
+        input.item-qty {
+            -moz-appearance: auto;
+            appearance: auto;
+        }
+        input.item-qty::-webkit-inner-spin-button,
+        input.item-qty::-webkit-outer-spin-button {
+            -webkit-appearance: inner-spin-button;
+            opacity: 1;
+            margin: 0;
+            cursor: pointer;
+        }
+        input.item-price.price-missing-flag {
+            box-shadow: 0 0 0 2px #FF3B30;
+            background: rgba(255,59,48,0.10);
+        }
+        input.item-price.price-zero-flag {
+            box-shadow: 0 0 0 2px #FF9500;
+            background: rgba(255,149,0,0.10);
+        }
 
         /* ── Priority pills ──────────────────────────────────────── */
         .priority-group { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -199,7 +219,7 @@
         }
         .items-table .col-no    { width: 36px;  text-align: center; color: var(--text-secondary); font-size: 12px; }
         .items-table .col-del   { width: 40px;  text-align: center; }
-        .items-table .col-qty   { width: 80px;  }
+        .items-table .col-qty   { width: 108px; }
         .items-table .col-unit  { width: 80px;  }
         .items-table .col-price { width: 120px; }
         .items-table .col-total { width: 120px; font-weight: 500; color: var(--text-primary); padding-right: 10px; }
@@ -549,6 +569,7 @@
         .toast { background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.15); padding: 12px 18px; font-size: 14px; min-width: 260px; max-width: 420px; pointer-events: auto; animation: toastIn 0.3s ease; border-left: 4px solid #ccc; }
         .toast.success { border-left-color: var(--success); }
         .toast.error   { border-left-color: var(--error); }
+        .toast.warning { border-left-color: #FF9500; }
         .toast.info    { border-left-color: var(--primary); }
         @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -2235,11 +2256,24 @@
                 });
             });
             if (badPrice) { showToast(`Đơn giá không được âm cho ${badPrice}.`, 'error', 4000); return; }
-            // Clear price error highlights when all good
             document.querySelectorAll('.item-price').forEach(el => {
                 el.style.boxShadow = '';
                 el.style.borderColor = '';
             });
+            const priceFlags = collectPriceFlags();
+            if (priceFlags.missing.length) {
+                const shown = priceFlags.missing.slice(0, 3).map(n => `"${n}"`).join(', ');
+                const more = priceFlags.missing.length > 3 ? ` và ${priceFlags.missing.length - 3} dòng khác` : '';
+                showToast(`Chưa nhập đơn giá cho ${shown}${more}. Nhập số tiền, hoặc nhập 0 nếu là hàng tặng.`, 'error', 6000);
+                const first = document.querySelector('input.item-price.price-missing-flag');
+                if (first) first.focus();
+                return;
+            }
+            if (priceFlags.zero.length) {
+                const shown = priceFlags.zero.slice(0, 3).map(n => `"${n}"`).join(', ');
+                const more = priceFlags.zero.length > 3 ? ` và ${priceFlags.zero.length - 3} dòng khác` : '';
+                showToast(`Đơn giá = 0 cho ${shown}${more}. Kiểm tra lại nếu đây không phải hàng tặng.`, 'warning', 6000);
+            }
             if (!document.getElementById('purpose').value.trim()) { showToast('Vui lòng nhập mục đích mua hàng.', 'error'); return; }
         }
         if (step === 3) {
@@ -2380,21 +2414,21 @@
         tr.dataset.section = sectionId;
         const descCell = sectionId === 'hang-hoa'
             ? `<td class="goods-wrap"><input type="text" class="item-desc" placeholder="Tìm hoặc nhập tên hàng..." autocomplete="off"
-                   oninput="filterGoodsDropdown(${n}); onDescManualEdit(${n})"
+                   oninput="filterGoodsDropdown(${n}); onDescManualEdit(${n}); flagZeroPriceRow(this.closest('tr'))"
                    onfocus="filterGoodsDropdown(${n})"
                    onblur="hideGoodsDropdown(${n})">
                <div class="goods-dropdown" id="goods-drop-${n}" style="display:none;"></div></td>`
-            : `<td><input type="text" class="item-desc" placeholder="Mô tả..."></td>`;
+            : `<td><input type="text" class="item-desc" placeholder="Mô tả..." oninput="flagZeroPriceRow(this.closest('tr'))"></td>`;
         tr.innerHTML = `
             <td class="col-no">${tbody.children.length + 1}</td>
             ${descCell}
-            <td class="col-qty"><input type="number" class="item-qty" value="1" min="1" oninput="recalcRow(${n}, '${sectionId}'); clearMoqError(this.closest('tr'))"></td>
+            <td class="col-qty"><input type="number" class="item-qty" value="1" min="1" step="1" inputmode="decimal" oninput="recalcRow(${n}, '${sectionId}'); clearMoqError(this.closest('tr'))"></td>
             <td class="col-unit"><select class="item-unit">
                 <option>Cái</option><option>Bộ</option><option>Kg</option>
                 <option>Lít</option><option>m²</option><option>Chiếc</option>
                 <option>Thùng</option><option>Gói</option><option>Dịch vụ</option>
             </select></td>
-            <td class="col-price"><input type="number" class="item-price" value="0" min="0" step="1000" oninput="recalcRow(${n}, '${sectionId}'); if(+this.value>=0){this.style.boxShadow='';this.style.borderColor='';}"></td>
+            <td class="col-price"><input type="number" class="item-price" value="" min="0" step="1000" inputmode="decimal" placeholder="Nhập đơn giá" oninput="recalcRow(${n}, '${sectionId}'); flagZeroPriceRow(this.closest('tr'))"></td>
             <td class="col-total item-total" data-value="0">0 ₫</td>
             <td class="col-note"><input type="text" class="item-note" placeholder="Ghi chú..."></td>
             <td class="col-del"><button type="button" class="del-btn" onclick="removeSectionRow('item-row-${n}','${sectionId}')" title="Xóa dòng" aria-label="Xóa dòng"><i class="fas fa-times" aria-hidden="true"></i></button></td>
@@ -2423,7 +2457,41 @@
         const total = qty * price;
         tr.querySelector('.item-total').textContent   = formatMoney(total);
         tr.querySelector('.item-total').dataset.value = total;
+        flagZeroPriceRow(tr);
         recalcSection(sectionId);
+    }
+
+    function flagZeroPriceRow(tr) {
+        if (!tr) return;
+        const desc = tr.querySelector('.item-desc')?.value.trim() || '';
+        const priceInput = tr.querySelector('.item-price');
+        if (!priceInput) return;
+        const raw = priceInput.value.trim();
+        const price = parseFloat(raw);
+        const missing = desc.length > 0 && (raw === '' || isNaN(price));
+        const zero = desc.length > 0 && !missing && price === 0;
+        priceInput.classList.toggle('price-missing-flag', missing);
+        priceInput.classList.toggle('price-zero-flag', zero);
+        priceInput.title = missing
+            ? 'Chưa nhập đơn giá.'
+            : (zero ? 'Đơn giá đang là 0. Kiểm tra lại nếu đây không phải hàng tặng.' : '');
+    }
+
+    function collectPriceFlags() {
+        const missing = [];
+        const zero = [];
+        SECTIONS.forEach(s => {
+            document.querySelectorAll('#tbody-' + s.id + ' tr').forEach(tr => {
+                flagZeroPriceRow(tr);
+                const desc = tr.querySelector('.item-desc')?.value.trim();
+                if (!desc) return;
+                const raw = (tr.querySelector('.item-price')?.value || '').trim();
+                const price = parseFloat(raw);
+                if (raw === '' || isNaN(price)) missing.push(desc);
+                else if (price === 0) zero.push(desc);
+            });
+        });
+        return { missing, zero };
     }
 
     function recalcSection(sectionId) {
@@ -2500,6 +2568,7 @@
         clearMoqError(tr);
         hideGoodsDropdown(n);
         recalcRow(n, 'hang-hoa');
+        flagZeroPriceRow(tr);
     }
 
     function onDescManualEdit(n) {
@@ -3128,6 +3197,16 @@
 
     async function submitForm() {
         if (isSubmitting) return;
+        const priceFlags = collectPriceFlags();
+        if (priceFlags.missing.length) {
+            const shown = priceFlags.missing.slice(0, 3).map(n => `"${n}"`).join(', ');
+            const more = priceFlags.missing.length > 3 ? ` và ${priceFlags.missing.length - 3} dòng khác` : '';
+            showToast(`Chưa nhập đơn giá cho ${shown}${more}. Nhập số tiền, hoặc nhập 0 nếu là hàng tặng.`, 'error', 6000);
+            goToStep(2);
+            const first = document.querySelector('input.item-price.price-missing-flag');
+            if (first) first.focus();
+            return;
+        }
         isSubmitting = true;
         const btn = document.getElementById('submit-btn');
         const orig = btn.innerHTML;
