@@ -24,10 +24,10 @@
   ],
   "functions": {
     "api/voucher.js": {
-      "maxDuration": 30
+      "maxDuration": 120
     },
     "api/voucher/[action].js": {
-      "maxDuration": 30
+      "maxDuration": 120
     }
   },
   "headers": [

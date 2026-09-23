@@ -16,23 +16,119 @@ export const config = {
 import busboy from 'busboy';
 
 // ==================== RATE LIMITING ====================
-// In-memory rate limit tracking (IP -> { count, resetTime })
+// In-memory rate limit tracking (key -> { count, resetTime })
 const requestCounts = new Map();
-const RATE_LIMIT = 30; // requests per minute
+
+// Requests per minute per client.
+//
+// This was 30, which is unsafe for an office: staff behind one internet
+// connection share a public IP, so the limit applied to the whole company
+// rather than to a person. With 50-100 users, a handful of people opening
+// the voucher list would exhaust 30/min collectively and lock everyone out.
+//
+// Raised, and the key is now per user where we can identify one (see
+// rateLimitKey) so one busy person cannot block their colleagues.
+// Override without redeploying via API_RATE_LIMIT.
+const RATE_LIMIT = Number(process.env.API_RATE_LIMIT) || 300;
 const RATE_WINDOW = 60000; // 1 minute in ms
+
+// Entries are only touched when that client calls again, so an untouched key
+// would live forever on a long-running server (Vercel recycled the instance;
+// systemd does not). Sweep expired entries periodically.
+const MAX_TRACKED_CLIENTS = 10000;
+
+function sweepExpired(now) {
+    for (const [key, rec] of requestCounts) {
+        if (now > rec.resetTime) requestCounts.delete(key);
+    }
+    // Pathological growth (spoofed headers): drop everything rather than
+    // grow without bound. Costs one window of accounting, never correctness.
+    if (requestCounts.size > MAX_TRACKED_CLIENTS) requestCounts.clear();
+}
+
+/**
+ * Identify the caller for rate-limiting.
+ *
+ * Prefer the signed-in user's email so the limit is per person. Fall back to
+ * IP, which behind a shared office connection or Cloudflare is one bucket for
+ * everyone — hence the generous RATE_LIMIT above.
+ */
+function rateLimitKey(req, ip) {
+    const body = req.body;
+    if (body && typeof body === 'object') {
+        const email = body.userEmail || body.approverEmail || body.requestorEmail;
+        if (email && typeof email === 'string') return 'user:' + email.toLowerCase().trim();
+    }
+    return 'ip:' + ip;
+}
+
+// Short-lived read cache. /api/voucher is POST (and some GET), so HTTP
+// Cache-Control is not honored by Cloudflare. This Map lives for the life
+// of the Node process (one Ubuntu process; recycled on Vercel).
+const readCache = new Map();
+const READ_CACHE_TTL_MS = {
+    getVoucherSummary: 30 * 1000,
+    getEmployees: 60 * 1000,
+    getCompanyApprovers: 60 * 1000,
+};
+const READ_CACHE_MAX = 500;
+const VOUCHER_MUTATIONS = new Set([
+    'sendApprovalEmail',
+    'approveVoucher',
+    'rejectVoucher',
+    'bulkApprove',
+    'acknowledgeReceipt',
+]);
+
+function readCacheKey(action, source) {
+    const ttl = READ_CACHE_TTL_MS[action];
+    if (!ttl) return null;
+    const src = source || {};
+    const field = (name) => (src[name] == null ? '' : String(src[name]).trim().toLowerCase());
+    if (action === 'getEmployees') return 'getEmployees';
+    if (action === 'getCompanyApprovers') {
+        return 'getCompanyApprovers:' + field('companyName') + '|' + field('companyKey') + '|' + field('company');
+    }
+    return 'getVoucherSummary:' + field('callerEmail') + '|' + field('userEmail') + '|' + field('email')
+        + '|' + field('callerRole') + '|' + field('role') + '|' + field('isAdmin');
+}
+
+function readCacheGet(key) {
+    const hit = readCache.get(key);
+    if (!hit) return null;
+    if (Date.now() > hit.expires) {
+        readCache.delete(key);
+        return null;
+    }
+    return hit.body;
+}
+
+function readCacheSet(key, action, body) {
+    if (readCache.size > READ_CACHE_MAX) readCache.clear();
+    readCache.set(key, { expires: Date.now() + READ_CACHE_TTL_MS[action], body });
+}
+
+function bustVoucherSummaryCache() {
+    for (const key of readCache.keys()) {
+        if (key.startsWith('getVoucherSummary:')) readCache.delete(key);
+    }
+}
 
 /**
  * Check if client has exceeded rate limit
- * @param {string} ip - Client IP address
+ * @param {string} key - Caller identity (user email when known, else IP)
  * @returns {boolean} - True if within limit, false if exceeded
  */
-function checkRateLimit(ip) {
+function checkRateLimit(key) {
     const now = Date.now();
-    const record = requestCounts.get(ip);
+
+    if (Math.random() < 0.01) sweepExpired(now);
+
+    const record = requestCounts.get(key);
 
     if (!record || now > record.resetTime) {
         // No record or window expired - reset counter
-        requestCounts.set(ip, { count: 1, resetTime: now + RATE_WINDOW });
+        requestCounts.set(key, { count: 1, resetTime: now + RATE_WINDOW });
         return true;
     }
 
@@ -87,13 +183,18 @@ async function parseFormData(req) {
 
 export default async function handler(req, res) {
   // ==================== RATE LIMITING CHECK ====================
-  const clientIp = req.headers['x-forwarded-for'] ||
+  // Cloudflare sits in front, so CF-Connecting-IP is the real visitor.
+  // x-forwarded-for can carry a list; take the first (original client) entry.
+  const clientIp = req.headers['cf-connecting-ip'] ||
+                   (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
                    req.headers['x-real-ip'] ||
                    req.socket?.remoteAddress ||
                    'unknown';
 
-  if (!checkRateLimit(clientIp)) {
-    console.warn(`[Proxy] Rate limit exceeded for IP: ${clientIp}`);
+  const limitKey = rateLimitKey(req, clientIp);
+
+  if (!checkRateLimit(limitKey)) {
+    console.warn(`[Proxy] Rate limit exceeded for: ${limitKey}`);
     return res.status(429).json({
       success: false,
       message: 'Rate limit exceeded. Please try again later.',
@@ -277,6 +378,16 @@ export default async function handler(req, res) {
   try {
     // Handle GET requests
     if (req.method === 'GET') {
+      const getAction = req.query.action || 'unknown';
+      const getCacheKey = readCacheKey(getAction, req.query || {});
+      if (getCacheKey) {
+        const cached = readCacheGet(getCacheKey);
+        if (cached) {
+          console.log('[Proxy GET Cache] hit ' + getCacheKey);
+          return res.status(200).json(cached);
+        }
+      }
+
       // Forward GET request to GAS with query parameters
       const queryParams = new URLSearchParams(req.query);
       const gasUrl = `${GAS_URL}?${queryParams.toString()}`;
@@ -291,7 +402,6 @@ export default async function handler(req, res) {
       });
       
       const responseText = await response.text();
-      const getAction = req.query.action || 'unknown';
 
       if (!response.ok) {
         console.error(`[Proxy GET Error] ${response.status}: ${response.statusText}`);
@@ -324,6 +434,9 @@ export default async function handler(req, res) {
       }
 
       console.log(`[Proxy GET Success] action: ${getAction}`);
+      if (getCacheKey && data && data.success !== false) {
+        readCacheSet(getCacheKey, getAction, data);
+      }
       return res.status(200).json(data);
     }
     
@@ -509,6 +622,21 @@ export default async function handler(req, res) {
       if (contentType && contentType !== 'multipart/form-data') {
         headers['Content-Type'] = contentType;
       }
+
+      const cacheSource = Object.assign(
+        {},
+        req.query || {},
+        parsedBody && typeof parsedBody === 'object' ? parsedBody : {},
+        actualPayload && typeof actualPayload === 'object' ? actualPayload : {}
+      );
+      const postCacheKey = readCacheKey(finalAction, cacheSource);
+      if (postCacheKey) {
+        const cached = readCacheGet(postCacheKey);
+        if (cached) {
+          console.log('[Proxy POST Cache] hit ' + postCacheKey);
+          return res.status(200).json(cached);
+        }
+      }
       
       console.log('[Proxy POST] Sending request to backend...');
       const fetchStartTime = Date.now();
@@ -562,6 +690,10 @@ export default async function handler(req, res) {
       try {
         data = JSON.parse(responseText); // JSON.parse is not async, no await needed
         console.log(`[Proxy POST Success] action: ${finalAction}`);
+        if (data && data.success !== false) {
+          if (postCacheKey) readCacheSet(postCacheKey, finalAction, data);
+          if (VOUCHER_MUTATIONS.has(finalAction)) bustVoucherSummaryCache();
+        }
       } catch (parseError) {
         console.error('[Proxy POST Error] Failed to parse GAS response as JSON:', parseError);
         console.error('[Proxy POST Error] Response text:', responseText.substring(0, 500));

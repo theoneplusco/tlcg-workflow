@@ -3614,7 +3614,11 @@
         let expenseItems = [];
         let approvalHistory = [];
         let autoSaveTimeout = null;
-        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+        // Attachment ceiling at file-pick time. Must match the submit-time limit
+        // in sendForApproval(), otherwise a file is accepted here and silently
+        // dropped later. Apps Script truncates a form field at ~1 MiB and base64
+        // inflates by ~4/3, so the raw file must stay well under that.
+        const MAX_FILE_SIZE = 700 * 1024; // 700 KB
         const AUTO_SAVE_DELAY = 2000; // 2 seconds
         let currentStep = 1; // Current step in the stepper
         let highestStepReached = 1; // Track the highest step user has reached
@@ -3932,7 +3936,7 @@
         // File Validation
         function validateFile(file) {
             if (file.size > MAX_FILE_SIZE) {
-                showToast(`File "${file.name}" quá lớn. Kích thước tối đa là 10MB`, 'error');
+                showToast(`File "${file.name}" quá lớn (${(file.size / 1024).toFixed(0)} KB). Tối đa ${Math.round(MAX_FILE_SIZE / 1024)} KB — vui lòng nén ảnh trước khi tải lên.`, 'error');
                 return false;
             }
             return true;
@@ -5367,10 +5371,6 @@
             if (!next.length) return;
             const fragmentHtml = renderVoucherRows(next, renderedVoucherCount);
             voucherList.insertAdjacentHTML('beforeend', fragmentHtml);
-            next.forEach((voucher, index) => {
-                const absoluteIndex = renderedVoucherCount + index;
-                loadVoucherApprovalStatus(voucher, `voucher-${voucher.voucherNumber || absoluteIndex}`);
-            });
             renderedVoucherCount += next.length;
         }
 
@@ -9211,9 +9211,23 @@
             // Service Accounts have no Drive storage quota on personal folders — must use GAS/DriveApp.
             const useDriveAPI = false;
 
-            // Limits for base64-in-payload upload via GAS doPost
-            const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB per file
-            const MAX_TOTAL_PAYLOAD_SIZE = 30 * 1024 * 1024; // 30MB total
+            // Limits for base64-in-payload upload via GAS doPost.
+            //
+            // Apps Script silently truncates a single form field at ~1 MiB. Past
+            // that the JSON arrives cut mid-string and doPost fails with
+            // "Unterminated string in JSON" — the submission is lost and the user
+            // sees a confusing error plus the mailto: fallback.
+            //
+            // These values must stay BELOW that ceiling, not at the size the
+            // browser could theoretically send. They were 5MB/30MB, which let a
+            // single phone photo through and guaranteed that failure.
+            //
+            // Base64 inflates by ~4/3, so a 700 KB file becomes ~950 KB encoded —
+            // leaving headroom for the signature and the rest of the JSON.
+            // Raise these only after moving attachments to a Shared Drive
+            // (useDriveAPI above), which removes the payload ceiling entirely.
+            const MAX_FILE_SIZE = 700 * 1024;        // 700 KB per file (raw)
+            const MAX_TOTAL_PAYLOAD_SIZE = 900 * 1024; // 900 KB encoded, total
 
             // Start signature compression in parallel with Drive uploads (independent operations)
             const signatureCompressPromise = (async () => {
@@ -9299,7 +9313,7 @@
                         for (const file of item.attachments) {
                             if (file instanceof File) {
                                 if (file.size > MAX_FILE_SIZE) {
-                                    skippedFiles.push(`${file.name} (quá lớn: ${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+                                    skippedFiles.push(`${file.name} (${(file.size / 1024).toFixed(0)} KB — tối đa ${Math.round(MAX_FILE_SIZE / 1024)} KB/file, vui lòng nén ảnh)`);
                                     continue;
                                 }
 
@@ -9311,7 +9325,7 @@
                                     if (currentSignatureData) estimatedSize += currentSignatureData.length;
 
                                     if (estimatedSize > MAX_TOTAL_PAYLOAD_SIZE) {
-                                        skippedFiles.push(`${file.name} (tổng payload vượt ${MAX_TOTAL_PAYLOAD_SIZE / 1024 / 1024}MB)`);
+                                        skippedFiles.push(`${file.name} (tổng dung lượng vượt ${Math.round(MAX_TOTAL_PAYLOAD_SIZE / 1024)} KB — vui lòng bớt file hoặc nén ảnh)`);
                                         continue;
                                     }
 
@@ -9597,7 +9611,7 @@
             
             // Check if payload is too large
             if (payloadSizeBytes > MAX_TOTAL_PAYLOAD_SIZE) {
-                const errorMsg = `Payload quá lớn (${payloadSizeMB} MB). Giới hạn tối đa: ${MAX_TOTAL_PAYLOAD_SIZE / 1024 / 1024}MB. Vui lòng giảm số lượng hoặc kích thước file đính kèm.`;
+                const errorMsg = `Dữ liệu quá lớn (${Math.round(payloadSizeBytes / 1024)} KB). Giới hạn: ${Math.round(MAX_TOTAL_PAYLOAD_SIZE / 1024)} KB. Vui lòng bớt file đính kèm hoặc nén ảnh trước khi gửi.`;
                 console.error('❌ Payload size exceeded:', payloadSizeBytes, 'bytes');
                 showToast(errorMsg, 'error', 'Payload quá lớn');
                 loadingIndicator.classList.remove('show');

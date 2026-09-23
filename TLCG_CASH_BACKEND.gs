@@ -3790,7 +3790,9 @@ function handleGetVoucherSummary(requestBody) {
     const sheet = safeGetSheet(ss, VH_SHEET_NAME, 'handleGetVoucherSummary');
     
     // Get data with error handling
-    // Read only columns A-Q (1-17) — skip column R (MetaJSON) which contains large base64 signatures
+    // Columns A-Q only (skip R / MetaJSON). getRange's 3rd arg is a row COUNT.
+    // Read the last 5000 data rows directly so a large sheet is not loaded first.
+    var SUMMARY_ROW_WINDOW = 5000;
     let data;
     try {
       const lastRow = sheet.getLastRow();
@@ -3799,13 +3801,15 @@ function handleGetVoucherSummary(requestBody) {
           total: 0, pending: 0, approved: 0, rejected: 0, recent: []
         });
       }
-      data = sheet.getRange(1, 1, lastRow, 17).getValues();
+      const startRow = Math.max(2, lastRow - SUMMARY_ROW_WINDOW + 1);
+      const numRows = lastRow - startRow + 1;
+      data = sheet.getRange(startRow, 1, numRows, 17).getValues();
     } catch (dataError) {
       Logger.log('Error getting data: ' + dataError.toString());
       return createResponse(false, msg_('cannotReadSheetPrefix') + dataError.message);
     }
 
-    if (!data || data.length <= 1) {
+    if (!data || data.length === 0) {
       return createResponse(true, 'Thành công', {
         total: 0, pending: 0, approved: 0, rejected: 0, recent: []
       });
@@ -3814,12 +3818,10 @@ function handleGetVoucherSummary(requestBody) {
     // Column structure: A=voucher_number, B=voucher_type, C=company_name, D=company_key_or_taxid,
     //   E=employee_name, F=submited_email, G=submitted_by, H=submitted_at, I=amount, J=status,
     //   K=due_date, L=action, M=attachments, N=description, O=note, P=approver_email, Q=approved_at
-    const headers = data[0];
-    // Process only the last 5000 rows to avoid timeout with very large sheets
-    const allRows = data.slice(1);
-    const rows = allRows.length > 5000 ? allRows.slice(allRows.length - 5000) : allRows;
+    // data contains data rows only (header row was not read).
+    const rows = data;
 
-    Logger.log('Total rows in sheet: ' + allRows.length + ', processing: ' + rows.length);
+    Logger.log('Processing voucher summary rows: ' + rows.length);
 
     // Helper: derive approvalProgress from status string (avoids reading MetaJSON)
     function progressFromStatus(status) {
