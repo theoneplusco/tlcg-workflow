@@ -549,6 +549,10 @@ function doPost(e) {
       case 'fetchSignatureImage':
         Logger.log('✅ Matched fetchSignatureImage case');
         return handleFetchSignatureImage(requestBody);
+      case 'createVoucherUploadSession':
+        return handleCreateVoucherUploadSession_(requestBody);
+      case 'finalizeVoucherUpload':
+        return handleFinalizeVoucherUpload_(requestBody);
       case 'uploadVoucherFile':
         return handleUploadVoucherFile_(requestBody);
       case 'uploadVoucherFileChunk':
@@ -4139,6 +4143,84 @@ function handleGetVoucherHistory(requestBody) {
 }
 
 /** HÀM PHỤ TRỢ */
+
+function voucherAttachmentFolder_(voucherNumber) {
+  var parentId = getCfg_('DRIVE_VOUCHER_FOLDER_ID', '1RBBUUAQIrYTWeBONIgkMtELL0hxZhtqG');
+  var parent = DriveApp.getFolderById(parentId);
+  var voucherNo = String(voucherNumber || 'draft');
+  var destIter = parent.getFoldersByName(voucherNo);
+  return destIter.hasNext() ? destIter.next() : parent.createFolder(voucherNo);
+}
+
+/**
+ * Opens a Drive resumable-upload session as the script owner.
+ * Returns only the session URL. The file bytes never enter Apps Script.
+ */
+function handleCreateVoucherUploadSession_(body) {
+  var size = Number(body && body.fileSize);
+  if (!(size > 0 && size <= 10 * 1024 * 1024)) {
+    return createResponse(false, 'File không hợp lệ');
+  }
+  var fileName = String((body && body.fileName) || 'attachment');
+  var mimeType = String((body && body.mimeType) || 'application/octet-stream');
+  try {
+    var dest = voucherAttachmentFolder_(body && body.voucherNumber);
+    var res = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'X-Upload-Content-Type': mimeType,
+        'X-Upload-Content-Length': String(Math.floor(size))
+      },
+      payload: JSON.stringify({
+        name: fileName,
+        mimeType: mimeType,
+        parents: [dest.getId()]
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    var headers = res.getAllHeaders();
+    var location = '';
+    Object.keys(headers).forEach(function(key) {
+      if (String(key).toLowerCase() === 'location') location = headers[key];
+    });
+    if (Array.isArray(location)) location = location[0];
+    if (!location || code >= 400) {
+      Logger.log('❌ createVoucherUploadSession HTTP ' + code + ' ' + res.getContentText().substring(0, 180));
+      return createResponse(false, 'Không tạo được phiên tải lên Drive');
+    }
+    return createResponse(true, 'ok', { uploadUrl: String(location) });
+  } catch (err) {
+    Logger.log('❌ createVoucherUploadSession: ' + err.message);
+    return createResponse(false, 'Không tạo được phiên tải lên Drive: ' + err.message);
+  }
+}
+
+/** Sets link sharing after the server has uploaded the bytes to Drive. */
+function handleFinalizeVoucherUpload_(body) {
+  var fileId = String((body && body.fileId) || '');
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) {
+    return createResponse(false, 'fileId không hợp lệ');
+  }
+  try {
+    var file = DriveApp.getFileById(fileId);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      Logger.log('⚠️ Could not set public sharing for ' + fileId + ': ' + shareErr.message);
+    }
+    return createResponse(true, 'Đã tải file', {
+      fileName: file.getName(),
+      fileUrl: file.getUrl(),
+      fileSize: file.getSize()
+    });
+  } catch (err) {
+    Logger.log('❌ finalizeVoucherUpload: ' + err.message);
+    return createResponse(false, 'Không lưu được file: ' + err.message);
+  }
+}
 
 /**
  * Whole attachment in one request. The proxy sends base64 slices as separate

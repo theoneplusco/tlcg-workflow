@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import voucherHandler from './api/voucher.js';
 import actionHandler from './api/voucher/[action].js';
 import driveUploadHandler from './api/drive-upload.js';
+import voucherFileHandler from './api/voucher-file.js';
 import configHandler from './api/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,6 +43,7 @@ app.disable('x-powered-by');
       would hang or fail.
    ───────────────────────────────────────────────────────────── */
 app.post('/api/drive-upload', driveUploadHandler);
+app.post('/api/voucher-file', voucherFileHandler);
 
 /* ─────────────────────────────────────────────────────────────
    2. Body parsing for everything else.

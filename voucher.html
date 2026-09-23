@@ -4734,27 +4734,16 @@
             if (toast) toast.remove();
         }
 
-        // Files over INLINE_FILE_SIZE cannot sit inside the voucher JSON: Apps
-        // Script truncates one form field at ~1 MB. Send the file once, split
-        // across several fields (each under that limit). One round trip, one toast.
+        // Files over INLINE_FILE_SIZE go to Drive as raw bytes through the
+        // Node server. Apps Script only opens the upload session and sets
+        // sharing — it never receives the file body.
         async function uploadLargeAttachment(file, voucherNumber) {
-            const CHUNK = 600 * 1024; // multiple of 3 so the server can join the base64
-            const totalChunks = Math.ceil(file.size / CHUNK);
             const sizeLabel = (file.size / (1024 * 1024)).toFixed(1);
             showUploadToast(`Đang tải "${file.name}" (${sizeLabel} MB)...`, 'info');
             const formData = new FormData();
-            formData.append('action', 'uploadVoucherFile');
-            formData.append('fileName', file.name);
-            formData.append('mimeType', file.type || 'application/octet-stream');
             formData.append('voucherNumber', voucherNumber || '');
-            formData.append('chunkCount', String(totalChunks));
-            for (let i = 0; i < totalChunks; i++) {
-                const slice = file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK));
-                const dataUrl = await fileToBase64(slice);
-                const chunkBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
-                formData.append('c' + i, chunkBase64);
-            }
-            const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+            formData.append('file', file, file.name);
+            const response = await fetch('/api/voucher-file', {
                 method: 'POST',
                 body: formData,
                 signal: httpTimeoutSignal(VOUCHER_SUBMIT_FETCH_TIMEOUT_MS)
