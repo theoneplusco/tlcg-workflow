@@ -2,149 +2,304 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sổ quỹ — Bảng kiểm kê quỹ</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#F2F2F7">
+    <link rel="icon" href="favicon.ico">
+    <title>Sổ quỹ — TLCGroup</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        :root { --ink: #1c1917; --muted: #57534e; --line: #e7e5e4; --paper: #fafaf9; --sky: #0369a1; --red: #b91c1c; --amber: #b45309; }
-        * { box-sizing: border-box; }
-        body { margin: 0; font-family: "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); }
-        header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 24px; background: white; border-bottom: 1px solid var(--line); }
-        header a { color: var(--sky); text-decoration: none; font-weight: 600; }
-        main { max-width: 980px; margin: 0 auto; padding: 20px 16px 96px; display: flex; flex-direction: column; gap: 16px; }
-        section, .filters { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
-        h1 { font-size: 22px; margin: 0; }
-        h2 { font-size: 16px; margin: 0 0 12px; }
-        label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-        select, input[type="date"], input[type="number"], input[type="text"], textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
-        .filters { display: grid; grid-template-columns: 1.4fr 0.8fr; gap: 12px; }
-        .balance { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; }
-        .balance strong { font-size: 28px; }
-        .meta { color: var(--muted); font-size: 14px; }
-        .pending-note { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-        th { color: var(--muted); font-weight: 600; }
+        :root {
+            --primary:        #007AFF;
+            --primary-hover:  #0056CC;
+            --success:        #34C759;
+            --warning:        #FF9500;
+            --error:          #FF3B30;
+            --cash:           #0A84FF;
+            --bg:             #F2F2F7;
+            --surface:        #FFFFFF;
+            --text-primary:   #000000;
+            --text-secondary: rgba(60,60,67,0.60);
+            --border:         rgba(0,0,0,0.10);
+            --sep:            rgba(60,60,67,0.18);
+            --shadow:         0 2px 8px rgba(0,0,0,0.07);
+            --font-display:   'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-body:      'DM Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+            --radius-md:      12px;
+            --radius-lg:      14px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { color-scheme: light; }
+        body {
+            font-family: var(--font-body);
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            padding-bottom: 88px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+
+        .topbar {
+            position: sticky; top: 0; z-index: 20;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 12px 20px;
+            padding-top: calc(12px + env(safe-area-inset-top, 0px));
+            background: rgba(255,255,255,0.80);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border-bottom: 0.5px solid var(--border);
+        }
+        .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .back-link {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: var(--primary); text-decoration: none; font-size: 15px; font-weight: 500;
+            white-space: nowrap;
+        }
+        .back-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 8px; }
+        .topbar h1 {
+            font-family: var(--font-display);
+            font-size: 17px; font-weight: 700; letter-spacing: -0.02em;
+        }
+        .eyebrow {
+            font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+            text-transform: uppercase; color: #0284c7;
+        }
+        .nav-user { font-size: 13px; color: var(--text-secondary); text-align: right; }
+
+        main { max-width: 920px; margin: 0 auto; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+        .card {
+            background: var(--surface);
+            border: 0.5px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            padding: 18px 16px;
+        }
+        .card h2 {
+            font-family: var(--font-display);
+            font-size: 16px; font-weight: 700; letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+        .filters { display: grid; grid-template-columns: 1.5fr 0.8fr; gap: 12px; }
+        .field-label {
+            display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        select, input[type="date"], input[type="number"], input[type="text"], textarea {
+            width: 100%; padding: 10px 12px;
+            border: 0.5px solid var(--border); border-radius: 10px;
+            background: var(--bg); font: inherit; color: inherit;
+        }
+        select:focus-visible, input:focus-visible, textarea:focus-visible {
+            outline: 2px solid var(--primary); outline-offset: 2px; background: white;
+        }
+        .status-msg { font-size: 13px; color: var(--text-secondary); min-height: 1.2em; }
+        .status-msg.is-error { color: var(--error); font-weight: 500; }
+
+        .balance-card { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: end; }
+        .balance-label { font-size: 12px; font-weight: 600; color: #0284c7; text-transform: uppercase; letter-spacing: 0.04em; }
+        #book-balance {
+            font-family: var(--font-display);
+            font-size: 34px; font-weight: 800; letter-spacing: -0.04em;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.1; margin-top: 6px;
+        }
+        .book-meta { font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+        .pending-note {
+            padding: 12px 14px; border-radius: 10px;
+            background: rgba(255,149,0,0.08); border: 0.5px solid rgba(255,149,0,0.22);
+        }
+        .pending-note .field-label { color: #c07000; }
+
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+        th {
+            text-align: left; font-weight: 500; color: var(--text-secondary);
+            padding: 8px 8px; border-bottom: 1px solid var(--border); background: var(--bg);
+            white-space: nowrap;
+        }
+        td { padding: 9px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); vertical-align: top; }
+        td.num, th.num { text-align: right; white-space: nowrap; }
         .row-off { display: none; }
-        .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
-        button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: white; padding: 8px 12px; cursor: pointer; }
-        button.primary { background: var(--sky); color: white; border-color: var(--sky); }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .denom td input { max-width: 120px; margin-left: auto; display: block; }
-        .diff-thieu { color: var(--red); font-weight: 700; }
-        .diff-thua { color: var(--amber); font-weight: 700; }
-        .field-hot { outline: 2px solid var(--amber); }
-        .rep { display: grid; grid-template-columns: 180px 1fr 220px; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
-        .rep img { max-height: 64px; max-width: 180px; background: white; }
-        .bar { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 24px; background: white; border-top: 1px solid var(--line); }
-        .error { color: var(--red); }
-        .banner { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+        .pager {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 12px; font-size: 13px; color: var(--text-secondary);
+        }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 8px 14px; border-radius: 10px; border: 0.5px solid var(--border);
+            background: white; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer;
+            color: var(--text-primary);
+        }
+        .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-primary { background: var(--primary); border-color: var(--primary); color: white; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+        .form-meta { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+        #form-date { font-size: 15px; font-weight: 600; margin: 8px 0 14px; }
+        .banner {
+            background: rgba(255,149,0,0.10); border: 0.5px solid rgba(255,149,0,0.28);
+            color: #9a6700; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; font-weight: 500;
+        }
+        .reasons { display: grid; gap: 12px; margin-top: 16px; }
+        .field-hot { box-shadow: 0 0 0 2px var(--warning); background: rgba(255,149,0,0.08); }
+        .diff-thieu { color: var(--error); font-weight: 700; }
+        .diff-thua { color: #c07000; font-weight: 700; }
+        .denom td input { max-width: 110px; margin-left: auto; display: block; background: white; }
+
+        .rep {
+            display: grid; grid-template-columns: 170px 1fr 200px; gap: 12px; align-items: center;
+            padding: 12px 0; border-top: 0.5px solid var(--sep);
+        }
+        .rep-role { font-size: 13px; font-weight: 600; }
+        .rep img { max-height: 56px; max-width: 160px; background: white; }
+        #print-sigs { display: none; }
+
+        .bar {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+            background: rgba(255,255,255,0.88);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border-top: 0.5px solid var(--border);
+        }
+        .bar-actions { display: flex; gap: 8px; }
+        #save-hint { font-size: 13px; color: var(--text-secondary); }
+
         @media (max-width: 720px) {
-            .filters, .rep, .balance { grid-template-columns: 1fr; display: grid; }
+            .filters, .rep, .balance-card { grid-template-columns: 1fr; }
             .bar { flex-direction: column; align-items: stretch; }
+            .bar-actions { justify-content: stretch; }
+            .bar-actions .btn { flex: 1; }
+            #book-balance { font-size: 28px; }
         }
         @media print {
-            header, .filters, .pager, .bar, .no-print { display: none !important; }
-            body { background: white; }
+            .topbar, .filters, .pager, .bar, .no-print { display: none !important; }
+            body { background: white; padding: 0; }
             main { max-width: none; padding: 0; display: flex; }
+            .card { box-shadow: none; border: none; }
             #count-form { order: 1; }
             #book-section { order: 2; }
             #pending-section { order: 3; }
             #balance-section, #reps { display: none !important; }
-            section { border: none; }
+            #print-sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px; }
             tr.row-off { display: table-row !important; }
         }
     </style>
 </head>
 <body>
-    <header class="no-print">
-        <h1>Sổ quỹ</h1>
-        <a href="index.html">Về trang chủ</a>
+    <header class="topbar no-print">
+        <div class="topbar-left">
+            <a class="back-link" href="index.html"><i class="fas fa-chevron-left"></i> Trang chủ</a>
+            <div>
+                <div class="eyebrow">Cash &amp; Vouchers</div>
+                <h1>Sổ quỹ</h1>
+            </div>
+        </div>
+        <div class="nav-user" id="nav-user"></div>
     </header>
     <main>
-        <div class="filters no-print">
+        <div class="card filters no-print">
             <div>
-                <label for="company">Công ty</label>
+                <label class="field-label" for="company">Công ty</label>
                 <select id="company"><option value="">Chọn công ty</option></select>
             </div>
             <div>
-                <label for="end-date">Số dư đến ngày</label>
+                <label class="field-label" for="end-date">Số dư đến ngày</label>
                 <input id="end-date" type="date">
             </div>
         </div>
-        <p id="status" class="meta no-print"></p>
+        <p id="status" class="status-msg no-print"></p>
 
-        <section id="balance-section">
-            <div class="balance">
+        <section class="card" id="balance-section">
+            <div class="balance-card">
                 <div>
-                    <div class="meta">Số dư theo sổ quỹ</div>
-                    <strong id="book-balance">—</strong>
+                    <div class="balance-label">Số dư theo sổ quỹ</div>
+                    <div id="book-balance">—</div>
+                    <div class="book-meta" id="book-meta"></div>
                 </div>
-                <div class="meta" id="book-meta"></div>
-            </div>
-            <div class="pending-note">
-                <div class="meta">Phiếu chưa vào quỹ</div>
-                <div id="pending-meta">—</div>
+                <div class="pending-note">
+                    <div class="field-label">Phiếu chưa vào quỹ</div>
+                    <div id="pending-meta">—</div>
+                </div>
             </div>
         </section>
 
-        <section id="book-section">
+        <section class="card" id="book-section">
             <h2>Phiếu đã vào quỹ</h2>
-            <table>
-                <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
-                <tbody id="book-rows"></tbody>
-            </table>
-            <div class="pager no-print"><button type="button" id="book-prev">Trước</button><span id="book-page"></span><button type="button" id="book-next">Sau</button></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
+                    <tbody id="book-rows"></tbody>
+                </table>
+            </div>
+            <div class="pager no-print"><button type="button" class="btn" id="book-prev">Trước</button><span id="book-page"></span><button type="button" class="btn" id="book-next">Sau</button></div>
         </section>
 
-        <section id="pending-section">
+        <section class="card" id="pending-section">
             <h2>Phiếu chưa vào quỹ</h2>
-            <table>
-                <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
-                <tbody id="pending-rows"></tbody>
-            </table>
-            <div class="pager no-print"><button type="button" id="pending-prev">Trước</button><span id="pending-page"></span><button type="button" id="pending-next">Sau</button></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
+                    <tbody id="pending-rows"></tbody>
+                </table>
+            </div>
+            <div class="pager no-print"><button type="button" class="btn" id="pending-prev">Trước</button><span id="pending-page"></span><button type="button" class="btn" id="pending-next">Sau</button></div>
         </section>
 
-        <section id="count-form">
+        <section class="card" id="count-form">
             <h2>Bảng kiểm kê quỹ (Dùng cho VNĐ)</h2>
             <p id="saved-banner" class="banner" hidden>Đã có bảng kiểm kê ngày này.</p>
-            <p class="meta">Bộ phận: Kế toán · Số: 08</p>
+            <p class="form-meta">Bộ phận: Kế toán · Số: 08</p>
             <p id="form-date">Hôm nay, vào … giờ … phút, ngày … tháng … năm …</p>
-            <div class="filters no-print" style="border: none; padding: 0; background: transparent;">
-                <div><label for="hour">Giờ</label><input id="hour" type="number" min="0" max="23" step="1" value="0"></div>
-                <div><label for="minute">Phút</label><input id="minute" type="number" min="0" max="59" step="1" value="0"></div>
+            <div class="filters no-print" style="padding: 0; background: transparent; border: none; box-shadow: none;">
+                <div><label class="field-label" for="hour">Giờ</label><input id="hour" type="number" min="0" max="23" step="1" value="0"></div>
+                <div><label class="field-label" for="minute">Phút</label><input id="minute" type="number" min="0" max="59" step="1" value="0"></div>
             </div>
-            <table class="denom">
-                <thead><tr><th>STT</th><th>Diễn giải</th><th class="num">Số lượng (tờ)</th><th class="num">Số tiền</th></tr></thead>
-                <tbody id="denom-rows"></tbody>
-                <tfoot>
-                    <tr><td>I</td><td>Số dư theo sổ quỹ</td><td></td><td class="num" id="line-i">—</td></tr>
-                    <tr><td>II</td><td>Số kiểm kê thực tế</td><td></td><td class="num" id="line-ii">0</td></tr>
-                    <tr><td>III</td><td>Chênh lệch (I − II)</td><td></td><td class="num" id="line-iii">—</td></tr>
-                </tfoot>
-            </table>
-            <div>
-                <label for="reason-thua">Lý do — Thừa</label>
-                <input id="reason-thua" type="text">
+            <div class="table-wrap">
+                <table class="denom">
+                    <thead><tr><th>STT</th><th>Diễn giải</th><th class="num">Số lượng (tờ)</th><th class="num">Số tiền</th></tr></thead>
+                    <tbody id="denom-rows"></tbody>
+                    <tfoot>
+                        <tr><td>I</td><td>Số dư theo sổ quỹ</td><td></td><td class="num" id="line-i">—</td></tr>
+                        <tr><td>II</td><td>Số kiểm kê thực tế</td><td></td><td class="num" id="line-ii">0</td></tr>
+                        <tr><td>III</td><td>Chênh lệch (I − II)</td><td></td><td class="num" id="line-iii">—</td></tr>
+                    </tfoot>
+                </table>
             </div>
-            <div>
-                <label for="reason-thieu">Lý do — Thiếu</label>
-                <input id="reason-thieu" type="text">
+            <div class="reasons">
+                <div>
+                    <label class="field-label" for="reason-thua">Lý do — Thừa</label>
+                    <input id="reason-thua" type="text">
+                </div>
+                <div>
+                    <label class="field-label" for="reason-thieu">Lý do — Thiếu</label>
+                    <input id="reason-thieu" type="text">
+                </div>
+                <div>
+                    <label class="field-label" for="conclusion">Kết luận sau khi kiểm kê quỹ</label>
+                    <textarea id="conclusion" rows="2"></textarea>
+                </div>
             </div>
-            <div>
-                <label for="conclusion">Kết luận sau khi kiểm kê quỹ</label>
-                <textarea id="conclusion" rows="2"></textarea>
-            </div>
-            <h2 style="margin-top: 16px;">Chúng tôi gồm</h2>
+            <h2 style="margin-top: 20px;">Chúng tôi gồm</h2>
             <div id="reps"></div>
             <div id="print-sigs"></div>
         </section>
     </main>
     <div class="bar no-print">
-        <span id="save-hint" class="meta"></span>
-        <div>
-            <button type="button" id="print-btn">In</button>
-            <button type="button" id="save-btn" class="primary" disabled>Lưu bảng kiểm kê</button>
+        <span id="save-hint"></span>
+        <div class="bar-actions">
+            <button type="button" class="btn" id="print-btn"><i class="fas fa-print"></i> In</button>
+            <button type="button" class="btn btn-primary" id="save-btn" disabled><i class="fas fa-save"></i> Lưu bảng kiểm kê</button>
         </div>
     </div>
     <script>
@@ -178,7 +333,7 @@
         function setStatus(text, isError) {
             var el = document.getElementById('status');
             el.textContent = text || '';
-            el.className = isError ? 'error' : 'meta no-print';
+            el.className = (isError ? 'status-msg is-error' : 'status-msg') + ' no-print';
         }
         async function post(payload) {
             var body = new URLSearchParams({ data: JSON.stringify(payload) });
@@ -340,6 +495,7 @@
                 var row = document.createElement('div');
                 row.className = 'rep';
                 var role = document.createElement('div');
+                role.className = 'rep-role';
                 role.textContent = rep.label;
                 var select = document.createElement('select');
                 var empty = document.createElement('option');
@@ -390,8 +546,8 @@
             });
             printOrder.forEach(function(index) {
                 var block = document.createElement('div');
-                block.style.marginTop = '12px';
                 var title = document.createElement('div');
+                title.className = 'rep-role';
                 title.textContent = titles[printOrder.indexOf(index)];
                 var name = document.createElement('div');
                 name.textContent = reps[index].name || '';
@@ -590,6 +746,7 @@
             await loadBook();
         }
         async function init() {
+            document.getElementById('nav-user').textContent = user.name || user.email || '';
             var end = document.getElementById('end-date');
             end.max = todayVN();
             end.value = todayVN();
