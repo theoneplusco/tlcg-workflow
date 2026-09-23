@@ -549,6 +549,8 @@ function doPost(e) {
       case 'fetchSignatureImage':
         Logger.log('✅ Matched fetchSignatureImage case');
         return handleFetchSignatureImage(requestBody);
+      case 'uploadVoucherFileChunk':
+        return handleUploadVoucherFileChunk_(requestBody);
       default: 
         Logger.log('⚠️ WARNING: Unknown action: "' + normalizedAction + '" (original: "' + action + '")');
         Logger.log('⚠️ Normalized action length: ' + normalizedAction.length);
@@ -901,31 +903,40 @@ function handleSendEmail(requestBody) {
           return fileNameWithSize + "\n" + f.fileUrl;
         }).join('\n\n');
       } else {
-        // LEGACY: Upload base64 files to Drive (old method)
+        // Small files arrive as base64. Files over ~700 KB were uploaded
+        // ahead of submit (uploadVoucherFileChunk) and only carry a Drive URL.
         Logger.log('⚠️ Using legacy base64 upload method');
-        
-        // Deduplicate files by fileName before uploading
-        const uniqueFiles = [];
+
+        const linkOnly = [];
+        const toUpload = [];
         const seenFileNames = new Set();
         for (const file of voucher.files) {
-          if (!seenFileNames.has(file.fileName)) {
-            seenFileNames.add(file.fileName);
-            uniqueFiles.push(file);
-          }
+          if (seenFileNames.has(file.fileName)) continue;
+          seenFileNames.add(file.fileName);
+          if (file.fileUrl && !file.fileData) linkOnly.push(file);
+          else toUpload.push(file);
         }
-        
-        if (uniqueFiles.length > 0) {
-          const uploaded = uploadFilesToDrive_(uniqueFiles, voucherNo);
-          fileLinks = uploaded.map(f => {
+
+        const linkLines = [];
+        linkOnly.forEach(function(f) {
+          const sizeMB = f.fileSize ? (f.fileSize / (1024 * 1024)).toFixed(2) + " MB" : '';
+          const fileNameWithSize = sizeMB ? f.fileName + " (" + sizeMB + ")" : f.fileName;
+          linkLines.push(fileNameWithSize + "\n" + f.fileUrl);
+        });
+
+        if (toUpload.length > 0) {
+          const uploaded = uploadFilesToDrive_(toUpload, voucherNo);
+          uploaded.forEach(function(f) {
             if (f.error) {
-              return f.fileName + " (Lỗi upload: " + (f.errorMessage || 'unknown') + ")";
+              linkLines.push(f.fileName + " (Lỗi upload: " + (f.errorMessage || 'unknown') + ")");
+              return;
             }
-            // Format: "filename.pdf (2.45 MB)\nhttps://drive.google.com/file/..."
             const sizeMB = f.fileSize ? (f.fileSize / (1024 * 1024)).toFixed(2) + " MB" : '';
             const fileNameWithSize = sizeMB ? f.fileName + " (" + sizeMB + ")" : f.fileName;
-            return fileNameWithSize + "\n" + f.fileUrl;
-          }).join('\n\n');
+            linkLines.push(fileNameWithSize + "\n" + f.fileUrl);
+          });
         }
+        fileLinks = linkLines.join('\n\n');
       }
     }
 
@@ -4126,6 +4137,129 @@ function handleGetVoucherHistory(requestBody) {
 }
 
 /** HÀM PHỤ TRỢ */
+
+/**
+ * One slice of a file that is too large for a single Apps Script form field.
+ * The browser sends ~280 KB of raw bytes (base64). Each slice is stored as a
+ * part file; the last slice merges them into the voucher folder and returns
+ * the Drive URL. The voucher submit then keeps only that URL.
+ */
+function handleUploadVoucherFileChunk_(body) {
+  var uploadId = String((body && body.uploadId) || '');
+  var index = Number(body && body.chunkIndex);
+  var total = Number(body && body.totalChunks);
+  var b64 = String((body && body.chunkBase64) || '');
+  if (b64.indexOf(',') !== -1) b64 = b64.split(',')[1];
+
+  if (!/^upl_[A-Za-z0-9_-]{8,80}$/.test(uploadId)) {
+    return createResponse(false, 'uploadId không hợp lệ');
+  }
+  if (!(total >= 1 && total <= 40) || !(index >= 0 && index < total) || index !== Math.floor(index)) {
+    return createResponse(false, 'Phần file không hợp lệ');
+  }
+  if (!b64 || b64.length > 500000) {
+    return createResponse(false, 'Phần file quá lớn');
+  }
+
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(b64);
+  } catch (decodeErr) {
+    return createResponse(false, 'Không đọc được dữ liệu file');
+  }
+
+  var parentId = getCfg_('DRIVE_VOUCHER_FOLDER_ID', '1RBBUUAQIrYTWeBONIgkMtELL0hxZhtqG');
+  var parent;
+  var staging;
+  try {
+    parent = DriveApp.getFolderById(parentId);
+    var stagingIter = parent.getFoldersByName('_upload_parts');
+    staging = stagingIter.hasNext() ? stagingIter.next() : parent.createFolder('_upload_parts');
+  } catch (folderErr) {
+    Logger.log('❌ upload chunk folder: ' + folderErr.message);
+    return createResponse(false, 'Không mở được thư mục Drive: ' + folderErr.message);
+  }
+
+  var part = staging.createFile(Utilities.newBlob(bytes, 'application/octet-stream', uploadId + '_' + index + '.part'));
+  var cache = CacheService.getScriptCache();
+  var key = 'vchunk_' + uploadId;
+  var state;
+  var complete = false;
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (lockErr) {
+    try { part.setTrashed(true); } catch (ignore) {}
+    return createResponse(false, 'Hệ thống đang bận, vui lòng thử tải lại file');
+  }
+  try {
+    var raw = cache.get(key);
+    state = raw ? JSON.parse(raw) : { ids: {}, fileName: '', mimeType: '', total: total };
+    var prevId = state.ids[String(index)];
+    if (prevId && prevId !== part.getId()) {
+      try { DriveApp.getFileById(prevId).setTrashed(true); } catch (ignorePrev) {}
+    }
+    state.ids[String(index)] = part.getId();
+    state.fileName = String((body && body.fileName) || state.fileName || 'attachment');
+    state.mimeType = String((body && body.mimeType) || state.mimeType || 'application/octet-stream');
+    state.total = total;
+    cache.put(key, JSON.stringify(state), 1800);
+    complete = Object.keys(state.ids).length >= total;
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (!complete) {
+    return createResponse(true, 'Đã nhận phần ' + (index + 1) + '/' + total, {
+      received: Object.keys(state.ids).length,
+      total: total
+    });
+  }
+
+  try {
+    var arrays = [];
+    var totalLen = 0;
+    for (var i = 0; i < total; i++) {
+      var partId = state.ids[String(i)];
+      if (!partId) return createResponse(false, 'Thiếu phần ' + (i + 1) + ' của file');
+      var partBytes = DriveApp.getFileById(partId).getBlob().getBytes();
+      arrays.push(partBytes);
+      totalLen += partBytes.length;
+    }
+    if (totalLen > 10 * 1024 * 1024) {
+      return createResponse(false, 'File vượt quá 10 MB');
+    }
+    // getBytes() is array-like. Copy into a plain array so the blob is one file.
+    var merged = [];
+    for (var a = 0; a < arrays.length; a++) {
+      var chunk = arrays[a];
+      for (var j = 0; j < chunk.length; j++) merged.push(chunk[j]);
+    }
+    var voucherNo = String((body && body.voucherNumber) || 'draft');
+    var destIter = parent.getFoldersByName(voucherNo);
+    var dest = destIter.hasNext() ? destIter.next() : parent.createFolder(voucherNo);
+    var saved = dest.createFile(Utilities.newBlob(merged, state.mimeType, state.fileName));
+    try {
+      saved.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      Logger.log('⚠️ Could not set public sharing for ' + state.fileName + ': ' + shareErr.message);
+    }
+    for (var k = 0; k < total; k++) {
+      try { DriveApp.getFileById(state.ids[String(k)]).setTrashed(true); } catch (ignorePart) {}
+    }
+    cache.remove(key);
+    Logger.log('✅ Chunked upload: ' + state.fileName + ' → ' + saved.getId() + ' (' + totalLen + ' bytes)');
+    return createResponse(true, 'Đã tải file', {
+      fileName: state.fileName,
+      fileUrl: saved.getUrl(),
+      fileSize: totalLen
+    });
+  } catch (mergeErr) {
+    Logger.log('❌ upload chunk merge: ' + mergeErr.message);
+    return createResponse(false, 'Không ghép được file: ' + mergeErr.message);
+  }
+}
+
 function uploadFilesToDrive_(files, folderName) {
   const DRIVE_FOLDER_ID = getCfg_('DRIVE_VOUCHER_FOLDER_ID', '1RBBUUAQIrYTWeBONIgkMtELL0hxZhtqG');
   Logger.log('📁 uploadFilesToDrive_ — folder ID: ' + DRIVE_FOLDER_ID + ', subfolder: ' + folderName + ', files: ' + files.length);

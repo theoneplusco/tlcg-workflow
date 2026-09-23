@@ -3614,11 +3614,14 @@
         let expenseItems = [];
         let approvalHistory = [];
         let autoSaveTimeout = null;
-        // Attachment ceiling at file-pick time. Must match the submit-time limit
-        // in sendForApproval(), otherwise a file is accepted here and silently
-        // dropped later. Apps Script truncates a form field at ~1 MiB and base64
-        // inflates by ~4/3, so the raw file must stay well under that.
-        const MAX_FILE_SIZE = 700 * 1024; // 700 KB
+        // Files at or under INLINE_FILE_SIZE travel inside the voucher JSON.
+        // Apps Script truncates one form field at ~1 MiB and base64 inflates
+        // by ~4/3, so that raw ceiling stays at 700 KB.
+        // Larger files (PDFs, scans) upload in chunks first; the voucher then
+        // stores only the Drive link. Both checks must match sendForApproval().
+        const INLINE_FILE_SIZE = 700 * 1024; // 700 KB raw, inside the submit payload
+        const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 MB per file, chunked upload
+        const MAX_FILE_SIZE = MAX_ATTACHMENT_SIZE;
         const AUTO_SAVE_DELAY = 2000; // 2 seconds
         let currentStep = 1; // Current step in the stepper
         let highestStepReached = 1; // Track the highest step user has reached
@@ -3934,9 +3937,19 @@
         }
 
         // File Validation
+        function attachmentTooLargeMessage(file) {
+            const sizeLabel = file.size >= 1024 * 1024
+                ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
+                : Math.round(file.size / 1024) + ' KB';
+            const hint = (file.type || '').startsWith('image/')
+                ? ' Vui lòng nén ảnh trước khi tải lên.'
+                : ' Vui lòng chọn file nhỏ hơn hoặc tách file.';
+            return `File "${file.name}" quá lớn (${sizeLabel}). Tối đa 10 MB.${hint}`;
+        }
+
         function validateFile(file) {
-            if (file.size > MAX_FILE_SIZE) {
-                showToast(`File "${file.name}" quá lớn (${(file.size / 1024).toFixed(0)} KB). Tối đa ${Math.round(MAX_FILE_SIZE / 1024)} KB — vui lòng nén ảnh trước khi tải lên.`, 'error');
+            if (file.size > MAX_ATTACHMENT_SIZE) {
+                showToast(attachmentTooLargeMessage(file), 'error');
                 return false;
             }
             return true;
@@ -4699,6 +4712,57 @@
                 reader.onerror = error => reject(error);
                 reader.readAsDataURL(file);
             });
+        }
+
+        // PDFs and scans over INLINE_FILE_SIZE cannot ride inside one Apps
+        // Script form field. Send ~280 KB slices; the Cash backend writes each
+        // slice to Drive and returns one link when the last slice arrives.
+        async function uploadLargeAttachment(file, voucherNumber) {
+            const CHUNK = 280 * 1024;
+            const totalChunks = Math.ceil(file.size / CHUNK);
+            const uploadId = 'upl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+            let last = null;
+            for (let i = 0; i < totalChunks; i++) {
+                const slice = file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK));
+                const dataUrl = await fileToBase64(slice);
+                const chunkBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+                const body = {
+                    action: 'uploadVoucherFileChunk',
+                    uploadId: uploadId,
+                    chunkIndex: i,
+                    totalChunks: totalChunks,
+                    fileName: file.name,
+                    mimeType: file.type || 'application/octet-stream',
+                    voucherNumber: voucherNumber || '',
+                    chunkBase64: chunkBase64
+                };
+                showToast(`Đang tải "${file.name}" (${i + 1}/${totalChunks})...`, 'info');
+                const formData = new FormData();
+                formData.append('data', JSON.stringify(body));
+                const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+                const text = await response.text();
+                let result;
+                try { result = JSON.parse(text); } catch (e) {
+                    throw new Error('Phản hồi không hợp lệ khi tải file');
+                }
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || ('Không tải được phần ' + (i + 1)));
+                }
+                last = result;
+            }
+            const uploaded = (last && last.data) || {};
+            if (!uploaded.fileUrl) {
+                throw new Error('Không lấy được link Drive cho "' + file.name + '"');
+            }
+            return {
+                fileName: uploaded.fileName || file.name,
+                fileUrl: uploaded.fileUrl,
+                fileSize: uploaded.fileSize || file.size,
+                mimeType: file.type || 'application/octet-stream'
+            };
         }
         
         // ==================== GOOGLE DRIVE API FUNCTIONS ====================
@@ -9218,15 +9282,9 @@
             // "Unterminated string in JSON" — the submission is lost and the user
             // sees a confusing error plus the mailto: fallback.
             //
-            // These values must stay BELOW that ceiling, not at the size the
-            // browser could theoretically send. They were 5MB/30MB, which let a
-            // single phone photo through and guaranteed that failure.
-            //
-            // Base64 inflates by ~4/3, so a 700 KB file becomes ~950 KB encoded —
-            // leaving headroom for the signature and the rest of the JSON.
-            // Raise these only after moving attachments to a Shared Drive
-            // (useDriveAPI above), which removes the payload ceiling entirely.
-            const MAX_FILE_SIZE = 700 * 1024;        // 700 KB per file (raw)
+            // Files at or under INLINE_FILE_SIZE stay in this JSON. Larger files
+            // are already on Drive (uploadLargeAttachment) and only their URL
+            // is sent here, so they do not count toward the payload ceiling.
             const MAX_TOTAL_PAYLOAD_SIZE = 900 * 1024; // 900 KB encoded, total
 
             // Start signature compression in parallel with Drive uploads (independent operations)
@@ -9303,7 +9361,7 @@
                     return;
                 }
             } else {
-                console.log('📦 Using GAS base64 path. Limits: 5MB/file, 30MB total');
+                console.log('📦 Small files inline (≤700 KB). Larger files upload in chunks first.');
 
                 const skippedFiles = [];
 
@@ -9312,8 +9370,30 @@
                     if (item.attachments && item.attachments.length > 0) {
                         for (const file of item.attachments) {
                             if (file instanceof File) {
-                                if (file.size > MAX_FILE_SIZE) {
-                                    skippedFiles.push(`${file.name} (${(file.size / 1024).toFixed(0)} KB — tối đa ${Math.round(MAX_FILE_SIZE / 1024)} KB/file, vui lòng nén ảnh)`);
+                                if (file.size > MAX_ATTACHMENT_SIZE) {
+                                    skippedFiles.push(attachmentTooLargeMessage(file));
+                                    continue;
+                                }
+
+                                if (file.size > INLINE_FILE_SIZE) {
+                                    try {
+                                        const uploaded = await uploadLargeAttachment(file, voucherNumber);
+                                        filesToUpload.push({
+                                            fileName: uploaded.fileName,
+                                            fileUrl: uploaded.fileUrl,
+                                            mimeType: uploaded.mimeType,
+                                            fileSize: uploaded.fileSize,
+                                            rowIndex: i
+                                        });
+                                    } catch (err) {
+                                        console.error('Chunked upload failed:', file.name, err);
+                                        showToast(`Không tải được "${file.name}": ${err.message}`, 'error');
+                                        loadingIndicator.classList.remove('show');
+                                        isSubmitting = false;
+                                        submitBtn.disabled = false;
+                                        submitBtn.innerHTML = originalButtonText;
+                                        return;
+                                    }
                                     continue;
                                 }
 
@@ -9325,7 +9405,7 @@
                                     if (currentSignatureData) estimatedSize += currentSignatureData.length;
 
                                     if (estimatedSize > MAX_TOTAL_PAYLOAD_SIZE) {
-                                        skippedFiles.push(`${file.name} (tổng dung lượng vượt ${Math.round(MAX_TOTAL_PAYLOAD_SIZE / 1024)} KB — vui lòng bớt file hoặc nén ảnh)`);
+                                        skippedFiles.push(`${file.name} (tổng dung lượng vượt ${Math.round(MAX_TOTAL_PAYLOAD_SIZE / 1024)} KB — vui lòng bớt file nhỏ hoặc nén ảnh)`);
                                         continue;
                                     }
 
