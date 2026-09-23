@@ -2219,22 +2219,22 @@
                 }
             });
             if (moqError) { showToast('Số lượng chưa đạt tối thiểu — ' + moqError, 'error', 5000); return; }
-            // Đơn giá required — every filled row must have price > 0
-            let missingPrice = null;
+            // Unit price may be 0 (gift box, packaging). Reject only a negative price.
+            let badPrice = null;
             SECTIONS.forEach(s => {
-                if (missingPrice) return;
+                if (badPrice) return;
                 document.querySelectorAll('#tbody-' + s.id + ' tr').forEach(tr => {
-                    if (missingPrice) return;
+                    if (badPrice) return;
                     const desc  = tr.querySelector('.item-desc')?.value.trim();
-                    const price = parseFloat(tr.querySelector('.item-price')?.value) || 0;
-                    if (desc && price <= 0) {
+                    const price = parseFloat(tr.querySelector('.item-price')?.value);
+                    if (desc && !isNaN(price) && price < 0) {
                         tr.querySelector('.item-price').style.boxShadow = '0 0 0 2px #FF3B30';
                         tr.querySelector('.item-price').style.borderColor = '#FF3B30';
-                        missingPrice = `"${desc}"`;
+                        badPrice = `"${desc}"`;
                     }
                 });
             });
-            if (missingPrice) { showToast(`Vui lòng nhập Đơn giá cho ${missingPrice}.`, 'error', 4000); return; }
+            if (badPrice) { showToast(`Đơn giá không được âm cho ${badPrice}.`, 'error', 4000); return; }
             // Clear price error highlights when all good
             document.querySelectorAll('.item-price').forEach(el => {
                 el.style.boxShadow = '';
@@ -2394,7 +2394,7 @@
                 <option>Lít</option><option>m²</option><option>Chiếc</option>
                 <option>Thùng</option><option>Gói</option><option>Dịch vụ</option>
             </select></td>
-            <td class="col-price"><input type="number" class="item-price" value="0" min="0" step="1000" oninput="recalcRow(${n}, '${sectionId}'); if(+this.value>0){this.style.boxShadow='';this.style.borderColor='';}"></td>
+            <td class="col-price"><input type="number" class="item-price" value="0" min="0" step="1000" oninput="recalcRow(${n}, '${sectionId}'); if(+this.value>=0){this.style.boxShadow='';this.style.borderColor='';}"></td>
             <td class="col-total item-total" data-value="0">0 ₫</td>
             <td class="col-note"><input type="text" class="item-note" placeholder="Ghi chú..."></td>
             <td class="col-del"><button type="button" class="del-btn" onclick="removeSectionRow('item-row-${n}','${sectionId}')" title="Xóa dòng" aria-label="Xóa dòng"><i class="fas fa-times" aria-hidden="true"></i></button></td>
@@ -3227,6 +3227,7 @@
                 const resubmitHidden = document.getElementById('resubmit-pr-no');
                 if (resubmitHidden) resubmitHidden.value = '';
                 document.querySelector('.resubmit-info-banner')?.remove();
+                btn.disabled = false;
                 btn.innerHTML = orig;
 
                 // Show success screen
@@ -3288,6 +3289,12 @@
         setPriority('binh_thuong');
         document.getElementById('success-screen').style.display = 'none';
         document.querySelectorAll('.form-step, .progress-stepper, h1').forEach(el => el.style.display = '');
+        const submitBtn = document.getElementById('submit-btn');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Gửi đề nghị';
+        }
+        isSubmitting = false;
         goToStep(1);
     }
 
