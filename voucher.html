@@ -4714,49 +4714,67 @@
             });
         }
 
-        // PDFs and scans over INLINE_FILE_SIZE cannot ride inside one Apps
-        // Script form field. Send ~280 KB slices; the Cash backend writes each
-        // slice to Drive and returns one link when the last slice arrives.
+        function showUploadToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            let toast = document.getElementById('upload-progress-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'upload-progress-toast';
+                toast.innerHTML = '<span class="toast-icon">ℹ️</span><div class="toast-content"><div class="toast-message"></div></div>';
+                container.appendChild(toast);
+            }
+            toast.className = 'toast ' + type;
+            const msg = toast.querySelector('.toast-message');
+            if (msg) msg.textContent = message;
+        }
+
+        function clearUploadToast() {
+            const toast = document.getElementById('upload-progress-toast');
+            if (toast) toast.remove();
+        }
+
+        // Files over INLINE_FILE_SIZE cannot sit inside the voucher JSON: Apps
+        // Script truncates one form field at ~1 MB. Send the file once, split
+        // across several fields (each under that limit). One round trip, one toast.
         async function uploadLargeAttachment(file, voucherNumber) {
-            const CHUNK = 280 * 1024;
+            const CHUNK = 600 * 1024; // multiple of 3 so the server can join the base64
             const totalChunks = Math.ceil(file.size / CHUNK);
-            const uploadId = 'upl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
-            let last = null;
+            const sizeLabel = (file.size / (1024 * 1024)).toFixed(1);
+            showUploadToast(`Đang tải "${file.name}" (${sizeLabel} MB)...`, 'info');
+            const formData = new FormData();
+            formData.append('action', 'uploadVoucherFile');
+            formData.append('fileName', file.name);
+            formData.append('mimeType', file.type || 'application/octet-stream');
+            formData.append('voucherNumber', voucherNumber || '');
+            formData.append('chunkCount', String(totalChunks));
             for (let i = 0; i < totalChunks; i++) {
                 const slice = file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK));
                 const dataUrl = await fileToBase64(slice);
                 const chunkBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
-                const body = {
-                    action: 'uploadVoucherFileChunk',
-                    uploadId: uploadId,
-                    chunkIndex: i,
-                    totalChunks: totalChunks,
-                    fileName: file.name,
-                    mimeType: file.type || 'application/octet-stream',
-                    voucherNumber: voucherNumber || '',
-                    chunkBase64: chunkBase64
-                };
-                showToast(`Đang tải "${file.name}" (${i + 1}/${totalChunks})...`, 'info');
-                const formData = new FormData();
-                formData.append('data', JSON.stringify(body));
-                const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
-                    method: 'POST',
-                    body: formData
-                });
-                const text = await response.text();
-                let result;
-                try { result = JSON.parse(text); } catch (e) {
-                    throw new Error('Phản hồi không hợp lệ khi tải file');
-                }
-                if (!response.ok || !result.success) {
-                    throw new Error(result.message || ('Không tải được phần ' + (i + 1)));
-                }
-                last = result;
+                formData.append('c' + i, chunkBase64);
             }
-            const uploaded = (last && last.data) || {};
+            const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                method: 'POST',
+                body: formData,
+                signal: httpTimeoutSignal(VOUCHER_SUBMIT_FETCH_TIMEOUT_MS)
+            });
+            const text = await response.text();
+            let result;
+            try { result = JSON.parse(text); } catch (e) {
+                clearUploadToast();
+                throw new Error('Phản hồi không hợp lệ khi tải file');
+            }
+            if (!response.ok || !result.success) {
+                clearUploadToast();
+                throw new Error(result.message || 'Không tải được file');
+            }
+            const uploaded = result.data || {};
             if (!uploaded.fileUrl) {
+                clearUploadToast();
                 throw new Error('Không lấy được link Drive cho "' + file.name + '"');
             }
+            clearUploadToast();
             return {
                 fileName: uploaded.fileName || file.name,
                 fileUrl: uploaded.fileUrl,

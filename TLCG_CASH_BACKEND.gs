@@ -549,6 +549,8 @@ function doPost(e) {
       case 'fetchSignatureImage':
         Logger.log('✅ Matched fetchSignatureImage case');
         return handleFetchSignatureImage(requestBody);
+      case 'uploadVoucherFile':
+        return handleUploadVoucherFile_(requestBody);
       case 'uploadVoucherFileChunk':
         return handleUploadVoucherFileChunk_(requestBody);
       default: 
@@ -4139,10 +4141,71 @@ function handleGetVoucherHistory(requestBody) {
 /** HÀM PHỤ TRỢ */
 
 /**
+ * Whole attachment in one request. The proxy sends base64 slices as separate
+ * form fields (c0, c1, …), each under Apps Script's per-field limit. Slices
+ * except the last are a multiple of 3 bytes, so the base64 strings concatenate.
+ */
+function handleUploadVoucherFile_(body) {
+  var total = Number(body && body.chunkCount);
+  if (!(total >= 1 && total <= 24) || total !== Math.floor(total)) {
+    return createResponse(false, 'File không hợp lệ');
+  }
+  var parts = [];
+  var b64len = 0;
+  for (var i = 0; i < total; i++) {
+    var part = String((body && body['c' + i]) || '');
+    if (part.indexOf(',') !== -1) part = part.split(',')[1];
+    part = part.replace(/\s/g, '');
+    if (!part) return createResponse(false, 'Thiếu dữ liệu file');
+    if (part.length > 1200000) return createResponse(false, 'Một phần file quá lớn');
+    if (i < total - 1) part = part.replace(/=+$/, '');
+    parts.push(part);
+    b64len += part.length;
+  }
+  if (b64len > 14 * 1024 * 1024) {
+    return createResponse(false, 'File vượt quá 10 MB');
+  }
+
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(parts.join(''));
+  } catch (decodeErr) {
+    Logger.log('❌ uploadVoucherFile decode: ' + decodeErr.message);
+    return createResponse(false, 'Không đọc được file');
+  }
+  if (bytes.length > 10 * 1024 * 1024) {
+    return createResponse(false, 'File vượt quá 10 MB');
+  }
+
+  var parentId = getCfg_('DRIVE_VOUCHER_FOLDER_ID', '1RBBUUAQIrYTWeBONIgkMtELL0hxZhtqG');
+  try {
+    var parent = DriveApp.getFolderById(parentId);
+    var voucherNo = String((body && body.voucherNumber) || 'draft');
+    var destIter = parent.getFoldersByName(voucherNo);
+    var dest = destIter.hasNext() ? destIter.next() : parent.createFolder(voucherNo);
+    var fileName = String((body && body.fileName) || 'attachment');
+    var mimeType = String((body && body.mimeType) || 'application/octet-stream');
+    var saved = dest.createFile(Utilities.newBlob(bytes, mimeType, fileName));
+    try {
+      saved.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      Logger.log('⚠️ Could not set public sharing for ' + fileName + ': ' + shareErr.message);
+    }
+    Logger.log('✅ uploadVoucherFile: ' + fileName + ' → ' + saved.getId() + ' (' + bytes.length + ' bytes, ' + total + ' parts)');
+    return createResponse(true, 'Đã tải file', {
+      fileName: fileName,
+      fileUrl: saved.getUrl(),
+      fileSize: bytes.length
+    });
+  } catch (saveErr) {
+    Logger.log('❌ uploadVoucherFile: ' + saveErr.message);
+    return createResponse(false, 'Không lưu được file: ' + saveErr.message);
+  }
+}
+
+/**
  * One slice of a file that is too large for a single Apps Script form field.
- * The browser sends ~280 KB of raw bytes (base64). Each slice is stored as a
- * part file; the last slice merges them into the voucher folder and returns
- * the Drive URL. The voucher submit then keeps only that URL.
+ * Kept for pages that still upload one slice per request.
  */
 function handleUploadVoucherFileChunk_(body) {
   var uploadId = String((body && body.uploadId) || '');

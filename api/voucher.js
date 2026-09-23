@@ -146,7 +146,10 @@ function checkRateLimit(key) {
 async function parseFormData(req) {
   return new Promise((resolve, reject) => {
     try {
-      const bb = busboy({ headers: req.headers });
+      const bb = busboy({
+        headers: req.headers,
+        limits: { fieldSize: 2 * 1024 * 1024 }
+      });
       const fields = {};
       
       bb.on('field', (name, value) => {
