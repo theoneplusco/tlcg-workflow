@@ -2,7 +2,8 @@
  * Cash book — Bảng kiểm kê quỹ
  *
  * Second .gs file in the same Cash Apps Script project as TLCG_CASH_BACKEND.gs.
- * doPost in that file routes getCashBook, getCashCount, and saveCashCount here.
+ * doPost in that file routes getCashBook, getCashCount, getCashBookSummary,
+ * getRecentCashCounts, saveCashCount, and signCashCount here.
  * Do not paste this file into Core or P2P. Do not create a second web app.
  * After adding this file in the Cash project (+), redeploy the existing web app
  * (Execute as: Me).
@@ -396,49 +397,63 @@ function cashBookEsc_(value) {
     .replace(/"/g, '&quot;');
 }
 
-function cashBookNotify_(companyName, companyKey, endDate, hour, minute, bookBalance, counted, storedReps, callerEmail) {
-  var to = [];
-  var seen = {};
-  for (var i = 0; i < storedReps.length; i++) {
-    var email = String(storedReps[i].email || '').trim();
-    var id = cashBookNorm_(email);
-    if (!email || email.indexOf('@') === -1 || seen[id]) continue;
-    seen[id] = true;
-    to.push(email);
+function cashBookSignedCount_(reps) {
+  var n = 0;
+  for (var i = 0; i < CASH_BOOK_ROLES.length; i++) {
+    if (reps[i] && String(reps[i].signatureUrl || '').trim()) n++;
+    else break;
   }
-  if (!to.length) return 'Không có email người ký để gửi thông báo.';
-  var labels = ['Người chịu trách nhiệm kiểm kê quỹ', 'Kế toán trưởng', 'Thủ quỹ'];
-  var people = '';
-  for (var r = 0; r < storedReps.length; r++) {
-    var person = storedReps[r];
-    people += '<li><b>' + (r + 1) + '. ' + labels[r] + ':</b> ' + cashBookEsc_(person.name);
-    if (person.email) people += ' (' + cashBookEsc_(person.email) + ')';
-    people += '</li>';
+  return n;
+}
+
+function cashBookSignStatus_(n) {
+  if (n <= 0) return 'Chờ duyệt';
+  if (n === 1) return 'Đang duyệt (1/3)';
+  if (n === 2) return 'Đang duyệt (2/3)';
+  return 'Đã duyệt (3/3)';
+}
+
+function cashBookFindCurrent_(sheet, key, endDate) {
+  var rows = cashBookReadCountRows_(sheet);
+  var found = null;
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() !== key) continue;
+    if (cashBookYmd_(rows[i][2]) !== endDate) continue;
+    if (String(rows[i][14] || '').trim() !== 'current') continue;
+    found = rows[i];
   }
-  var diff = (Number(bookBalance) || 0) - counted;
+  return found;
+}
+
+function cashBookNotifyNext_(companyName, companyKey, endDate, previous, nextPerson, progress) {
+  var email = String((nextPerson && nextPerson.email) || '').trim();
+  if (!email || email.indexOf('@') === -1) return 'Không có email người ký tiếp theo.';
   var link = BASE_URL + '/cash_book.html?company=' + encodeURIComponent(companyKey || companyName) + '&date=' + encodeURIComponent(endDate);
-  var hh = ('0' + hour).slice(-2);
-  var mm = ('0' + minute).slice(-2);
+  var nextLabel = CASH_BOOK_ROLES[progress] ? CASH_BOOK_ROLES[progress].label : '';
+  var prevLabel = CASH_BOOK_ROLES[progress - 1] ? CASH_BOOK_ROLES[progress - 1].label : '';
+  var status = cashBookSignStatus_(progress);
   var body = ''
-    + '<p>Kính gửi các cấp quản lý,</p>'
-    + '<p>Bảng kiểm kê quỹ đã được lưu. Thứ tự ký: (1) Người chịu trách nhiệm kiểm kê quỹ, (2) Kế toán trưởng, (3) Thủ quỹ.</p>'
-    + '<p><b>Thông tin chi tiết:</b></p>'
-    + '<ul>'
-    + '<li><b>Công ty:</b> ' + cashBookEsc_(companyName) + '</li>'
-    + '<li><b>Ngày kiểm kê:</b> ' + cashBookEsc_(endDate) + '</li>'
-    + '<li><b>Giờ kiểm kê:</b> ' + hh + ' giờ ' + mm + ' phút</li>'
-    + '<li><b>Số dư theo sổ quỹ:</b> ' + cashBookMoney_(bookBalance) + '</li>'
-    + '<li><b>Số kiểm kê thực tế:</b> ' + cashBookMoney_(counted) + '</li>'
-    + '<li><b>Chênh lệch (I − II):</b> ' + cashBookMoney_(diff) + '</li>'
-    + people
-    + '</ul>'
-    + '<p style="margin-top: 15px;"><a href="' + link + '" style="background: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Xem bảng kiểm kê quỹ</a></p>'
+    + '<p>Kính gửi ' + cashBookEsc_(nextPerson.name) + ',</p>'
+    + '<p>Bảng kiểm kê quỹ <strong>' + cashBookEsc_(companyName) + '</strong> ngày <strong>' + cashBookEsc_(endDate) + '</strong> đã được ký bởi ' + cashBookEsc_(prevLabel) + ' ' + cashBookEsc_(previous ? previous.name : '') + '.</p>'
+    + '<p><strong>' + status + '</strong></p>'
+    + '<p>Đến lượt bạn ký với vai trò <strong>' + cashBookEsc_(nextLabel) + '</strong>.</p>'
+    + '<p style="margin-top: 15px;"><a href="' + link + '" style="background: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Ký bảng kiểm kê quỹ</a></p>'
     + '<p>Trân trọng,<br>Hệ thống Kế toán Tự động</p>';
-  var caller = String(callerEmail || '').trim();
   var options = { htmlBody: body };
-  if (caller && caller.indexOf('@') !== -1 && !seen[cashBookNorm_(caller)]) options.cc = caller;
-  if (caller && caller.indexOf('@') !== -1) options.replyTo = caller;
-  GmailApp.sendEmail(to.join(','), '[THÔNG BÁO] Bảng kiểm kê quỹ ' + companyName + ' ngày ' + endDate, '', options);
+  if (previous && previous.email && String(previous.email).indexOf('@') !== -1) options.replyTo = String(previous.email).trim();
+  GmailApp.sendEmail(email, '[PHÊ DUYỆT] Bảng kiểm kê quỹ ' + companyName + ' - ' + nextLabel, '', options);
+  return '';
+}
+
+function cashBookNotifyDone_(companyName, endDate, toEmail) {
+  var email = String(toEmail || '').trim();
+  if (!email || email.indexOf('@') === -1) return '';
+  var body = ''
+    + '<p>Kính gửi,</p>'
+    + '<p>Bảng kiểm kê quỹ <strong>' + cashBookEsc_(companyName) + '</strong> ngày <strong>' + cashBookEsc_(endDate) + '</strong> đã ký đủ.</p>'
+    + '<p><strong>Đã duyệt (3/3)</strong></p>'
+    + '<p>Trân trọng,<br>Hệ thống Kế toán Tự động</p>';
+  GmailApp.sendEmail(email, '[THÔNG BÁO] Bảng kiểm kê quỹ đã duyệt (3/3) — ' + companyName, '', { htmlBody: body });
   return '';
 }
 
@@ -465,6 +480,17 @@ function handleSaveCashCount(requestBody) {
     if (!cashBookMaySave_(callerEmail, companyRow, employees, repEmail)) {
       return createResponse(false, 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.');
     }
+    var ownerEmail = cashBookNorm_(repEmail);
+    var ownerEmployee = null;
+    for (var s = 0; s < employees.length; s++) {
+      if (!ownerEmail || cashBookNorm_(employees[s].email) !== ownerEmail) continue;
+      ownerEmployee = employees[s];
+      break;
+    }
+    if (!ownerEmployee) return createResponse(false, 'Người chịu trách nhiệm kiểm kê quỹ phải là nhân viên trong Master Employee.');
+    if (cashBookNorm_(callerEmail) !== ownerEmail) return createResponse(false, 'Người chịu trách nhiệm kiểm kê quỹ phải tự ký.');
+    repsIn[0].name = ownerEmployee.name;
+    repsIn[0].email = ownerEmployee.email;
 
     var quantities = body.quantities || [];
     if (!quantities || quantities.length !== 10) return createResponse(false, 'Nhập đủ 10 mệnh giá.');
@@ -480,23 +506,32 @@ function handleSaveCashCount(requestBody) {
     for (var f = 0; f < 10; f++) counted += qty[f] * faces[f];
 
     var storedReps = [];
-    var seenSig = {};
     for (var r = 0; r < CASH_BOOK_ROLES.length; r++) {
       var role = CASH_BOOK_ROLES[r];
       var src = repsIn[r] || {};
       var name = String(src.name || '').trim();
       var email = String(src.email || '').trim();
       if (!name) return createResponse(false, 'Còn thiếu tên ' + role.label + '.');
-      var sigUrl = String(src.signatureUrl || '').trim();
-      if (email && seenSig[cashBookNorm_(email)]) sigUrl = seenSig[cashBookNorm_(email)];
-      sigUrl = cashBookStoreSignature_(src.signatureData, sigUrl, 'cash-count-' + endDate + '-' + role.key + '.jpg');
-      if (!sigUrl) return createResponse(false, 'Còn thiếu chữ ký ' + role.label + '.');
-      if (email) seenSig[cashBookNorm_(email)] = sigUrl;
+      var sigUrl = '';
+      if (r === 0) {
+        sigUrl = String(src.signatureUrl || '').trim();
+        sigUrl = cashBookStoreSignature_(src.signatureData, sigUrl, 'cash-count-' + endDate + '-' + role.key + '.jpg');
+        if (!sigUrl) return createResponse(false, 'Còn thiếu chữ ký ' + role.label + '.');
+      }
       storedReps.push({ role: role.key, name: name, email: email, signatureUrl: sigUrl });
     }
 
     var key = cashBookCountKey_(companyRow, companyName);
     var sheet = cashBookEnsureSheet_();
+    var existing = cashBookFindCurrent_(sheet, key, endDate);
+    if (existing) {
+      var existingReps = [];
+      try { existingReps = JSON.parse(String(existing[11] || '[]')); } catch (e) { existingReps = []; }
+      var existingProgress = cashBookSignedCount_(existingReps);
+      if (existingProgress > 0 && existingProgress < 3) {
+        return createResponse(false, cashBookSignStatus_(existingProgress) + '. Đang chờ người tiếp theo ký.');
+      }
+    }
     cashBookMarkReplaced_(sheet, key, endDate, null);
     var savedAt = new Date().toISOString();
     sheet.appendRow([
@@ -520,15 +555,83 @@ function handleSaveCashCount(requestBody) {
     cashBookMarkReplaced_(sheet, key, endDate, newRow);
     var emailWarning = '';
     try {
-      emailWarning = cashBookNotify_(String(companyRow[0] || companyName), key, endDate, hour, minute, Number(body.bookBalance) || 0, counted, storedReps, callerEmail);
+      emailWarning = cashBookNotifyNext_(String(companyRow[0] || companyName), key, endDate, storedReps[0], storedReps[1], 1);
     } catch (emailError) {
       Logger.log('⚠️ Cash count saved but email failed: ' + emailError);
-      emailWarning = 'Bảng đã lưu. Email thông báo chưa gửi được.';
+      emailWarning = 'Bảng đã ký. Email cho người ký tiếp theo chưa gửi được.';
     }
-    var message = emailWarning ? 'Đã lưu bảng kiểm kê. ' + emailWarning : 'Đã lưu bảng kiểm kê và đã gửi email thông báo.';
-    return createResponse(true, message, { savedAt: savedAt });
+    var message = emailWarning ? 'Đã ký (1/3). ' + emailWarning : 'Đã ký (1/3). Đã gửi email cho ' + storedReps[1].name + '.';
+    return createResponse(true, message, { savedAt: savedAt, signProgress: 1, signStatus: cashBookSignStatus_(1) });
   } catch (error) {
     Logger.log('❌ handleSaveCashCount: ' + error);
+    return createResponse(false, msg_('errGeneric') + error.message);
+  }
+}
+
+function handleSignCashCount(requestBody) {
+  try {
+    var body = requestBody || {};
+    var companyName = String(body.companyName || body.company || '').trim();
+    var companyKey = String(body.companyKey || '').trim();
+    var endDate = cashBookYmd_(body.endDate);
+    var callerEmail = String(body.callerEmail || '').trim();
+    if (!companyName || !endDate) return createResponse(false, 'Chọn công ty và ngày kết thúc.');
+    var companyRow = cashBookFindCompany_(companyName, companyKey);
+    if (!companyRow) return createResponse(false, cashBookCompanyMiss_(companyName, companyKey));
+    var key = cashBookCountKey_(companyRow, companyName);
+    var sheet = cashBookEnsureSheet_();
+    var found = cashBookFindCurrent_(sheet, key, endDate);
+    if (!found) return createResponse(false, 'Chưa có bảng kiểm kê để ký.');
+    var reps = [];
+    try { reps = JSON.parse(String(found[11] || '[]')); } catch (e) { reps = []; }
+    var progress = cashBookSignedCount_(reps);
+    if (progress >= 3) return createResponse(false, 'Đã duyệt (3/3).');
+    if (progress < 1) return createResponse(false, 'Người chịu trách nhiệm kiểm kê quỹ chưa ký.');
+    var next = reps[progress];
+    if (!next || cashBookNorm_(next.email) !== cashBookNorm_(callerEmail)) {
+      return createResponse(false, 'Đang chờ ' + ((next && next.name) || 'người ký tiếp theo') + ' ký. ' + cashBookSignStatus_(progress) + '.');
+    }
+    var role = CASH_BOOK_ROLES[progress];
+    var sigUrl = cashBookStoreSignature_(body.signatureData, body.signatureUrl, 'cash-count-' + endDate + '-' + role.key + '.jpg');
+    if (!sigUrl) return createResponse(false, 'Còn thiếu chữ ký ' + role.label + '.');
+    next.signatureUrl = sigUrl;
+    reps[progress] = next;
+    var savedAt = new Date().toISOString();
+    cashBookMarkReplaced_(sheet, key, endDate, null);
+    sheet.appendRow([
+      key,
+      String(found[1] || companyName),
+      endDate,
+      found[3],
+      found[4],
+      String(found[5] || '[]'),
+      found[6],
+      found[7],
+      String(found[8] || ''),
+      String(found[9] || ''),
+      String(found[10] || ''),
+      JSON.stringify(reps),
+      String(found[12] || callerEmail),
+      savedAt,
+      'current'
+    ]);
+    var newRow = sheet.getLastRow();
+    cashBookMarkReplaced_(sheet, key, endDate, newRow);
+    var newProgress = progress + 1;
+    var emailWarning = '';
+    try {
+      if (newProgress < 3) emailWarning = cashBookNotifyNext_(String(companyRow[0] || companyName), key, endDate, next, reps[newProgress], newProgress);
+      else emailWarning = cashBookNotifyDone_(String(companyRow[0] || companyName), endDate, String(found[12] || ''));
+    } catch (emailError) {
+      Logger.log('⚠️ Cash count signed but email failed: ' + emailError);
+      emailWarning = 'Đã ký. Email thông báo chưa gửi được.';
+    }
+    var message = cashBookSignStatus_(newProgress);
+    if (newProgress < 3 && !emailWarning) message += '. Đã gửi email cho ' + (reps[newProgress].name || '') + '.';
+    if (emailWarning) message += '. ' + emailWarning;
+    return createResponse(true, message, { savedAt: savedAt, signProgress: newProgress, signStatus: cashBookSignStatus_(newProgress) });
+  } catch (error) {
+    Logger.log('❌ handleSignCashCount: ' + error);
     return createResponse(false, msg_('errGeneric') + error.message);
   }
 }
@@ -564,6 +667,67 @@ function handleGetCashBookSummary() {
     });
   } catch (error) {
     Logger.log('❌ handleGetCashBookSummary: ' + error);
+    return createResponse(false, msg_('errGeneric') + error.message);
+  }
+}
+
+function handleGetRecentCashCounts(requestBody) {
+  try {
+    var body = requestBody || {};
+    var companyName = String(body.companyName || body.company || '').trim();
+    var companyKey = String(body.companyKey || '').trim();
+    var onlyKey = '';
+    if (companyName || companyKey) {
+      var companyRow = cashBookFindCompany_(companyName, companyKey);
+      if (!companyRow) return createResponse(false, cashBookCompanyMiss_(companyName, companyKey));
+      onlyKey = cashBookCountKey_(companyRow, companyName);
+    }
+    var sheet = cashBookEnsureSheet_();
+    var rows = cashBookReadCountRows_(sheet);
+    var counts = [];
+    var pipeline = { step1: 0, step2: 0, step3: 0 };
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][14] || '').trim() !== 'current') continue;
+      var key = String(rows[i][0] || '').trim();
+      if (onlyKey && key !== onlyKey) continue;
+      var reps = [];
+      try { reps = JSON.parse(String(rows[i][11] || '[]')); } catch (e) { reps = []; }
+      var progress = cashBookSignedCount_(reps);
+      if (progress === 1) pipeline.step1++;
+      else if (progress === 2) pipeline.step2++;
+      else if (progress >= 3) pipeline.step3++;
+      var next = progress < 3 ? reps[progress] : null;
+      var people = [];
+      for (var r = 0; r < CASH_BOOK_ROLES.length; r++) {
+        var person = reps[r] || {};
+        people.push({
+          role: CASH_BOOK_ROLES[r].label,
+          name: String(person.name || ''),
+          signed: !!String(person.signatureUrl || '').trim()
+        });
+      }
+      counts.push({
+        companyKey: key,
+        companyName: String(rows[i][1] || ''),
+        endDate: cashBookYmd_(rows[i][2]),
+        savedAt: String(rows[i][13] || ''),
+        bookBalance: Number(rows[i][6]) || 0,
+        countedTotal: Number(rows[i][7]) || 0,
+        signProgress: progress,
+        signStatus: cashBookSignStatus_(progress),
+        nextName: next ? String(next.name || '') : '',
+        nextRole: next && CASH_BOOK_ROLES[progress] ? CASH_BOOK_ROLES[progress].label : '',
+        people: people
+      });
+    }
+    counts.sort(function(a, b) {
+      if (a.savedAt === b.savedAt) return a.endDate < b.endDate ? 1 : -1;
+      return a.savedAt < b.savedAt ? 1 : -1;
+    });
+    if (counts.length > 40) counts = counts.slice(0, 40);
+    return createResponse(true, 'Thành công', { counts: counts, pipeline: pipeline });
+  } catch (error) {
+    Logger.log('❌ handleGetRecentCashCounts: ' + error);
     return createResponse(false, msg_('errGeneric') + error.message);
   }
 }

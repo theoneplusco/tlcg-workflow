@@ -248,6 +248,37 @@
 
         .form-meta { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
         #form-date { font-size: 15px; font-weight: 600; margin: 8px 0 14px; }
+        .sign-status {
+            display: inline-block; margin: 0 0 10px; padding: 4px 10px; border-radius: 999px;
+            background: #E8F1FF; color: #1d4ed8; font-size: 13px; font-weight: 700;
+        }
+        .sign-status.is-done { background: #E7F8EE; color: #15803d; }
+        .count-pipe { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 16px; }
+        .count-step {
+            border: 0.5px solid var(--sep); border-radius: 12px; background: white;
+            padding: 10px 8px; text-align: center; cursor: pointer; font: inherit; color: inherit;
+        }
+        .count-step.is-on { box-shadow: 0 0 0 2px var(--primary); }
+        .count-step .dot {
+            width: 28px; height: 28px; margin: 0 auto 6px; border-radius: 999px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 13px; font-weight: 700;
+        }
+        .count-step.s1 .dot { background: #60a5fa; }
+        .count-step.s2 .dot { background: #818cf8; }
+        .count-step.s3 .dot { background: #34d399; }
+        .count-step .n { font-size: 20px; font-weight: 700; line-height: 1.1; }
+        .count-step .lbl { font-size: 12px; font-weight: 650; margin-top: 2px; }
+        .count-step .sub { font-size: 11px; color: var(--text-secondary); }
+        .count-row {
+            display: flex; align-items: center; gap: 12px; width: 100%;
+            padding: 12px 0; border: 0; border-top: 0.5px solid var(--sep);
+            background: transparent; text-align: left; font: inherit; cursor: pointer; color: inherit;
+        }
+        .count-badge { font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+        .count-badge.s1 { background: #E8F1FF; color: #1d4ed8; }
+        .count-badge.s2 { background: #EEF2FF; color: #4338ca; }
+        .count-badge.s3 { background: #E7F8EE; color: #15803d; }
         .banner {
             background: rgba(255,149,0,0.10); border: 0.5px solid rgba(255,149,0,0.28);
             color: #9a6700; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; font-weight: 500;
@@ -414,6 +445,7 @@
 
         <section class="card" id="count-form">
             <h2 class="form-head" data-i18n="cbCountTitle">Bảng kiểm kê quỹ</h2>
+            <p id="sign-status" class="sign-status" hidden></p>
             <p id="saved-banner" class="banner" hidden data-i18n="cbSavedBanner">Đã có bảng kiểm kê ngày này.</p>
             <p id="form-date">Hôm nay, vào … giờ … phút, ngày … tháng … năm …</p>
             <div class="no-print" style="margin: 12px 0;">
@@ -449,13 +481,39 @@
             <div id="reps"></div>
             <div id="print-sigs"></div>
         </section>
+
+        <section class="card no-print" id="recent-counts">
+            <h2 data-i18n="cbRecent">Phiếu kiểm kê gần đây</h2>
+            <p class="form-meta" data-i18n="cbRecentHint">Tiến độ ký, cùng cách với phiếu thu chi.</p>
+            <div class="count-pipe" id="count-pipe">
+                <button type="button" class="count-step s1" data-step="1">
+                    <div class="dot">1</div>
+                    <div class="n" id="count-step-1">0</div>
+                    <div class="lbl">Duyệt 1/3</div>
+                    <div class="sub">Người kiểm kê</div>
+                </button>
+                <button type="button" class="count-step s2" data-step="2">
+                    <div class="dot">2</div>
+                    <div class="n" id="count-step-2">0</div>
+                    <div class="lbl">Duyệt 2/3</div>
+                    <div class="sub">Kế toán trưởng</div>
+                </button>
+                <button type="button" class="count-step s3" data-step="3">
+                    <div class="dot">3</div>
+                    <div class="n" id="count-step-3">0</div>
+                    <div class="lbl">Đã duyệt</div>
+                    <div class="sub">Thủ quỹ</div>
+                </button>
+            </div>
+            <div id="recent-count-list"></div>
+        </section>
     </main>
     <div class="bar no-print">
         <span id="save-hint"></span>
         <div class="bar-actions">
             <button type="button" class="btn" id="review-btn"><i class="fas fa-eye"></i> <span data-i18n="cbReview">Xem lại</span></button>
             <button type="button" class="btn" id="print-btn"><i class="fas fa-print"></i> <span data-i18n="cbPrint">In</span></button>
-            <button type="button" class="btn btn-primary" id="save-btn" disabled><i class="fas fa-save"></i> <span data-i18n="cbSave">Lưu bảng kiểm kê</span></button>
+            <button type="button" class="btn btn-primary" id="save-btn" disabled><i class="fas fa-save"></i> <span id="save-label" data-i18n="cbSave">Lưu bảng kiểm kê</span></button>
         </div>
     </div>
     </div>
@@ -482,11 +540,15 @@
         var approvers = null;
         var book = null;
         var savedCount = null;
+        var recentCounts = [];
+        var recentPipeline = { step1: 0, step2: 0, step3: 0 };
+        var recentError = '';
+        var recentStep = 0;
         var pages = { book: 0, pending: 0 };
         var reps = [
-            { key: 'nguoiChiuTrachNhiem', labelKey: 'cbRoleOwner', name: '', email: '', signatureUrl: '', signatureData: '' },
-            { key: 'keToanTruong', labelKey: 'cbRoleAccountant', name: '', email: '', signatureUrl: '', signatureData: '' },
-            { key: 'thuQuy', labelKey: 'cbRoleTreasurer', name: '', email: '', signatureUrl: '', signatureData: '' }
+            { key: 'nguoiChiuTrachNhiem', labelKey: 'cbRoleOwner', name: '', email: '', signatureUrl: '', signatureData: '', masterSignature: '', signed: false },
+            { key: 'keToanTruong', labelKey: 'cbRoleAccountant', name: '', email: '', signatureUrl: '', signatureData: '', masterSignature: '', signed: false },
+            { key: 'thuQuy', labelKey: 'cbRoleTreasurer', name: '', email: '', signatureUrl: '', signatureData: '', masterSignature: '', signed: false }
         ];
         var sigCache = {};
 
@@ -552,22 +614,51 @@
             var startDate = document.getElementById('start-date').value;
             var endDate = document.getElementById('end-date').value;
             var time = countTime();
+            var n = signedCount();
             if (!selectedCompany() || !startDate || !endDate) return tr('cbNeedDates', 'Chọn công ty, ngày bắt đầu và ngày kết thúc.');
             if (startDate > todayVN() || endDate > todayVN()) return tr('cbFuture', 'Không chọn ngày trong tương lai.');
             if (startDate > endDate) return tr('cbStartAfterEnd', 'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.');
-            if (time.hour < 0 || time.hour > 23 || time.minute < 0 || time.minute > 59) return tr('cbBadTime', 'Chọn giờ kiểm kê.');
+            if (n >= 3) return signStatusText(3);
+            if (n === 0 && (time.hour < 0 || time.hour > 23 || time.minute < 0 || time.minute > 59)) return tr('cbBadTime', 'Chọn giờ kiểm kê.');
             for (var i = 0; i < reps.length; i++) {
-                var label = tr(reps[i].labelKey, reps[i].labelKey);
-                if (!reps[i].name) return tr('cbMissingName', 'Còn thiếu tên.') + ' ' + label;
-                if (!reps[i].signatureUrl && !reps[i].signatureData) return tr('cbMissingSig', 'Còn thiếu chữ ký.') + ' ' + label;
+                if (!reps[i].name) return tr('cbMissingName', 'Còn thiếu tên.') + ' ' + tr(reps[i].labelKey, reps[i].labelKey);
             }
-            if (!maySave()) return tr('cbCannotSave', 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.');
+            var next = reps[n];
+            if (!next || norm(user.email) !== norm(next.email)) {
+                return tr('cbNotYourTurn', 'Chỉ {name} mới ký bước này.').replace('{name}', (next && next.name) || '');
+            }
+            if (!signatureReady(next)) return tr('cbMissingSig', 'Còn thiếu chữ ký.') + ' ' + tr(next.labelKey, next.labelKey);
             return '';
         }
         function renderSaveBar() {
+            var n = signedCount();
             var gap = firstGap();
-            document.getElementById('save-hint').textContent = gap;
-            document.getElementById('save-btn').disabled = !!gap || !book;
+            var waiting = n < 3 && reps[n] && norm(user.email) !== norm(reps[n].email);
+            var hint = gap;
+            if (waiting && reps[n] && reps[n].name) {
+                hint = (signStatusText(n) ? signStatusText(n) + '. ' : '') + tr('cbWaiting', 'Đang chờ {name} ký.').replace('{name}', reps[n].name);
+            }
+            document.getElementById('save-hint').textContent = hint;
+            var btn = document.getElementById('save-btn');
+            var label = document.getElementById('save-label');
+            if (n >= 3) label.textContent = signStatusText(3);
+            else if (n === 0) label.textContent = tr('cbSignStart', 'Ký và gửi');
+            else label.textContent = tr('cbSignNext', 'Ký');
+            btn.disabled = !!gap || !book || waiting;
+            var status = document.getElementById('sign-status');
+            if (!savedCount || n === 0) {
+                status.hidden = true;
+            } else {
+                status.hidden = false;
+                status.textContent = signStatusText(n);
+                status.className = 'sign-status' + (n >= 3 ? ' is-done' : '');
+            }
+            var locked = n > 0;
+            document.querySelectorAll('[data-qty]').forEach(function(input) { input.disabled = locked; });
+            ['count-time', 'reason-thua', 'reason-thieu', 'conclusion'].forEach(function(id) {
+                var field = document.getElementById(id);
+                if (field) field.disabled = locked;
+            });
         }
         function renderDateLine() {
             var end = document.getElementById('end-date').value;
@@ -645,6 +736,7 @@
         function sigSrc(rep) {
             if (rep.signatureData) return rep.signatureData;
             if (rep.signatureUrl && sigCache[rep.signatureUrl]) return sigCache[rep.signatureUrl];
+            if (rep.masterSignature && sigCache[rep.masterSignature]) return sigCache[rep.masterSignature];
             return '';
         }
         async function hydrateSig(url) {
@@ -653,27 +745,31 @@
             if (result.success && result.data && result.data.imageBase64) sigCache[url] = result.data.imageBase64;
             return sigCache[url] || '';
         }
-        function shareSignatures() {
-            var byEmail = {};
-            reps.forEach(function(rep) {
-                if (!rep.email) return;
-                var key = norm(rep.email);
-                if (rep.signatureUrl) byEmail[key] = rep.signatureUrl;
-            });
-            reps.forEach(function(rep) {
-                var shared = rep.email && byEmail[norm(rep.email)];
-                if (shared && !rep.signatureUrl) rep.signatureUrl = shared;
-            });
+        function signedCount() {
+            var n = 0;
+            for (var i = 0; i < reps.length; i++) {
+                if (reps[i].signed && reps[i].signatureUrl) n++;
+                else break;
+            }
+            return n;
+        }
+        function signStatusText(n) {
+            if (n <= 0) return '';
+            if (n === 1) return 'Đang duyệt (1/3)';
+            if (n === 2) return 'Đang duyệt (2/3)';
+            return 'Đã duyệt (3/3)';
+        }
+        function signatureReady(rep) {
+            return !!(rep.signatureData || rep.signatureUrl || rep.masterSignature);
         }
         function renderReps() {
-            shareSignatures();
             var root = document.getElementById('reps');
             root.innerHTML = '';
             var printSigs = document.getElementById('print-sigs');
             printSigs.innerHTML = '';
             var printOrder = [0, 1, 2];
             var titles = [tr('cbRoleOwner', 'Người chịu trách nhiệm kiểm kê quỹ'), tr('cbRoleAccountant', 'Kế toán trưởng'), tr('cbRoleTreasurer', 'Thủ quỹ')];
-            reps.forEach(function(rep) {
+            reps.forEach(function(rep, index) {
                 var row = document.createElement('div');
                 row.className = 'rep';
                 var role = document.createElement('div');
@@ -696,14 +792,16 @@
                     select.selectedIndex = 1;
                     rep.name = options[0].name || '';
                     rep.email = options[0].email || '';
-                    if (!rep.signatureUrl) rep.signatureUrl = options[0].signatureUrl || '';
+                    if (!rep.masterSignature) rep.masterSignature = options[0].signatureUrl || '';
                 }
+                select.disabled = signedCount() > 0;
                 select.addEventListener('change', function() {
                     var picked = options[select.selectedIndex - 1];
                     rep.name = picked ? picked.name : '';
                     rep.email = picked ? (picked.email || '') : '';
-                    rep.signatureUrl = picked && picked.signatureUrl ? picked.signatureUrl : '';
+                    rep.masterSignature = picked && picked.signatureUrl ? picked.signatureUrl : '';
                     rep.signatureData = '';
+                    if (!rep.signed) rep.signatureUrl = '';
                     renderReps();
                     renderSaveBar();
                 });
@@ -714,21 +812,21 @@
                 if (src) img.src = src;
                 else img.hidden = true;
                 sig.appendChild(img);
-                if (!rep.signatureUrl) {
+                if (!rep.signed && signedCount() === index) {
                     var file = document.createElement('input');
                     file.type = 'file';
                     file.accept = 'image/png,image/jpeg,image/jpg';
                     file.className = 'no-print';
                     file.addEventListener('change', function() { onSigFile(rep, file.files[0], img); });
-                    if (rep.signatureUrl) file.hidden = true;
                     sig.appendChild(file);
                 }
                 row.appendChild(role);
                 row.appendChild(select);
                 row.appendChild(sig);
                 root.appendChild(row);
-                if (rep.signatureUrl && !sigCache[rep.signatureUrl]) {
-                    hydrateSig(rep.signatureUrl).then(function() { renderReps(); });
+                var pendingUrl = rep.signatureUrl || rep.masterSignature;
+                if (pendingUrl && !sigCache[pendingUrl]) {
+                    hydrateSig(pendingUrl).then(function() { renderReps(); });
                 }
             });
             printOrder.forEach(function(index) {
@@ -811,7 +909,15 @@
         function applyCount(count) {
             savedCount = count;
             document.getElementById('saved-banner').hidden = !count;
-            if (!count) return;
+            if (!count) {
+                reps.forEach(function(rep) {
+                    rep.signatureUrl = '';
+                    rep.signatureData = '';
+                    rep.signed = false;
+                });
+                renderDateLine();
+                return;
+            }
             document.getElementById('count-time').value = pad2(count.countHour) + ':' + pad2(count.countMinute);
             (count.quantities || []).forEach(function(n, i) {
                 var input = document.querySelector('[data-qty="' + i + '"]');
@@ -830,6 +936,7 @@
                 rep.email = saved.email || '';
                 rep.signatureUrl = saved.signatureUrl || '';
                 rep.signatureData = '';
+                rep.signed = !!rep.signatureUrl;
             });
             renderDateLine();
             renderReps();
@@ -839,16 +946,27 @@
             if (!person || !person.name) return null;
             return { name: person.name, email: person.email || '', signatureUrl: person.signature || '' };
         }
-        function keyPersonOptions() {
-            var people = [approvers && approvers.legalRep, approvers && approvers.accountant, approvers && approvers.treasurer];
+        function signatureForEmail(email) {
+            if (!approvers || !email) return '';
+            var id = norm(email);
+            var people = [approvers.legalRep, approvers.accountant, approvers.treasurer];
+            for (var i = 0; i < people.length; i++) {
+                var person = people[i];
+                if (person && norm(person.email) === id && person.signature) return person.signature;
+            }
+            return '';
+        }
+        function companyEmployeeOptions() {
             var options = [];
-            people.forEach(function(person) {
-                var opt = personOption(person);
-                if (!opt) return;
-                var id = norm(opt.email || opt.name);
-                if (options.some(function(item) { return norm(item.email || item.name) === id; })) return;
-                options.push(opt);
+            employees.forEach(function(emp) {
+                var name = String(emp.name || '').trim();
+                var email = String(emp.email || '').trim();
+                if (!name || !email) return;
+                var id = norm(email);
+                if (options.some(function(item) { return norm(item.email) === id; })) return;
+                options.push({ name: name, email: email, signatureUrl: signatureForEmail(email) });
             });
+            options.sort(function(a, b) { return a.name.localeCompare(b.name, 'vi'); });
             return options;
         }
         function fillRepOptions() {
@@ -857,7 +975,7 @@
                 { index: 2, person: approvers && approvers.treasurer }
             ];
             var owner = reps[0];
-            owner.options = keyPersonOptions();
+            owner.options = companyEmployeeOptions();
             var ownerStillListed = owner.options.some(function(opt) {
                 return norm(opt.email || opt.name) === norm(owner.email || owner.name);
             });
@@ -866,9 +984,16 @@
                 owner.email = '';
                 owner.signatureUrl = '';
                 owner.signatureData = '';
+                owner.masterSignature = '';
+                owner.signed = false;
             }
+            var ownerPick = null;
+            owner.options.forEach(function(opt) {
+                if (norm(opt.email) === norm(owner.email)) ownerPick = opt;
+            });
+            if (ownerPick) owner.masterSignature = ownerPick.signatureUrl || owner.masterSignature || '';
             if (owner.name && !owner.options.some(function(opt) { return norm(opt.email || opt.name) === norm(owner.email || owner.name); })) {
-                owner.options.unshift({ name: owner.name, email: owner.email, signatureUrl: owner.signatureUrl });
+                owner.options.unshift({ name: owner.name, email: owner.email, signatureUrl: owner.masterSignature || '' });
             }
             fixed.forEach(function(item) {
                 var opt = personOption(item.person);
@@ -876,15 +1001,16 @@
                 if (!savedCount) {
                     rep.name = opt ? opt.name : '';
                     rep.email = opt ? opt.email : '';
-                    rep.signatureUrl = opt ? opt.signatureUrl : '';
+                    rep.signatureUrl = '';
                     rep.signatureData = '';
+                    rep.signed = false;
                 }
+                rep.masterSignature = opt ? (opt.signatureUrl || '') : '';
                 rep.options = opt ? [opt] : [];
-                if (rep.name && !rep.options.some(function(item) { return item.name === rep.name; })) {
-                    rep.options.unshift({ name: rep.name, email: rep.email, signatureUrl: rep.signatureUrl });
+                if (rep.name && !rep.options.some(function(optItem) { return optItem.name === rep.name; })) {
+                    rep.options.unshift({ name: rep.name, email: rep.email, signatureUrl: rep.masterSignature });
                 }
             });
-            shareSignatures();
             renderReps();
             renderSaveBar();
         }
@@ -928,16 +1054,19 @@
             pages.pending = 0;
             if (!company || !startDate || !endDate) {
                 renderBook();
+                loadRecentCounts();
                 return;
             }
             if (startDate > todayVN() || endDate > todayVN()) {
                 setStatus(tr('cbFuture', 'Không chọn ngày trong tương lai.'), true);
                 renderBook();
+                loadRecentCounts();
                 return;
             }
             if (startDate > endDate) {
                 setStatus(tr('cbStartAfterEnd', 'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.'), true);
                 renderBook();
+                loadRecentCounts();
                 return;
             }
             setStatus(tr('cbLoading', 'Đang tải sổ quỹ…'));
@@ -946,12 +1075,14 @@
             if (!bookRes.success) {
                 setStatus(bookRes.message || 'Không tải được sổ quỹ.', true);
                 renderBook();
+                loadRecentCounts();
                 return;
             }
             var countRes = await post(Object.assign({ action: 'getCashCount' }, payload));
             if (!countRes.success) {
                 setStatus(countRes.message || 'Không tải được bảng kiểm kê.', true);
                 renderBook();
+                loadRecentCounts();
                 return;
             }
             book = applyRange(bookRes.data, startDate, endDate);
@@ -959,38 +1090,133 @@
             applyCount(countRes.data && countRes.data.count);
             fillRepOptions();
             renderBook();
+            loadRecentCounts();
+        }
+        function recentStatusClass(progress) {
+            if (progress >= 3) return 's3';
+            if (progress === 2) return 's2';
+            return 's1';
+        }
+        function renderRecentCounts() {
+            [1, 2, 3].forEach(function(step) {
+                var n = recentPipeline['step' + step] || 0;
+                var el = document.getElementById('count-step-' + step);
+                if (el) el.textContent = String(n);
+                var btn = document.querySelector('.count-step[data-step="' + step + '"]');
+                if (btn) btn.classList.toggle('is-on', recentStep === step);
+            });
+            var list = document.getElementById('recent-count-list');
+            if (!list) return;
+            if (recentError) {
+                list.innerHTML = '<p class="form-meta">' + esc(recentError) + '</p>';
+                return;
+            }
+            var shown = recentStep ? recentCounts.filter(function(item) { return item.signProgress === recentStep; }) : recentCounts;
+            if (!shown.length) {
+                list.innerHTML = '<p class="form-meta">' + esc(tr('cbRecentEmpty', 'Chưa có bảng kiểm kê.')) + '</p>';
+                return;
+            }
+            list.innerHTML = shown.map(function(item) {
+                var waiting = item.signProgress < 3 && item.nextName
+                    ? tr('cbWaiting', 'Đang chờ {name} ký.').replace('{name}', item.nextName)
+                    : item.signStatus;
+                return '<button type="button" class="count-row" data-date="' + esc(item.endDate) + '">' +
+                    '<div style="flex:1;min-width:0;">' +
+                        '<div style="font-weight:650;">' + esc(item.endDate) + ' · ' + esc(item.companyName) + '</div>' +
+                        '<div class="form-meta" style="margin:2px 0 0;">' + esc(waiting) + '</div>' +
+                    '</div>' +
+                    '<span class="count-badge ' + recentStatusClass(item.signProgress) + '">' + esc(item.signStatus) + '</span>' +
+                '</button>';
+            }).join('');
+            list.querySelectorAll('.count-row').forEach(function(row) {
+                row.addEventListener('click', function() {
+                    document.getElementById('end-date').value = row.dataset.date;
+                    loadBook();
+                    document.getElementById('count-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            });
+        }
+        async function loadRecentCounts() {
+            var company = selectedCompany();
+            var list = document.getElementById('recent-count-list');
+            if (!company) {
+                recentCounts = [];
+                recentPipeline = { step1: 0, step2: 0, step3: 0 };
+                recentError = '';
+                if (list) list.innerHTML = '';
+                renderRecentCounts();
+                return;
+            }
+            var result = await post({ action: 'getRecentCashCounts', companyName: company.name, companyKey: company.key });
+            if (!result.success) {
+                recentCounts = [];
+                recentPipeline = { step1: 0, step2: 0, step3: 0 };
+                var msg = result.message || '';
+                if (/không hợp lệ|not found|Script function/i.test(msg)) {
+                    msg = tr('cbRecentMissing', 'Chưa có danh sách phiếu kiểm kê trên máy chủ. Cần dán file Cash và tạo phiên bản mới.');
+                }
+                recentError = msg || 'Không tải được phiếu kiểm kê.';
+                renderRecentCounts();
+                return;
+            }
+            recentError = '';
+            recentCounts = (result.data && result.data.counts) || [];
+            recentPipeline = (result.data && result.data.pipeline) || { step1: 0, step2: 0, step3: 0 };
+            renderRecentCounts();
         }
         async function save() {
+            var n = signedCount();
             var gap = firstGap();
-            if (gap || !book) return;
-            if (savedCount && !confirm(tr('cbReplaceConfirm', 'Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.'))) return;
+            if (gap || !book || n >= 3) return;
+            if (n === 0 && savedCount && !confirm(tr('cbReplaceConfirm', 'Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.'))) return;
             var company = selectedCompany();
-            var totals = lineTotals();
             document.getElementById('save-btn').disabled = true;
-            setStatus('Đang lưu…');
-            var result = await post({
-                action: 'saveCashCount',
-                companyName: company.name,
-                companyKey: company.key,
-                endDate: document.getElementById('end-date').value,
-                callerEmail: user.email,
-                countHour: countTime().hour,
-                countMinute: countTime().minute,
-                quantities: totals.qty,
-                bookBalance: book.bookBalance,
-                reasonThua: document.getElementById('reason-thua').value,
-                reasonThieu: document.getElementById('reason-thieu').value,
-                conclusion: document.getElementById('conclusion').value,
-                reps: reps.map(function(rep) {
-                    return { role: rep.key, name: rep.name, email: rep.email, signatureUrl: rep.signatureUrl, signatureData: rep.signatureData || '' };
-                })
-            });
+            setStatus(n === 0 ? 'Đang lưu…' : 'Đang ký…');
+            var result;
+            if (n === 0) {
+                var totals = lineTotals();
+                result = await post({
+                    action: 'saveCashCount',
+                    companyName: company.name,
+                    companyKey: company.key,
+                    endDate: document.getElementById('end-date').value,
+                    callerEmail: user.email,
+                    countHour: countTime().hour,
+                    countMinute: countTime().minute,
+                    quantities: totals.qty,
+                    bookBalance: book.bookBalance,
+                    reasonThua: document.getElementById('reason-thua').value,
+                    reasonThieu: document.getElementById('reason-thieu').value,
+                    conclusion: document.getElementById('conclusion').value,
+                    reps: reps.map(function(rep, index) {
+                        var signing = index === 0;
+                        return {
+                            role: rep.key,
+                            name: rep.name,
+                            email: rep.email,
+                            signatureUrl: signing ? (rep.signatureUrl || rep.masterSignature || '') : '',
+                            signatureData: signing ? (rep.signatureData || '') : ''
+                        };
+                    })
+                });
+            } else {
+                var signer = reps[n];
+                result = await post({
+                    action: 'signCashCount',
+                    companyName: company.name,
+                    companyKey: company.key,
+                    endDate: document.getElementById('end-date').value,
+                    callerEmail: user.email,
+                    signatureUrl: signer.signatureUrl || signer.masterSignature || '',
+                    signatureData: signer.signatureData || ''
+                });
+            }
             if (!result.success) {
                 setStatus(result.message || 'Không lưu được.', true);
                 renderSaveBar();
                 return;
             }
-            setStatus('Đã lưu bảng kiểm kê.');
+            setStatus(result.message || 'Đã lưu bảng kiểm kê.');
             await loadBook();
         }
         function signOut() {
@@ -1127,6 +1353,7 @@
                 '</div>' +
                 '<h2 class="mau-title">BẢNG KIỂM KÊ QUỸ</h2>' +
                 '<p class="mau-sub">(Dùng cho VNĐ)</p>' +
+                (signedCount() > 0 ? '<p class="mau-date">' + esc(signStatusText(signedCount())) + '</p>' : '') +
                 '<p class="mau-date">' + esc(dateLine) + '</p>' +
                 '<p class="mau-lead">Chúng tôi gồm:</p>' + who +
                 '<p class="mau-lead">Cùng tiến hành kiểm kê quỹ tiền mặt kết quả như sau:</p>' +
@@ -1206,7 +1433,7 @@
             sel.addEventListener('change', async function() {
                 var company = selectedCompany();
                 approvers = null;
-                reps.forEach(function(rep) { rep.name = ''; rep.email = ''; rep.signatureUrl = ''; rep.signatureData = ''; });
+                reps.forEach(function(rep) { rep.name = ''; rep.email = ''; rep.signatureUrl = ''; rep.signatureData = ''; rep.masterSignature = ''; rep.signed = false; });
                 if (company) {
                     var res = await post({ action: 'getCompanyApprovers', companyName: company.name, companyKey: company.key });
                     approvers = res.success && res.data ? res.data.approvers : null;
@@ -1229,6 +1456,13 @@
             document.getElementById('review-print').addEventListener('click', printOfficialForm);
             document.getElementById('review-modal').addEventListener('click', function(e) {
                 if (e.target.id === 'review-modal') document.getElementById('review-modal').hidden = true;
+            });
+            document.getElementById('count-pipe').addEventListener('click', function(e) {
+                var btn = e.target.closest('.count-step');
+                if (!btn) return;
+                var step = Number(btn.dataset.step);
+                recentStep = recentStep === step ? 0 : step;
+                renderRecentCounts();
             });
             if (sel.value) sel.dispatchEvent(new Event('change'));
             else renderBook();
@@ -1277,6 +1511,13 @@
                 cbBadTime: 'Chọn giờ kiểm kê.',
                 cbMissingName: 'Còn thiếu tên.',
                 cbMissingSig: 'Còn thiếu chữ ký.',
+                cbNotYourTurn: 'Chỉ {name} mới ký bước này.',
+                cbWaiting: 'Đang chờ {name} ký.',
+                cbSignStart: 'Ký và gửi',
+                cbRecent: 'Phiếu kiểm kê gần đây',
+                cbRecentHint: 'Tiến độ ký, cùng cách với phiếu thu chi.',
+                cbRecentEmpty: 'Chưa có bảng kiểm kê.',
+                cbRecentMissing: 'Chưa có danh sách phiếu kiểm kê trên máy chủ. Cần dán file Cash và tạo phiên bản mới.',
                 cbCannotSave: 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.',
                 cbDateLine: 'Hôm nay, vào {h} giờ {m} phút, ngày {d} tháng {mo} năm {y}',
                 cbThu: 'Thu',
@@ -1327,6 +1568,13 @@
                 cbBadTime: 'Choose the count time.',
                 cbMissingName: 'A name is missing.',
                 cbMissingSig: 'A signature is missing.',
+                cbNotYourTurn: 'Only {name} can sign this step.',
+                cbWaiting: 'Waiting for {name} to sign.',
+                cbSignStart: 'Sign and send',
+                cbRecent: 'Recent cash counts',
+                cbRecentHint: 'Signing progress, the same way as vouchers.',
+                cbRecentEmpty: 'No cash counts yet.',
+                cbRecentMissing: 'The cash-count list is not on the server yet. Paste the Cash files and publish a new version.',
                 cbCannotSave: 'Only a representative of this company can save the cash count.',
                 cbDateLine: 'Today, at {h}:{m}, day {d} month {mo} year {y}',
                 cbThu: 'In',

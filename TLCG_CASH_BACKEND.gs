@@ -555,10 +555,14 @@ function doPost(e) {
       case 'getCashCount':
       case 'getCashBookSummary':
       case 'saveCashCount':
+      case 'signCashCount':
+      case 'getRecentCashCounts':
         // Handlers live in TLCG_CASH_BOOK.gs (same Cash project).
         if (normalizedAction === 'getCashBook') return handleGetCashBook(requestBody);
         if (normalizedAction === 'getCashCount') return handleGetCashCount(requestBody);
         if (normalizedAction === 'getCashBookSummary') return handleGetCashBookSummary();
+        if (normalizedAction === 'signCashCount') return handleSignCashCount(requestBody);
+        if (normalizedAction === 'getRecentCashCounts') return handleGetRecentCashCounts(requestBody);
         return handleSaveCashCount(requestBody);
       case 'createVoucherUploadSession':
         return handleCreateVoucherUploadSession_(requestBody);

@@ -314,7 +314,7 @@ export default async function handler(req, res) {
     'getPaymentProgressByPR',
     // NOTE: 'getEmployees' intentionally NOT here — it must go to VOUCHER_BACKEND
     // which returns companies_data[]. Payment Request backend returns employees[] (different shape).
-    // getCashBook, getCashCount, getCashBookSummary, saveCashCount, and getCompanies stay on the Cash backend.
+    // getCashBook, getCashCount, getCashBookSummary, getRecentCashCounts, saveCashCount, signCashCount, and getCompanies stay on the Cash backend.
   ];
   
   if (paymentRequestActions.includes(action)) {
