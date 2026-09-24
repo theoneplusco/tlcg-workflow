@@ -840,8 +840,7 @@
         }
         function sigSrc(rep) {
             if (rep.signatureData) return rep.signatureData;
-            if (rep.signatureUrl && sigCache[rep.signatureUrl]) return sigCache[rep.signatureUrl];
-            if (rep.masterSignature && sigCache[rep.masterSignature]) return sigCache[rep.masterSignature];
+            if (rep.signed && rep.signatureUrl && sigCache[rep.signatureUrl]) return sigCache[rep.signatureUrl];
             return '';
         }
         async function hydrateSig(url) {
@@ -865,7 +864,7 @@
             return 'Đã duyệt (3/3)';
         }
         function signatureReady(rep) {
-            return !!(rep.signatureData || rep.signatureUrl || rep.masterSignature);
+            return !!(rep.signatureData || (rep.signed && rep.signatureUrl));
         }
         function renderReps() {
             var root = document.getElementById('reps');
@@ -917,7 +916,7 @@
                 if (src) img.src = src;
                 else img.hidden = true;
                 sig.appendChild(img);
-                if (!rep.signed && signedCount() === index) {
+                if (!rep.signed && signedCount() === index && rep.name && norm(user.email) === norm(rep.email)) {
                     var file = document.createElement('input');
                     file.type = 'file';
                     file.accept = 'image/png,image/jpeg,image/jpg';
@@ -929,9 +928,8 @@
                 row.appendChild(select);
                 row.appendChild(sig);
                 root.appendChild(row);
-                var pendingUrl = rep.signatureUrl || rep.masterSignature;
-                if (pendingUrl && !sigCache[pendingUrl]) {
-                    hydrateSig(pendingUrl).then(function() { renderReps(); });
+                if (rep.signed && rep.signatureUrl && !sigCache[rep.signatureUrl]) {
+                    hydrateSig(rep.signatureUrl).then(function() { renderReps(); });
                 }
             });
             printOrder.forEach(function(index) {
@@ -1409,7 +1407,7 @@
                             role: rep.key,
                             name: rep.name,
                             email: rep.email,
-                            signatureUrl: signing ? (rep.signatureUrl || rep.masterSignature || '') : '',
+                            signatureUrl: signing && rep.signed ? (rep.signatureUrl || '') : '',
                             signatureData: signing ? (rep.signatureData || '') : ''
                         };
                     })
@@ -1422,7 +1420,7 @@
                     companyKey: company.key,
                     endDate: document.getElementById('end-date').value,
                     callerEmail: user.email,
-                    signatureUrl: signer.signatureUrl || signer.masterSignature || '',
+                    signatureUrl: signer.signed ? (signer.signatureUrl || '') : '',
                     signatureData: signer.signatureData || ''
                 });
             }
