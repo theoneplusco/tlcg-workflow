@@ -161,10 +161,35 @@
         }
         .review-modal[hidden] { display: none; }
         .review-sheet {
-            width: min(720px, 100%); background: white; border-radius: 16px;
-            padding: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+            width: min(820px, 100%); background: white; border-radius: 4px;
+            padding: 28px 32px 20px; box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+            color: #111; font-family: "Times New Roman", Times, serif;
         }
-        .review-sheet h2 { text-align: center; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px; }
+        .mau-head { display: flex; justify-content: space-between; gap: 24px; font-size: 13px; line-height: 1.45; }
+        .mau-head p { margin: 0; }
+        .mau-right { text-align: center; max-width: 340px; font-style: italic; font-size: 12px; }
+        .mau-code { font-style: normal; font-weight: 700; margin: 0 0 2px; }
+        .mau-title { text-align: center; margin: 18px 0 4px; font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+        .mau-sub { text-align: center; margin: 0 0 14px; font-size: 14px; font-style: italic; }
+        .mau-date, .mau-lead, .mau-who { margin: 0 0 8px; font-size: 14px; }
+        .mau-who { margin: 0 0 2px; padding-left: 12px; }
+        .mau-table { width: 100%; border-collapse: collapse; margin: 10px 0 12px; font-size: 13px; font-family: "Times New Roman", Times, serif; }
+        .mau-table th, .mau-table td { border: 1px solid #111; padding: 4px 6px; vertical-align: middle; }
+        .mau-table th { font-weight: 700; text-align: center; background: transparent; color: #111; }
+        .mau-table td.num { text-align: right; }
+        .mau-table td.ctr { text-align: center; }
+        .mau-table tr.mau-total td { font-weight: 700; }
+        .mau-reason { margin: 2px 0; font-size: 14px; }
+        .mau-sigs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 22px; text-align: center; font-size: 13px; }
+        .mau-sigs strong { display: block; font-size: 14px; }
+        .mau-sigs .mau-sign { font-style: italic; margin: 2px 0 8px; }
+        .mau-sigs img { display: block; max-height: 64px; max-width: 140px; margin: 8px auto; object-fit: contain; }
+        .mau-sigs .mau-name { margin-top: 36px; font-weight: 700; }
+        .mau-sigs img + .mau-name { margin-top: 4px; }
+        .review-sheet .visually-hidden {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+        }
         .field-label {
             display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary);
             margin-bottom: 6px;
@@ -266,18 +291,17 @@
             #book-balance { font-size: 28px; }
         }
         @media print {
-            .sidebar, .appbar, .filters, .pager, .bar, .review-modal, .no-print { display: none !important; }
-            .shell { display: block; }
-            .bar { left: 0; }
-            body { background: white; padding: 0; }
-            main { max-width: none; padding: 0; display: flex; }
-            .card { box-shadow: none; border: none; }
-            #count-form { order: 1; }
-            #book-section { order: 2; }
-            #pending-section { order: 3; }
-            #balance-section, #reps { display: none !important; }
-            #print-sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px; }
-            tr.row-off { display: table-row !important; }
+            body * { visibility: hidden; }
+            #review-modal, #review-modal * { visibility: visible; }
+            #review-modal {
+                display: block !important; position: absolute; inset: 0;
+                background: white; padding: 0; overflow: visible;
+            }
+            .review-sheet {
+                box-shadow: none; border-radius: 0; width: 100%;
+                padding: 0;
+            }
+            .review-sheet .no-print, .review-sheet .no-print * { display: none !important; visibility: hidden; }
         }
     </style>
 </head>
@@ -438,7 +462,7 @@
     </div>
     <div id="review-modal" class="review-modal" hidden>
         <div class="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title">
-            <h2 id="review-title" data-i18n="cbCountTitle">Bảng kiểm kê quỹ</h2>
+            <h2 id="review-title" class="visually-hidden">Bảng kiểm kê quỹ</h2>
             <div id="review-body"></div>
             <div class="bar-actions no-print" style="margin-top: 16px; justify-content: flex-end;">
                 <button type="button" class="btn" id="review-close" data-i18n="cbClose">Đóng</button>
@@ -668,7 +692,12 @@
                     if (rep.email ? norm(opt.email) === norm(rep.email) : opt.name === rep.name) o.selected = true;
                     select.appendChild(o);
                 });
-                if (options.length === 1) select.selectedIndex = 1;
+                if (options.length === 1) {
+                    select.selectedIndex = 1;
+                    rep.name = options[0].name || '';
+                    rep.email = options[0].email || '';
+                    if (!rep.signatureUrl) rep.signatureUrl = options[0].signatureUrl || '';
+                }
                 select.addEventListener('change', function() {
                     var picked = options[select.selectedIndex - 1];
                     rep.name = picked ? picked.name : '';
@@ -992,28 +1021,108 @@
             };
             selectElement._syncSearchInput();
         }
-        function openReview() {
+        function formMoney(n) {
+            var value = Math.round(Number(n) || 0);
+            return value.toLocaleString('vi-VN');
+        }
+        function reviewCompanyName() {
             var company = selectedCompany();
-            var time = countTime();
-            var body = document.getElementById('review-body');
-            body.innerHTML = '';
-            function line(text) {
-                var p = document.createElement('p');
-                p.style.margin = '0 0 8px';
-                p.textContent = text;
-                body.appendChild(p);
+            if (company && company.name) return company.name;
+            var input = document.querySelector('.searchable-select .search-input');
+            var text = input ? input.value.trim() : '';
+            if (!text) return '';
+            var cut = text.lastIndexOf(' (');
+            return cut > 0 ? text.slice(0, cut) : text;
+        }
+        function reviewPersonName(index) {
+            var selects = document.querySelectorAll('#reps select');
+            var select = selects[index];
+            var rep = reps[index];
+            if (select && select.selectedIndex > 0) {
+                var opt = select.options[select.selectedIndex];
+                var name = opt ? String(opt.textContent || '').trim() : '';
+                if (name) {
+                    rep.name = name;
+                    return name;
+                }
             }
-            line(company ? company.name : '');
-            line(document.getElementById('start-date').value + ' → ' + document.getElementById('end-date').value + ' · ' + pad2(time.hour) + ':' + pad2(time.minute));
-            line(document.getElementById('form-date').textContent);
-            line('I ' + document.getElementById('line-i').textContent + ' · II ' + document.getElementById('line-ii').textContent + ' · III ' + document.getElementById('line-iii').textContent);
-            line(tr('cbReasonOver', 'Lý do — Thừa') + ': ' + (document.getElementById('reason-thua').value || '—'));
-            line(tr('cbReasonShort', 'Lý do — Thiếu') + ': ' + (document.getElementById('reason-thieu').value || '—'));
-            line(tr('cbConclusion', 'Kết luận sau khi kiểm kê quỹ') + ': ' + (document.getElementById('conclusion').value || '—'));
-            reps.forEach(function(rep) {
-                line(tr(rep.labelKey, rep.labelKey) + ' — ' + (rep.name || '—'));
+            return rep && rep.name ? rep.name : '';
+        }
+        function renderOfficialForm() {
+            var time = countTime();
+            var end = document.getElementById('end-date').value;
+            var parts = end ? end.split('-') : [];
+            var dateLine = 'Hôm nay, vào ' + pad2(time.hour) + ' giờ ' + pad2(time.minute) + ' phút, ngày ' + (parts[2] || '…') + ' tháng ' + (parts[1] || '…') + ' năm ' + (parts[0] || '…');
+            var qty = FACES.map(function(_, i) {
+                var input = document.querySelector('[data-qty="' + i + '"]');
+                var n = input ? Number(input.value || 0) : 0;
+                return isFinite(n) && n > 0 ? Math.floor(n) : 0;
             });
+            var counted = qty.reduce(function(sum, n, i) { return sum + n * FACES[i]; }, 0);
+            var bookBalance = book ? book.bookBalance : 0;
+            var diff = bookBalance - counted;
+            var body = document.getElementById('review-body');
+            var denomRows = FACES.map(function(face, i) {
+                var n = qty[i];
+                var qtyText = n > 0 ? (n < 10 ? '0' + n : String(n)) : '';
+                var amtText = n > 0 ? formMoney(n * face) : '';
+                return '<tr><td class="ctr">' + (i + 1) + '</td><td>- Loại ' + face.toLocaleString('vi-VN') + '</td><td class="ctr">' + qtyText + '</td><td class="num">' + amtText + '</td></tr>';
+            }).join('');
+            var people = [
+                { name: reviewPersonName(0), role: 'đại diện pháp luật' },
+                { name: reviewPersonName(1), role: 'đại diện Kế toán trưởng' },
+                { name: reviewPersonName(2), role: 'đại diện Thủ quỹ' }
+            ];
+            var who = people.map(function(person) {
+                return '<p class="mau-who">- Ông/Bà: ' + esc(person.name || '………………') + ', ' + person.role + '</p>';
+            }).join('');
+            var signOrder = [
+                { name: reviewPersonName(2), rep: reps[2], title: 'Thủ quỹ' },
+                { name: reviewPersonName(1), rep: reps[1], title: 'Kế toán trưởng' },
+                { name: reviewPersonName(0), rep: reps[0], title: 'Người chịu trách nhiệm kiểm kê quỹ' }
+            ];
+            var signs = signOrder.map(function(slot) {
+                var src = sigSrc(slot.rep);
+                var img = src ? '<img src="' + esc(src) + '" alt="">' : '';
+                return '<div><strong>' + slot.title + '</strong><div class="mau-sign">(Ký, họ tên)</div>' + img + '<div class="mau-name">' + esc(slot.name || '') + '</div></div>';
+            }).join('');
+            var thua = document.getElementById('reason-thua').value.trim();
+            var thieu = document.getElementById('reason-thieu').value.trim();
+            var conclusion = document.getElementById('conclusion').value.trim();
+            var dots = '……………………………………………………………………';
+            body.innerHTML =
+                '<div class="mau-head">' +
+                    '<div><p><strong>Đơn vị:</strong> ' + esc(reviewCompanyName()) + '</p><p>Bộ phận: Kế toán</p><p>Số: 08</p></div>' +
+                    '<div class="mau-right"><p class="mau-code">Mẫu số 08a - TT</p><p>(Kèm theo Thông tư số 99/2025/TT-BTC<br>ngày 27 tháng 10 năm 2025 của Bộ trưởng Bộ Tài chính)</p></div>' +
+                '</div>' +
+                '<h2 class="mau-title">BẢNG KIỂM KÊ QUỸ</h2>' +
+                '<p class="mau-sub">(Dùng cho VNĐ)</p>' +
+                '<p class="mau-date">' + esc(dateLine) + '</p>' +
+                '<p class="mau-lead">Chúng tôi gồm:</p>' + who +
+                '<p class="mau-lead">Cùng tiến hành kiểm kê quỹ tiền mặt kết quả như sau:</p>' +
+                '<table class="mau-table"><thead>' +
+                    '<tr><th>STT</th><th>Diễn giải</th><th>Số lượng (tờ)</th><th>Số tiền</th></tr>' +
+                    '<tr><th>A</th><th>B</th><th>C</th><th>D</th></tr>' +
+                '</thead><tbody>' +
+                    '<tr class="mau-total"><td class="ctr">I</td><td>Số dư theo sổ quỹ</td><td></td><td class="num">' + (book ? formMoney(bookBalance) : '') + '</td></tr>' +
+                    '<tr class="mau-total"><td class="ctr">II</td><td>Số kiểm kê thực tế</td><td></td><td class="num">' + formMoney(counted) + '</td></tr>' +
+                    denomRows +
+                    '<tr class="mau-total"><td class="ctr">III</td><td>Chênh lệch (III = I - II)</td><td></td><td class="num">' + (book ? formMoney(diff) : '') + '</td></tr>' +
+                '</tbody></table>' +
+                '<p class="mau-reason">- Lý do:</p>' +
+                '<p class="mau-reason">+ Thừa: ' + esc(thua || dots) + '</p>' +
+                '<p class="mau-reason">+ Thiếu: ' + esc(thieu || dots) + '</p>' +
+                '<p class="mau-reason">- Kết luận sau khi kiểm kê quỹ: ' + esc(conclusion || dots) + '</p>' +
+                '<div class="mau-sigs">' + signs + '</div>';
+        }
+        function openReview() {
+            renderOfficialForm();
             document.getElementById('review-modal').hidden = false;
+        }
+        function printOfficialForm() {
+            renderOfficialForm();
+            document.getElementById('review-modal').hidden = false;
+            window.print();
         }
         async function init() {
             var name = user.name || user.email || '';
@@ -1084,10 +1193,10 @@
             document.getElementById('pending-prev').addEventListener('click', function() { if (pages.pending > 0) { pages.pending--; renderBook(); } });
             document.getElementById('pending-next').addEventListener('click', function() { pages.pending++; renderBook(); });
             document.getElementById('save-btn').addEventListener('click', save);
-            document.getElementById('print-btn').addEventListener('click', function() { window.print(); });
+            document.getElementById('print-btn').addEventListener('click', printOfficialForm);
             document.getElementById('review-btn').addEventListener('click', openReview);
             document.getElementById('review-close').addEventListener('click', function() { document.getElementById('review-modal').hidden = true; });
-            document.getElementById('review-print').addEventListener('click', function() { window.print(); });
+            document.getElementById('review-print').addEventListener('click', printOfficialForm);
             document.getElementById('review-modal').addEventListener('click', function(e) {
                 if (e.target.id === 'review-modal') document.getElementById('review-modal').hidden = true;
             });
