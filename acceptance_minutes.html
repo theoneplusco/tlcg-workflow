@@ -361,7 +361,7 @@
                                 <option value="" data-i18n="optChooseCompany">-- Chọn công ty --</option>
                             </select>
                             <input type="hidden" id="company_name">
-                            <input type="hidden" id="company_key_or_taxid">
+                            <input type="hidden" id="company_key">
                         </div>
                         <div class="form-group">
                             <label data-i18n="amLabelAmNo">Số Biên Bản (AM No)</label>
@@ -889,7 +889,7 @@ function onCompanyChange() {
     const sel = document.getElementById('company_code');
     const opt = sel.options[sel.selectedIndex];
     document.getElementById('company_name').value         = opt?.dataset?.name || '';
-    document.getElementById('company_key_or_taxid').value = opt?.dataset?.key  || '';
+    document.getElementById('company_key').value = opt?.dataset?.key  || '';
     generateAMNumber();
     // Reset PR lookup if company changes
     _prLookupData = null;
@@ -1577,7 +1577,7 @@ function resetForm() {
     _amNo            = '';
     document.getElementById('company_code').selectedIndex = 0;
     document.getElementById('company_name').value = '';
-    document.getElementById('company_key_or_taxid').value = '';
+    document.getElementById('company_key').value = '';
     document.getElementById('am_no').value = '';
     document.getElementById('pr_no').value = '';
     document.getElementById('am_date').value = '';

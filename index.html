@@ -3343,7 +3343,7 @@
                 </div>
 
                 <!-- Top-line Summary: Voucher vs Cash Book -->
-                <div class="grid grid-cols-1 gap-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <!-- Voucher Topline -->
                     <div class="form-section-container">
                         <div class="p-4 flex items-center justify-between">
@@ -3363,6 +3363,29 @@
                                 onclick="window.open('voucher.html', '_blank')"
                                 class="inline-flex items-center gap-2 bg-purple-50 text-purple-700 hover:bg-purple-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition">
                                 <span>Open Vouchers</span>
+                                <i class="fas fa-arrow-up-right-from-square text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cash Book Topline -->
+                    <div class="form-section-container">
+                        <div class="p-4 flex items-center justify-between">
+                            <div>
+                                <p class="text-xs font-semibold text-sky-600 uppercase tracking-wide mb-1">
+                                    Cash Book Summary
+                                </p>
+                                <p class="text-sm text-slate-600">
+                                    <span id="topline-cash-counts">-</span> in book •
+                                    <span id="topline-cash-companies">-</span> pending •
+                                    balance <span id="topline-cash-latest">-</span>
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onclick="window.open('cash_book.html', '_blank')"
+                                class="inline-flex items-center gap-2 bg-sky-50 text-sky-700 hover:bg-sky-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition">
+                                <span>Open Cash Book</span>
                                 <i class="fas fa-arrow-up-right-from-square text-xs"></i>
                             </button>
                         </div>
@@ -3405,6 +3428,33 @@
                     </div>
                 </div>
 
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6" id="cashbook-summary-cards">
+                    <div class="stats-card border-l-sky-500">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-slate-600 uppercase tracking-wide">In Book</h3>
+                            <i class="fas fa-book text-sky-500 text-xl"></i>
+                        </div>
+                        <p class="text-3xl font-bold text-slate-800" id="cashbook-counts">-</p>
+                        <p class="text-xs text-slate-500 mt-1">Vouchers in the cash book</p>
+                    </div>
+                    <div class="stats-card border-l-amber-500">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-slate-600 uppercase tracking-wide">Pending</h3>
+                            <i class="fas fa-clock text-amber-500 text-xl"></i>
+                        </div>
+                        <p class="text-3xl font-bold text-slate-800" id="cashbook-companies">-</p>
+                        <p class="text-xs text-slate-500 mt-1">Not yet in the cash book</p>
+                    </div>
+                    <div class="stats-card border-l-sky-500">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-slate-600 uppercase tracking-wide">Book Balance</h3>
+                            <i class="fas fa-coins text-sky-500 text-xl"></i>
+                        </div>
+                        <p class="text-3xl font-bold text-slate-800" id="cashbook-latest">-</p>
+                        <p class="text-xs text-slate-500 mt-1">Thu minus Chi through today</p>
+                    </div>
+                </div>
+
                 <!-- Recent Vouchers + Vouchers/Cash Book Summary Cards -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Recent Vouchers Summary -->
@@ -3432,59 +3482,32 @@
                         </div>
                     </div>
 
-                    <!-- Vouchers & Cash Book Cards -->
-                    <div class="space-y-4">
-                        <!-- Vouchers (Phiếu Thu/Chi) Card -->
-                        <button
-                            type="button"
-                            onclick="window.open('voucher.html', '_blank')"
-                            class="w-full text-left form-section-container hover:shadow-xl transition transform hover:-translate-y-0.5">
-                            <div class="p-6 flex items-center justify-between">
+                    <div class="form-section-container">
+                        <div class="p-6">
+                            <div class="flex items-center justify-between mb-4">
                                 <div>
-                                    <p class="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1">
-                                        Vouchers (Phiếu Thu/Chi)
-                                    </p>
-                                    <h3 class="text-lg font-bold text-slate-800 mb-1">
-                                        Voucher Workflow Summary
+                                    <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <i class="fas fa-book text-sky-600"></i>
+                                        Recent Cash Book
                                     </h3>
-                                    <p class="text-sm text-slate-500">
-                                        <span data-i18n="ixVoucherCardDesc">Xem, tạo mới và theo dõi toàn bộ phiếu thu/chi trong tab mới.</span>
-                                    </p>
+                                    <p class="text-sm text-slate-500 mt-1" id="recent-cashbook-meta">Latest cash book entries</p>
                                 </div>
-                                <div class="flex items-center gap-3">
-                                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-purple-100 text-purple-600">
-                                        <i class="fas fa-file-invoice"></i>
-                                    </span>
-                                    <i class="fas fa-arrow-up-right-from-square text-slate-400"></i>
+                                <button type="button" onclick="loadCashBookSummary()" class="text-sm text-sky-600 hover:text-sky-700 font-semibold flex items-center gap-2">
+                                    <i class="fas fa-sync-alt"></i>
+                                    Refresh
+                                </button>
+                            </div>
+                            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide" for="recent-cashbook-company">Company</label>
+                            <select id="recent-cashbook-company" class="w-full mt-1 mb-4 px-3 py-2 border border-slate-200 rounded-lg text-sm" onchange="loadCashBookSummary()">
+                                <option value="">Loading companies…</option>
+                            </select>
+                            <div id="recent-cashbook-list" class="space-y-3">
+                                <div class="text-center py-8 text-slate-400">
+                                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                                    <p>Loading cash book...</p>
                                 </div>
                             </div>
-                        </button>
-
-                        <!-- Cash Book (Sổ quỹ) Card -->
-                        <button
-                            type="button"
-                            onclick="window.open('cash_book.html', '_blank')"
-                            class="w-full text-left form-section-container hover:shadow-xl transition transform hover:-translate-y-0.5">
-                            <div class="p-6 flex items-center justify-between">
-                                <div>
-                                    <p class="text-xs font-semibold text-sky-600 uppercase tracking-wide mb-1">
-                                        Cash Book (Sổ quỹ)
-                                    </p>
-                                    <h3 class="text-lg font-bold text-slate-800 mb-1">
-                                        Open Cash Book
-                                    </h3>
-                                    <p class="text-sm text-slate-500">
-                                        <span data-i18n="ixCashCardDesc">Mở sổ quỹ và bảng kiểm kê quỹ của công ty đã chọn.</span>
-                                    </p>
-                                </div>
-                                <div class="flex items-center gap-3">
-                                    <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-sky-100 text-sky-600">
-                                        <i class="fas fa-book"></i>
-                                    </span>
-                                    <i class="fas fa-up-right-from-square text-slate-300"></i>
-                                </div>
-                            </div>
-                        </button>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -5617,11 +5640,133 @@
             }).join('');
         }
 
+        function cashBookToday_() {
+            return new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Ho_Chi_Minh',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            }).format(new Date());
+        }
+
+        function cashBookVnd_(amount) {
+            const n = Number(amount);
+            if (!isFinite(n)) return '—';
+            return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+        }
+
+        function cashBookEsc_(value) {
+            return String(value || '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        async function loadCashBookSummary() {
+            const list = document.getElementById('recent-cashbook-list');
+            const select = document.getElementById('recent-cashbook-company');
+            const meta = document.getElementById('recent-cashbook-meta');
+            const set = (id, value) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = value;
+            };
+            try {
+                if (select && select.options.length <= 1) {
+                    const companyRes = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ data: JSON.stringify({ action: 'getCompanies' }) })
+                    }).then((r) => r.json());
+                    const rows = (companyRes.success && companyRes.data && companyRes.data.companies_data) || [];
+                    const preferred = (currentUser && currentUser.company) || '';
+                    select.innerHTML = '<option value="">' + cashBookEsc_('Chọn công ty') + '</option>' + rows.map((row) => {
+                        const name = row['Tên công ty'] || '';
+                        const key = row['Mã định danh'] || '';
+                        const display = key ? name + ' (' + key + ')' : name;
+                        const selected = name === preferred ? ' selected' : '';
+                        return `<option value="${cashBookEsc_(display)}" data-name="${cashBookEsc_(name)}" data-key="${cashBookEsc_(key)}"${selected}>${cashBookEsc_(display)}</option>`;
+                    }).join('');
+                    if (preferred) {
+                        const match = [...select.options].find((opt) => opt.dataset.name === preferred);
+                        if (match) select.value = match.value;
+                    }
+                }
+                const option = select && select.selectedOptions[0];
+                const companyName = option ? option.dataset.name : '';
+                const companyKey = option ? (option.dataset.key || '') : '';
+                if (!companyName) {
+                    if (list) list.innerHTML = '<div class="text-center py-8 text-slate-400"><p>Choose a company.</p></div>';
+                    return;
+                }
+                const endDate = cashBookToday_();
+                const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        data: JSON.stringify({
+                            action: 'getCashBook',
+                            companyName,
+                            companyKey,
+                            endDate,
+                            callerEmail: (currentUser && currentUser.email) || ''
+                        })
+                    })
+                });
+                const result = await response.json();
+                if (!result.success || !result.data) {
+                    if (list) list.innerHTML = `<div class="text-center py-8 text-slate-400"><p>${cashBookEsc_(result.message || 'Could not load the cash book.')}</p></div>`;
+                    return;
+                }
+                const data = result.data;
+                const bookCount = data.bookCount || (data.bookLines || []).length;
+                const pendingCount = (data.pendingLines || []).length;
+                const balance = cashBookVnd_(data.bookBalance);
+                set('topline-cash-counts', bookCount);
+                set('topline-cash-companies', pendingCount);
+                set('topline-cash-latest', balance);
+                set('cashbook-counts', bookCount);
+                set('cashbook-companies', pendingCount);
+                set('cashbook-latest', balance);
+                if (meta) meta.textContent = companyName + ' · through today';
+                const bookLines = data.bookLines || [];
+                const showPending = bookLines.length === 0;
+                const lines = (showPending ? (data.pendingLines || []) : bookLines).slice(0, 8);
+                const href = 'cash_book.html?company=' + encodeURIComponent(data.companyKey || companyName) + '&date=' + encodeURIComponent(endDate);
+                if (!list) return;
+                if (!lines.length) {
+                    list.innerHTML = '<div class="text-center py-8 text-slate-400"><p>No cash book entries for this company yet.</p></div>';
+                    return;
+                }
+                list.innerHTML = lines.map((line) => {
+                    const badge = showPending ? 'Chưa vào quỹ' : (line.status || '');
+                    const badgeClass = showPending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
+                    return `<a href="${href}" target="_blank" class="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-lg hover:shadow-md transition" style="text-decoration:none;color:inherit;">
+                        <div class="flex items-center gap-4 flex-1 min-w-0">
+                            <div class="w-12 h-12 bg-sky-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-book text-sky-600"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="font-semibold text-slate-800 truncate">${cashBookEsc_(line.voucherNumber)}</p>
+                                <p class="text-sm text-slate-500 truncate">${cashBookEsc_(line.type)} · ${cashBookEsc_(line.createdDate)} · ${cashBookEsc_(line.description)}</p>
+                            </div>
+                        </div>
+                        <div class="text-right flex-shrink-0 ml-3">
+                            <p class="font-semibold text-slate-800">${cashBookEsc_(cashBookVnd_(line.amount))}</p>
+                            <span class="text-xs px-2 py-0.5 rounded-full ${badgeClass}">${cashBookEsc_(badge)}</span>
+                        </div>
+                    </a>`;
+                }).join('');
+            } catch (error) {
+                console.error('Cash book summary failed:', error);
+                if (list) list.innerHTML = '<div class="text-center py-8 text-slate-400"><p>Could not load the cash book.</p></div>';
+            }
+        }
+
         // Load Cash & Admin Summary
         async function loadCashSummary() {
             const summaryCards = document.getElementById('cash-summary-cards');
             const recentList = document.getElementById('recent-vouchers-list');
             
+            loadCashBookSummary();
             if (!summaryCards || !recentList) return;
             
             // Show loading state
@@ -6177,8 +6322,8 @@
 
             // Initialize global search
             initGlobalSearch();
-            // Show homepage by default (public access)
-            showPage('home');
+            const requested = new URLSearchParams(location.search).get('page');
+            showPage(requested || 'home');
             // Seed dropdowns safely
             const seedSelect = (id, data, valKey = 'name') => {
                 const el = document.getElementById(id);

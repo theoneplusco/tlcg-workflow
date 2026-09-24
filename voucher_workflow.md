@@ -88,9 +88,9 @@ Each voucher generates **multiple rows**: 1 Submit row + 1 row per approval/reje
 | A | 0 | `voucher_number` | e.g. `EV-PT20260322000001` | Submit |
 | B | 1 | `voucher_type` | `Phiếu Thu` / `Phiếu Chi` | Submit |
 | C | 2 | `company_name` | Company display name | Submit |
-| D | 3 | `company_key_or_taxid` | Unique company key (e.g. `E.V`) | Submit |
+| D | 3 | `company_key` | Unique company key (e.g. `E.V`) | Submit |
 | E | 4 | `employee_name` | The person the voucher is FOR | Submit |
-| F | 5 | `submited_email` | That employee's email | Submit |
+| F | 5 | `submitted_email` | That employee's email | Submit |
 | G | 6 | `submitted_by` | Who physically submitted (same as E unless proxy) | Submit |
 | H | 7 | `submitted_at` | `new Date()` at moment of `appendRow` | Every row |
 | I | 8 | `amount` | Total amount from expense table | Submit |
@@ -102,7 +102,7 @@ Each voucher generates **multiple rows**: 1 Submit row + 1 row per approval/reje
 | O | 14 | `note` | Human comment for this action row | Every row |
 | P | 15 | `approver_email` | Email of next/current approver | Every row |
 | Q | 16 | `approved_at` | ISO timestamp of this approval step (empty on Submit row) | Approval rows |
-| R | 17 | `MetaJSON` | Full approval state JSON — see structure below | Every row |
+| R | 17 | `metadata_json` | Full approval state JSON — see structure below | Every row |
 
 ---
 

@@ -608,7 +608,7 @@
                 </div>
                 <div class="form-card-body">
                     <input type="hidden" id="company_name">
-                    <input type="hidden" id="company_key_or_taxid">
+                    <input type="hidden" id="company_key">
                     <div class="form-row">
                         <div class="form-group full">
                             <label for="company_code"><span data-i18n="company">Công ty</span> <span class="req">*</span></label>
@@ -1453,7 +1453,7 @@
         const key  = opt?.dataset?.key  || '';
         const code = opt?.dataset?.code || '';
         document.getElementById('company_name').value = name;
-        document.getElementById('company_key_or_taxid').value = key;
+        document.getElementById('company_key').value = key;
         clearVendorFields();
         generateRequestNumber();
         if (sel.value) loadVendors(key, code);
@@ -1829,7 +1829,7 @@
             installmentNote:  document.getElementById('installment_note')?.value?.trim() || '',
             companyCode:      getSelectedCompanyMaj() || companyCode,
             companyName:      document.getElementById('company_name').value,
-            companyKey:       document.getElementById('company_key_or_taxid').value,
+            companyKey:       document.getElementById('company_key').value,
             vendorName:       document.getElementById('vendor_final_name').value || document.getElementById('vendor_old').value,
             isNewVendor:      document.getElementById('vendor_new').value.trim() !== '',
             vendorType:       document.getElementById('vendor_type_final').value,
@@ -1902,7 +1902,7 @@
     function resetForm() {
         document.getElementById('company_code').value = '';
         document.getElementById('company_name').value = '';
-        document.getElementById('company_key_or_taxid').value = '';
+        document.getElementById('company_key').value = '';
         clearVendorFields();
 
         ['final_amount','due_date','installment_no',

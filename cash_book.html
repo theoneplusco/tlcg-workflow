@@ -11,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="i18n.js"></script>
     <style>
         :root {
             --primary:        #007AFF;
@@ -45,34 +46,70 @@
             *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
         }
 
-        .topbar {
+        .shell { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 280px; flex-shrink: 0;
+            background: rgba(255,255,255,0.94);
+            border-right: 0.5px solid var(--border);
+            display: flex; flex-direction: column;
+            position: sticky; top: 0; height: 100vh;
+            padding: 16px 12px;
+        }
+        .side-brand {
+            display: flex; align-items: center; gap: 10px;
+            text-decoration: none; color: inherit;
+            padding: 4px 8px 18px;
+        }
+        .side-brand img { height: 48px; width: auto; }
+        .side-brand span { font-weight: 600; font-size: 17px; }
+        .side-label {
+            font-size: 12px; color: #8e8e93; text-transform: uppercase;
+            letter-spacing: 0.04em; padding: 10px 12px 6px;
+        }
+        .side-link {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 10px; border-radius: 10px;
+            text-decoration: none; color: #000; font-size: 15px; font-weight: 500;
+        }
+        .side-link.active { background: #007AFF; color: #fff; }
+        .side-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .side-ico {
+            width: 28px; height: 28px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 13px; flex-shrink: 0;
+        }
+        .side-user { margin-top: auto; padding: 14px 8px 0; border-top: 0.5px solid var(--sep); }
+        .side-user-row { display: flex; align-items: center; gap: 12px; }
+        .side-user-row img { width: 40px; height: 40px; border-radius: 50%; }
+        .side-user-row p { margin: 0; }
+        .signout {
+            width: 100%; margin-top: 12px; padding: 8px;
+            background: rgba(255,59,48,0.1); color: #FF3B30;
+            border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+        }
+        .ipad-main { flex: 1; min-width: 0; }
+        .appbar {
             position: sticky; top: 0; z-index: 20;
             display: flex; align-items: center; justify-content: space-between; gap: 12px;
-            padding: 12px 20px;
-            padding-top: calc(12px + env(safe-area-inset-top, 0px));
-            background: rgba(255,255,255,0.80);
+            padding: 14px 20px;
+            padding-top: calc(14px + env(safe-area-inset-top, 0px));
+            background: rgba(249,249,249,0.94);
             backdrop-filter: saturate(180%) blur(20px);
             -webkit-backdrop-filter: saturate(180%) blur(20px);
-            border-bottom: 0.5px solid var(--border);
+            border-bottom: 0.5px solid rgba(60,60,67,0.29);
         }
-        .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-        .back-link {
-            display: inline-flex; align-items: center; gap: 6px;
-            color: var(--primary); text-decoration: none; font-size: 15px; font-weight: 500;
-            white-space: nowrap;
-        }
-        .back-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 8px; }
-        .topbar h1 {
+        .appbar-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+        .appbar-brand img { height: 48px; width: auto; }
+        .appbar-brand span { font-weight: 600; font-size: 17px; }
+        .appbar img.avatar { width: 36px; height: 36px; border-radius: 50%; }
+        .crumb { font-size: 13px; color: #6e6e73; display: flex; align-items: center; gap: 8px; }
+        .crumb a { color: #007AFF; text-decoration: none; }
+        .page-title {
             font-family: var(--font-display);
-            font-size: 17px; font-weight: 700; letter-spacing: -0.02em;
+            font-size: 28px; font-weight: 700; letter-spacing: -0.03em;
         }
-        .eyebrow {
-            font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
-            text-transform: uppercase; color: #0284c7;
-        }
-        .nav-user { font-size: 13px; color: var(--text-secondary); text-align: right; }
 
-        main { max-width: 920px; margin: 0 auto; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 14px; }
+        main { max-width: 1100px; margin: 0 auto; padding: 20px 20px 24px; display: flex; flex-direction: column; gap: 14px; }
 
         .card {
             background: var(--surface);
@@ -86,7 +123,48 @@
             font-size: 16px; font-weight: 700; letter-spacing: -0.02em;
             margin-bottom: 12px;
         }
-        .filters { display: grid; grid-template-columns: 1.5fr 0.8fr; gap: 12px; }
+        .filters { display: grid; grid-template-columns: 1.4fr 0.8fr 0.8fr; gap: 12px; }
+        .page-title, .form-head {
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .form-head { margin-bottom: 8px; }
+        .appbar-actions { display: flex; align-items: center; gap: 12px; }
+        .ios-segmented { display: flex; background: rgba(118,118,128,0.12); border-radius: 8px; padding: 2px; }
+        .ios-segmented-item {
+            padding: 6px 12px; font-size: 13px; font-weight: 600; border: none;
+            background: transparent; color: #1c1c1e; cursor: pointer; border-radius: 6px;
+        }
+        .ios-segmented-item.active { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08); }
+        input[type="time"] { width: 100%; max-width: 160px; }
+        .searchable-select { position: relative; }
+        .search-input {
+            width: 100%; padding: 10px 12px; border: 0.5px solid var(--border); border-radius: 10px;
+            background: var(--bg); font: inherit; color: inherit;
+        }
+        .search-input:focus { outline: 2px solid var(--primary); outline-offset: 2px; background: white; }
+        .dropdown-options {
+            display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+            max-height: 220px; overflow-y: auto; background: white;
+            border: 0.5px solid var(--border); border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 40;
+        }
+        .dropdown-options.show { display: block; }
+        .dropdown-option { padding: 9px 12px; cursor: pointer; font-size: 14px; }
+        .dropdown-option:hover { background: rgba(0,122,255,0.08); }
+        .dropdown-empty { padding: 10px 12px; font-size: 13px; color: #8e8e93; text-align: center; }
+        .review-modal {
+            position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.35);
+            display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px;
+            overflow: auto;
+        }
+        .review-modal[hidden] { display: none; }
+        .review-sheet {
+            width: min(720px, 100%); background: white; border-radius: 16px;
+            padding: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+        }
+        .review-sheet h2 { text-align: center; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 12px; }
         .field-label {
             display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary);
             margin-bottom: 6px;
@@ -164,7 +242,7 @@
         #print-sigs { display: none; }
 
         .bar {
-            position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+            position: fixed; left: 280px; right: 0; bottom: 0; z-index: 30;
             display: flex; justify-content: space-between; align-items: center; gap: 12px;
             padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
             background: rgba(255,255,255,0.88);
@@ -175,15 +253,22 @@
         .bar-actions { display: flex; gap: 8px; }
         #save-hint { font-size: 13px; color: var(--text-secondary); }
 
+        @media (max-width: 900px) {
+            .sidebar { display: none; }
+            .bar { left: 0; }
+        }
         @media (max-width: 720px) {
             .filters, .rep, .balance-card { grid-template-columns: 1fr; }
+            .review-modal { padding: 16px 8px; }
             .bar { flex-direction: column; align-items: stretch; }
             .bar-actions { justify-content: stretch; }
             .bar-actions .btn { flex: 1; }
             #book-balance { font-size: 28px; }
         }
         @media print {
-            .topbar, .filters, .pager, .bar, .no-print { display: none !important; }
+            .sidebar, .appbar, .filters, .pager, .bar, .review-modal, .no-print { display: none !important; }
+            .shell { display: block; }
+            .bar { left: 0; }
             body { background: white; padding: 0; }
             main { max-width: none; padding: 0; display: flex; }
             .card { box-shadow: none; border: none; }
@@ -197,24 +282,65 @@
     </style>
 </head>
 <body>
-    <header class="topbar no-print">
-        <div class="topbar-left">
-            <a class="back-link" href="index.html"><i class="fas fa-chevron-left"></i> Trang chủ</a>
-            <div>
-                <div class="eyebrow">Cash &amp; Vouchers</div>
-                <h1>Sổ quỹ</h1>
+    <div class="shell">
+    <aside class="sidebar no-print">
+        <a class="side-brand" href="index.html">
+            <img src="brand_assets/tlc logo transparancy.png" alt="TLC">
+            <span>TLCGroup</span>
+        </a>
+        <div class="side-label" data-i18n="cbMenu">Menu</div>
+        <a class="side-link" href="index.html"><span class="side-ico" style="background:#007AFF"><i class="fas fa-house"></i></span><span data-i18n="navHome">Trang chủ</span></a>
+        <a class="side-link" href="index.html?page=comm"><span class="side-ico" style="background:#5856D6"><i class="fas fa-comments"></i></span><span data-i18n="cbComm">Communications</span></a>
+        <a class="side-link" href="index.html?page=profile"><span class="side-ico" style="background:#FF9500"><i class="fas fa-user"></i></span><span data-i18n="profile">Hồ sơ</span></a>
+        <div class="side-label" data-i18n="cbWorkflows">Workflows</div>
+        <a class="side-link" href="index.html?page=process-o2c"><span class="side-ico" style="background:#34C759"><i class="fas fa-cart-shopping"></i></span><span data-i18n="o2cTitle">Bán hàng (O2C)</span></a>
+        <a class="side-link" href="index.html?page=process-p2p"><span class="side-ico" style="background:#007AFF"><i class="fas fa-bag-shopping"></i></span><span data-i18n="p2pTitle">Mua hàng (P2P)</span></a>
+        <a class="side-link active" href="index.html?page=process-cash"><span class="side-ico" style="background:#FF9500"><i class="fas fa-wallet"></i></span><span data-i18n="cbNavCash">Cash &amp; Vouchers</span></a>
+        <div class="side-user">
+            <div class="side-user-row">
+                <img id="sidebar-avatar" alt="">
+                <div>
+                    <p id="sidebar-name" style="font-size:15px;font-weight:600;"></p>
+                    <p id="sidebar-role" style="font-size:13px;color:#6e6e73;"></p>
+                </div>
             </div>
+            <button type="button" class="signout" id="sign-out" data-i18n="signOut">Sign Out</button>
         </div>
-        <div class="nav-user" id="nav-user"></div>
+    </aside>
+    <div class="ipad-main">
+    <header class="appbar no-print">
+        <a class="appbar-brand" href="index.html">
+            <img src="brand_assets/tlc logo transparancy.png" alt="TLC">
+            <span>Business Process Management (BPM)</span>
+        </a>
+        <div class="appbar-actions">
+            <div class="ios-segmented">
+                <button type="button" data-lang="en" onclick="setLanguage('en')" class="ios-segmented-item" aria-label="Switch to English">EN</button>
+                <button type="button" data-lang="vi" onclick="setLanguage('vi')" class="ios-segmented-item" aria-label="Switch to Vietnamese">VI</button>
+            </div>
+            <img class="avatar" id="nav-avatar" alt="">
+        </div>
     </header>
     <main>
+        <nav class="crumb no-print" aria-label="Breadcrumb">
+            <a href="index.html"><i class="fas fa-house"></i> <span data-i18n="navHome">Trang chủ</span></a>
+            <i class="fas fa-chevron-right" style="font-size:10px;color:#C7C7CC;"></i>
+            <a href="index.html?page=process-cash" data-i18n="cbNavCash">Cash &amp; Vouchers</a>
+            <i class="fas fa-chevron-right" style="font-size:10px;color:#C7C7CC;"></i>
+            <span data-i18n="cbTitle">Sổ quỹ</span>
+        </nav>
+        <h1 class="page-title no-print" data-i18n="cbTitle">Sổ quỹ</h1>
         <div class="card filters no-print">
             <div>
-                <label class="field-label" for="company">Công ty</label>
-                <select id="company"><option value="">Chọn công ty</option></select>
+                <label class="field-label" for="company" data-i18n="labelCompany">Công ty</label>
+                <select id="company"><option value="" data-i18n="optChooseCompany">Chọn công ty</option></select>
             </div>
             <div>
-                <label class="field-label" for="end-date">Số dư đến ngày</label>
+                <label class="field-label" for="start-date" data-i18n="cbStartDate">Từ ngày</label>
+                <input id="start-date" type="date">
+            </div>
+            <div>
+                <label class="field-label" for="end-date" data-i18n="cbEndDate">Đến ngày</label>
                 <input id="end-date" type="date">
             </div>
         </div>
@@ -223,47 +349,52 @@
         <section class="card" id="balance-section">
             <div class="balance-card">
                 <div>
-                    <div class="balance-label">Số dư theo sổ quỹ</div>
+                    <div class="balance-label" data-i18n="cbBookBalance">Số dư theo sổ quỹ</div>
                     <div id="book-balance">—</div>
                     <div class="book-meta" id="book-meta"></div>
                 </div>
                 <div class="pending-note">
-                    <div class="field-label">Phiếu chưa vào quỹ</div>
+                    <div class="field-label" data-i18n="cbPending">Phiếu chưa vào quỹ</div>
                     <div id="pending-meta">—</div>
                 </div>
             </div>
         </section>
 
         <section class="card" id="book-section">
-            <h2>Phiếu đã vào quỹ</h2>
+            <h2 data-i18n="cbInBook">Phiếu đã vào quỹ</h2>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
+                    <thead><tr>
+                        <th data-i18n="cbColNo">Số phiếu</th><th data-i18n="cbColDate">Ngày</th><th data-i18n="cbColType">Loại</th>
+                        <th data-i18n="cbColDesc">Diễn giải</th><th class="num" data-i18n="cbColAmount">Số tiền</th><th data-i18n="cbColStatus">Trạng thái</th>
+                    </tr></thead>
                     <tbody id="book-rows"></tbody>
                 </table>
             </div>
-            <div class="pager no-print"><button type="button" class="btn" id="book-prev">Trước</button><span id="book-page"></span><button type="button" class="btn" id="book-next">Sau</button></div>
+            <div class="pager no-print"><button type="button" class="btn" id="book-prev" data-i18n="cbPrev">Trước</button><span id="book-page"></span><button type="button" class="btn" id="book-next" data-i18n="cbNext">Sau</button></div>
         </section>
 
         <section class="card" id="pending-section">
-            <h2>Phiếu chưa vào quỹ</h2>
+            <h2 data-i18n="cbPending">Phiếu chưa vào quỹ</h2>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Số phiếu</th><th>Ngày</th><th>Loại</th><th>Diễn giải</th><th class="num">Số tiền</th><th>Trạng thái</th></tr></thead>
+                    <thead><tr>
+                        <th data-i18n="cbColNo">Số phiếu</th><th data-i18n="cbColDate">Ngày</th><th data-i18n="cbColType">Loại</th>
+                        <th data-i18n="cbColDesc">Diễn giải</th><th class="num" data-i18n="cbColAmount">Số tiền</th><th data-i18n="cbColStatus">Trạng thái</th>
+                    </tr></thead>
                     <tbody id="pending-rows"></tbody>
                 </table>
             </div>
-            <div class="pager no-print"><button type="button" class="btn" id="pending-prev">Trước</button><span id="pending-page"></span><button type="button" class="btn" id="pending-next">Sau</button></div>
+            <div class="pager no-print"><button type="button" class="btn" id="pending-prev" data-i18n="cbPrev">Trước</button><span id="pending-page"></span><button type="button" class="btn" id="pending-next" data-i18n="cbNext">Sau</button></div>
         </section>
 
         <section class="card" id="count-form">
-            <h2>Bảng kiểm kê quỹ (Dùng cho VNĐ)</h2>
-            <p id="saved-banner" class="banner" hidden>Đã có bảng kiểm kê ngày này.</p>
-            <p class="form-meta">Bộ phận: Kế toán · Số: 08</p>
+            <h2 class="form-head" data-i18n="cbCountTitle">Bảng kiểm kê quỹ</h2>
+            <p id="saved-banner" class="banner" hidden data-i18n="cbSavedBanner">Đã có bảng kiểm kê ngày này.</p>
             <p id="form-date">Hôm nay, vào … giờ … phút, ngày … tháng … năm …</p>
-            <div class="filters no-print" style="padding: 0; background: transparent; border: none; box-shadow: none;">
-                <div><label class="field-label" for="hour">Giờ</label><input id="hour" type="number" min="0" max="23" step="1" value="0"></div>
-                <div><label class="field-label" for="minute">Phút</label><input id="minute" type="number" min="0" max="59" step="1" value="0"></div>
+            <div class="no-print" style="margin: 12px 0;">
+                <label class="field-label" for="count-time" data-i18n="cbTime">Giờ kiểm kê</label>
+                <input id="count-time" type="time" step="60" value="08:00">
             </div>
             <div class="table-wrap">
                 <table class="denom">
@@ -278,19 +409,19 @@
             </div>
             <div class="reasons">
                 <div>
-                    <label class="field-label" for="reason-thua">Lý do — Thừa</label>
+                    <label class="field-label" for="reason-thua" data-i18n="cbReasonOver">Lý do — Thừa</label>
                     <input id="reason-thua" type="text">
                 </div>
                 <div>
-                    <label class="field-label" for="reason-thieu">Lý do — Thiếu</label>
+                    <label class="field-label" for="reason-thieu" data-i18n="cbReasonShort">Lý do — Thiếu</label>
                     <input id="reason-thieu" type="text">
                 </div>
                 <div>
-                    <label class="field-label" for="conclusion">Kết luận sau khi kiểm kê quỹ</label>
+                    <label class="field-label" for="conclusion" data-i18n="cbConclusion">Kết luận sau khi kiểm kê quỹ</label>
                     <textarea id="conclusion" rows="2"></textarea>
                 </div>
             </div>
-            <h2 style="margin-top: 20px;">Chúng tôi gồm</h2>
+            <h2 class="form-head" style="margin-top: 20px;" data-i18n="cbWeInclude">Chúng tôi gồm</h2>
             <div id="reps"></div>
             <div id="print-sigs"></div>
         </section>
@@ -298,8 +429,21 @@
     <div class="bar no-print">
         <span id="save-hint"></span>
         <div class="bar-actions">
-            <button type="button" class="btn" id="print-btn"><i class="fas fa-print"></i> In</button>
-            <button type="button" class="btn btn-primary" id="save-btn" disabled><i class="fas fa-save"></i> Lưu bảng kiểm kê</button>
+            <button type="button" class="btn" id="review-btn"><i class="fas fa-eye"></i> <span data-i18n="cbReview">Xem lại</span></button>
+            <button type="button" class="btn" id="print-btn"><i class="fas fa-print"></i> <span data-i18n="cbPrint">In</span></button>
+            <button type="button" class="btn btn-primary" id="save-btn" disabled><i class="fas fa-save"></i> <span data-i18n="cbSave">Lưu bảng kiểm kê</span></button>
+        </div>
+    </div>
+    </div>
+    </div>
+    <div id="review-modal" class="review-modal" hidden>
+        <div class="review-sheet" role="dialog" aria-modal="true" aria-labelledby="review-title">
+            <h2 id="review-title" data-i18n="cbCountTitle">Bảng kiểm kê quỹ</h2>
+            <div id="review-body"></div>
+            <div class="bar-actions no-print" style="margin-top: 16px; justify-content: flex-end;">
+                <button type="button" class="btn" id="review-close" data-i18n="cbClose">Đóng</button>
+                <button type="button" class="btn btn-primary" id="review-print"><i class="fas fa-print"></i> <span data-i18n="cbPrint">In</span></button>
+            </div>
         </div>
     </div>
     <script>
@@ -316,10 +460,9 @@
         var savedCount = null;
         var pages = { book: 0, pending: 0 };
         var reps = [
-            { key: 'keToan', label: 'Đại diện kế toán', name: '', email: '', signatureUrl: '', signatureData: '' },
-            { key: 'keToanTruong', label: 'Kế toán trưởng', name: '', email: '', signatureUrl: '', signatureData: '' },
-            { key: 'thuQuy', label: 'Thủ quỹ', name: '', email: '', signatureUrl: '', signatureData: '' },
-            { key: 'giamDoc', label: 'Giám đốc', name: '', email: '', signatureUrl: '', signatureData: '' }
+            { key: 'legalRep', labelKey: 'cbRoleLegal', name: '', email: '', signatureUrl: '', signatureData: '' },
+            { key: 'keToanTruong', labelKey: 'cbRoleAccountant', name: '', email: '', signatureUrl: '', signatureData: '' },
+            { key: 'thuQuy', labelKey: 'cbRoleTreasurer', name: '', email: '', signatureUrl: '', signatureData: '' }
         ];
         var sigCache = {};
 
@@ -329,6 +472,21 @@
         }
         function todayVN() {
             return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        }
+        function tr(key, fallback) {
+            return window.TLCI18n ? TLCI18n.t(key, fallback) : fallback;
+        }
+        function pad2(n) { return ('0' + Number(n || 0)).slice(-2); }
+        function countTime() {
+            var raw = String(document.getElementById('count-time').value || '00:00').split(':');
+            var hour = Number(raw[0]);
+            var minute = Number(raw[1]);
+            return { hour: isFinite(hour) ? hour : 0, minute: isFinite(minute) ? minute : 0 };
+        }
+        function esc(value) {
+            return String(value || '').replace(/[&<>"']/g, function(ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+            });
         }
         function setStatus(text, isError) {
             var el = document.getElementById('status');
@@ -342,24 +500,15 @@
         }
         function selectedCompany() {
             var sel = document.getElementById('company');
-            return companies[sel.selectedIndex - 1] || null;
+            var opt = sel.options[sel.selectedIndex];
+            if (!opt || !opt.value || !opt.dataset.name) return null;
+            return { name: opt.dataset.name, code: opt.dataset.code || '', key: opt.dataset.key || '' };
         }
         function norm(s) { return String(s || '').trim().toLowerCase(); }
-        function fold(s) {
-            return norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        }
         function empOf(emp, company) {
             var c = norm(emp.company);
             if (!c || !company) return false;
             return c === norm(company.name) || c === norm(company.code) || c === norm(company.key);
-        }
-        function isStaffAccountant(emp) {
-            var source = emp.position ? emp.position : emp.department;
-            var raw = norm(source);
-            var plain = fold(source);
-            var hit = raw.indexOf('kế toán') !== -1 || plain.indexOf('ke toan') !== -1;
-            var chief = raw.indexOf('trưởng') !== -1 || plain.indexOf('truong') !== -1 || plain.indexOf('chief') !== -1;
-            return hit && !chief;
         }
         function masterEmails() {
             if (!approvers) return [];
@@ -371,19 +520,24 @@
             if (employees.some(function(emp) { return norm(emp.email) === email && emp.isAdmin; })) return true;
             if (masterEmails().some(function(item) { return norm(item) === email; })) return true;
             var company = selectedCompany();
-            var rep = reps[0];
-            return norm(rep.email) === email && employees.some(function(emp) { return norm(emp.email) === email && empOf(emp, company); });
+            return reps.some(function(rep) {
+                return norm(rep.email) === email && employees.some(function(emp) { return norm(emp.email) === email && empOf(emp, company); });
+            });
         }
         function firstGap() {
-            var hour = Number(document.getElementById('hour').value);
-            var minute = Number(document.getElementById('minute').value);
-            if (!selectedCompany() || !document.getElementById('end-date').value) return 'Chọn công ty và ngày kết thúc.';
-            if (!isFinite(hour) || hour < 0 || hour > 23 || !isFinite(minute) || minute < 0 || minute > 59) return 'Giờ phải từ 0 đến 23 và phút từ 0 đến 59.';
+            var startDate = document.getElementById('start-date').value;
+            var endDate = document.getElementById('end-date').value;
+            var time = countTime();
+            if (!selectedCompany() || !startDate || !endDate) return tr('cbNeedDates', 'Chọn công ty, ngày bắt đầu và ngày kết thúc.');
+            if (startDate > todayVN() || endDate > todayVN()) return tr('cbFuture', 'Không chọn ngày trong tương lai.');
+            if (startDate > endDate) return tr('cbStartAfterEnd', 'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.');
+            if (time.hour < 0 || time.hour > 23 || time.minute < 0 || time.minute > 59) return tr('cbBadTime', 'Chọn giờ kiểm kê.');
             for (var i = 0; i < reps.length; i++) {
-                if (!reps[i].name) return 'Còn thiếu tên ' + reps[i].label + '.';
-                if (!reps[i].signatureUrl && !reps[i].signatureData) return 'Còn thiếu chữ ký ' + reps[i].label + '.';
+                var label = tr(reps[i].labelKey, reps[i].labelKey);
+                if (!reps[i].name) return tr('cbMissingName', 'Còn thiếu tên.') + ' ' + label;
+                if (!reps[i].signatureUrl && !reps[i].signatureData) return tr('cbMissingSig', 'Còn thiếu chữ ký.') + ' ' + label;
             }
-            if (!maySave()) return 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.';
+            if (!maySave()) return tr('cbCannotSave', 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.');
             return '';
         }
         function renderSaveBar() {
@@ -393,10 +547,14 @@
         }
         function renderDateLine() {
             var end = document.getElementById('end-date').value;
-            var hour = document.getElementById('hour').value || '…';
-            var minute = document.getElementById('minute').value || '…';
+            var time = countTime();
             var parts = end ? end.split('-') : [];
-            var text = 'Hôm nay, vào ' + hour + ' giờ ' + minute + ' phút, ngày ' + (parts[2] || '…') + ' tháng ' + (parts[1] || '…') + ' năm ' + (parts[0] || '…');
+            var text = tr('cbDateLine', 'Hôm nay, vào {h} giờ {m} phút, ngày {d} tháng {mo} năm {y}')
+                .replace('{h}', pad2(time.hour))
+                .replace('{m}', pad2(time.minute))
+                .replace('{d}', parts[2] || '…')
+                .replace('{mo}', parts[1] || '…')
+                .replace('{y}', parts[0] || '…');
             document.getElementById('form-date').textContent = text;
         }
         function lineTotals() {
@@ -453,8 +611,8 @@
                 return;
             }
             document.getElementById('book-balance').textContent = vnd(book.bookBalance);
-            document.getElementById('book-meta').textContent = 'Số dư đến ngày ' + document.getElementById('end-date').value + ' · Thu ' + vnd(book.bookThu) + ' · Chi ' + vnd(book.bookChi) + ' · ' + book.bookCount + ' phiếu';
-            document.getElementById('pending-meta').textContent = 'Thu ' + vnd(book.pendingThu) + ' · Chi ' + vnd(book.pendingChi) + ' · Chênh lệch ' + vnd(book.pendingNet);
+            document.getElementById('book-meta').textContent = document.getElementById('start-date').value + ' → ' + document.getElementById('end-date').value + ' · ' + tr('cbThu', 'Thu') + ' ' + vnd(book.bookThu) + ' · ' + tr('cbChi', 'Chi') + ' ' + vnd(book.bookChi) + ' · ' + book.bookCount;
+            document.getElementById('pending-meta').textContent = tr('cbThu', 'Thu') + ' ' + vnd(book.pendingThu) + ' · ' + tr('cbChi', 'Chi') + ' ' + vnd(book.pendingChi) + ' · ' + vnd(book.pendingNet);
             renderList(book.bookLines, 'book-rows', 'book', 'book-page');
             renderList(book.pendingLines, 'pending-rows', 'pending', 'pending-page');
             lineTotals();
@@ -489,18 +647,18 @@
             root.innerHTML = '';
             var printSigs = document.getElementById('print-sigs');
             printSigs.innerHTML = '';
-            var titles = ['Thủ quỹ', 'Kế toán trưởng', 'Người chịu trách nhiệm kiểm kê quỹ', 'Giám đốc'];
-            var printOrder = [2, 1, 0, 3];
-            reps.forEach(function(rep, index) {
+            var printOrder = [2, 1, 0];
+            var titles = [tr('cbRoleTreasurer', 'Thủ quỹ'), tr('cbRoleAccountant', 'Kế toán trưởng'), tr('cbRoleLegal', 'Đại diện pháp luật')];
+            reps.forEach(function(rep) {
                 var row = document.createElement('div');
                 row.className = 'rep';
                 var role = document.createElement('div');
                 role.className = 'rep-role';
-                role.textContent = rep.label;
+                role.textContent = tr(rep.labelKey, rep.labelKey);
                 var select = document.createElement('select');
                 var empty = document.createElement('option');
                 empty.value = '';
-                empty.textContent = 'Chọn tên';
+                empty.textContent = tr('cbChooseName', 'Chọn tên');
                 select.appendChild(empty);
                 var options = rep.options || [];
                 options.forEach(function(opt) {
@@ -527,13 +685,13 @@
                 if (src) img.src = src;
                 else img.hidden = true;
                 sig.appendChild(img);
-                if (!rep.signatureUrl || index === 0) {
+                if (!rep.signatureUrl) {
                     var file = document.createElement('input');
                     file.type = 'file';
                     file.accept = 'image/png,image/jpeg,image/jpg';
                     file.className = 'no-print';
                     file.addEventListener('change', function() { onSigFile(rep, file.files[0], img); });
-                    if (rep.signatureUrl && index !== 0) file.hidden = true;
+                    if (rep.signatureUrl) file.hidden = true;
                     sig.appendChild(file);
                 }
                 row.appendChild(role);
@@ -625,8 +783,7 @@
             savedCount = count;
             document.getElementById('saved-banner').hidden = !count;
             if (!count) return;
-            document.getElementById('hour').value = count.countHour;
-            document.getElementById('minute').value = count.countMinute;
+            document.getElementById('count-time').value = pad2(count.countHour) + ':' + pad2(count.countMinute);
             (count.quantities || []).forEach(function(n, i) {
                 var input = document.querySelector('[data-qty="' + i + '"]');
                 if (input) input.value = n;
@@ -634,66 +791,98 @@
             document.getElementById('reason-thua').value = count.reasonThua || '';
             document.getElementById('reason-thieu').value = count.reasonThieu || '';
             document.getElementById('conclusion').value = count.conclusion || '';
-            (count.reps || []).forEach(function(saved, i) {
-                if (!reps[i]) return;
-                reps[i].name = saved.name || '';
-                reps[i].email = saved.email || '';
-                reps[i].signatureUrl = saved.signatureUrl || '';
-                reps[i].signatureData = '';
+            (count.reps || []).forEach(function(saved) {
+                var key = saved.role === 'giamDoc' ? 'legalRep' : saved.role;
+                var rep = null;
+                for (var i = 0; i < reps.length; i++) if (reps[i].key === key) rep = reps[i];
+                if (!rep) return;
+                rep.name = saved.name || '';
+                rep.email = saved.email || '';
+                rep.signatureUrl = saved.signatureUrl || '';
+                rep.signatureData = '';
             });
             renderDateLine();
             renderReps();
             lineTotals();
         }
         function fillRepOptions() {
-            var company = selectedCompany();
-            var staff = employees.filter(function(emp) { return empOf(emp, company) && isStaffAccountant(emp); });
-            var pool = staff.length ? staff : employees.filter(function(emp) { return empOf(emp, company); });
-            reps[0].options = pool.map(function(emp) { return { name: emp.name, email: emp.email, signatureUrl: '' }; });
-            if (staff.length === 1 && !savedCount) {
-                reps[0].name = staff[0].name;
-                reps[0].email = staff[0].email;
-            } else if (!savedCount) {
-                reps[0].name = '';
-                reps[0].email = '';
-            }
             var map = [
+                { index: 0, person: approvers && approvers.legalRep },
                 { index: 1, person: approvers && approvers.accountant },
-                { index: 2, person: approvers && approvers.treasurer },
-                { index: 3, person: approvers && approvers.legalRep }
+                { index: 2, person: approvers && approvers.treasurer }
             ];
             map.forEach(function(item) {
                 var person = item.person || {};
-                reps[item.index].options = person.name ? [{ name: person.name, email: person.email || '', signatureUrl: person.signature || '' }] : [];
-                if (!savedCount || !reps[item.index].name) {
-                    reps[item.index].name = person.name || '';
-                    reps[item.index].email = person.email || '';
-                    reps[item.index].signatureUrl = person.signature || reps[item.index].signatureUrl || '';
+                var rep = reps[item.index];
+                if (!savedCount) {
+                    rep.name = person.name || '';
+                    rep.email = person.email || '';
+                    rep.signatureUrl = person.signature || '';
+                    rep.signatureData = '';
+                }
+                rep.options = person.name ? [{ name: person.name, email: person.email || '', signatureUrl: person.signature || '' }] : [];
+                if (rep.name && !rep.options.some(function(opt) { return opt.name === rep.name; })) {
+                    rep.options.unshift({ name: rep.name, email: rep.email, signatureUrl: rep.signatureUrl });
                 }
             });
             shareSignatures();
             renderReps();
             renderSaveBar();
         }
+        function applyRange(data, startDate, endDate) {
+            function keep(line) {
+                var ymd = String(line.createdDate || '');
+                if (startDate && ymd < startDate) return false;
+                if (endDate && ymd > endDate) return false;
+                return true;
+            }
+            function totals(lines) {
+                var thu = 0;
+                var chi = 0;
+                lines.forEach(function(line) {
+                    if (line.type === 'Thu') thu += Number(line.amount) || 0;
+                    else if (line.type === 'Chi') chi += Number(line.amount) || 0;
+                });
+                return { thu: thu, chi: chi };
+            }
+            data.bookLines = (data.bookLines || []).filter(keep);
+            data.pendingLines = (data.pendingLines || []).filter(keep);
+            var bookTot = totals(data.bookLines);
+            var pendingTot = totals(data.pendingLines);
+            data.bookThu = bookTot.thu;
+            data.bookChi = bookTot.chi;
+            data.bookBalance = bookTot.thu - bookTot.chi;
+            data.bookCount = data.bookLines.length;
+            data.pendingThu = pendingTot.thu;
+            data.pendingChi = pendingTot.chi;
+            data.pendingNet = pendingTot.thu - pendingTot.chi;
+            return data;
+        }
         async function loadBook() {
             var company = selectedCompany();
+            var startDate = document.getElementById('start-date').value;
             var endDate = document.getElementById('end-date').value;
             book = null;
             savedCount = null;
             document.getElementById('saved-banner').hidden = true;
             pages.book = 0;
             pages.pending = 0;
-            if (!company || !endDate) {
+            if (!company || !startDate || !endDate) {
                 renderBook();
                 return;
             }
-            if (endDate > todayVN()) {
-                setStatus('Ngày kết thúc không được ở tương lai.', true);
+            if (startDate > todayVN() || endDate > todayVN()) {
+                setStatus(tr('cbFuture', 'Không chọn ngày trong tương lai.'), true);
                 renderBook();
                 return;
             }
-            setStatus('Đang tải sổ quỹ…');
-            var payload = { companyName: company.name, companyKey: company.key, endDate: endDate, callerEmail: user.email, repEmail: reps[0].email || '' };
+            if (startDate > endDate) {
+                setStatus(tr('cbStartAfterEnd', 'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.'), true);
+                renderBook();
+                return;
+            }
+            setStatus(tr('cbLoading', 'Đang tải sổ quỹ…'));
+            var payload = { companyName: company.name, companyKey: company.key, startDate: startDate, endDate: endDate, callerEmail: user.email, repEmail: reps[0].email || '' };
             var bookRes = await post(Object.assign({ action: 'getCashBook' }, payload));
             if (!bookRes.success) {
                 setStatus(bookRes.message || 'Không tải được sổ quỹ.', true);
@@ -706,7 +895,7 @@
                 renderBook();
                 return;
             }
-            book = bookRes.data;
+            book = applyRange(bookRes.data, startDate, endDate);
             setStatus('');
             applyCount(countRes.data && countRes.data.count);
             fillRepOptions();
@@ -715,7 +904,7 @@
         async function save() {
             var gap = firstGap();
             if (gap || !book) return;
-            if (savedCount && !confirm('Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.')) return;
+            if (savedCount && !confirm(tr('cbReplaceConfirm', 'Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.'))) return;
             var company = selectedCompany();
             var totals = lineTotals();
             document.getElementById('save-btn').disabled = true;
@@ -726,8 +915,8 @@
                 companyKey: company.key,
                 endDate: document.getElementById('end-date').value,
                 callerEmail: user.email,
-                countHour: Number(document.getElementById('hour').value),
-                countMinute: Number(document.getElementById('minute').value),
+                countHour: countTime().hour,
+                countMinute: countTime().minute,
                 quantities: totals.qty,
                 bookBalance: book.bookBalance,
                 reasonThua: document.getElementById('reason-thua').value,
@@ -745,28 +934,134 @@
             setStatus('Đã lưu bảng kiểm kê.');
             await loadBook();
         }
+        function signOut() {
+            localStorage.removeItem('tlc_current_user');
+            location.href = 'index.html';
+        }
+        function makeSearchable(selectElement) {
+            if (selectElement._searchable) return;
+            selectElement._searchable = true;
+            var wrapper = document.createElement('div');
+            wrapper.className = 'searchable-select';
+            selectElement.parentNode.insertBefore(wrapper, selectElement);
+            wrapper.appendChild(selectElement);
+            selectElement.style.display = 'none';
+            var searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'search-input';
+            searchInput.autocomplete = 'off';
+            searchInput.placeholder = tr('cbTypeToSearch', 'Gõ để tìm...');
+            wrapper.insertBefore(searchInput, selectElement);
+            var optionsContainer = document.createElement('div');
+            optionsContainer.className = 'dropdown-options';
+            wrapper.appendChild(optionsContainer);
+            function showOptions(q) {
+                var matches = Array.prototype.filter.call(selectElement.options, function(option, index) {
+                    if (index === 0) return false;
+                    if (!q) return true;
+                    var haystack = [option.text, option.dataset.key, option.dataset.code, option.dataset.name].join(' ').toLowerCase();
+                    return haystack.indexOf(q) !== -1;
+                });
+                optionsContainer.innerHTML = '';
+                if (!matches.length) {
+                    optionsContainer.innerHTML = '<div class="dropdown-empty">' + esc(tr('cbNoMatch', 'Không tìm thấy')) + '</div>';
+                } else {
+                    matches.forEach(function(option) {
+                        var div = document.createElement('div');
+                        div.className = 'dropdown-option';
+                        div.textContent = option.text;
+                        div.onmousedown = function(e) {
+                            e.preventDefault();
+                            selectElement.value = option.value;
+                            selectElement.dispatchEvent(new Event('change'));
+                            searchInput.value = option.text;
+                            optionsContainer.classList.remove('show');
+                        };
+                        optionsContainer.appendChild(div);
+                    });
+                }
+                optionsContainer.classList.add('show');
+            }
+            searchInput.addEventListener('input', function() { showOptions(searchInput.value.toLowerCase()); });
+            searchInput.addEventListener('focus', function() { showOptions(searchInput.value.toLowerCase()); });
+            searchInput.addEventListener('blur', function() { setTimeout(function() { optionsContainer.classList.remove('show'); }, 150); });
+            selectElement._syncSearchInput = function() {
+                var sel = selectElement.options[selectElement.selectedIndex];
+                searchInput.value = sel && sel.value ? sel.text : '';
+                searchInput.placeholder = tr('cbTypeToSearch', 'Gõ để tìm...');
+            };
+            selectElement._syncSearchInput();
+        }
+        function openReview() {
+            var company = selectedCompany();
+            var time = countTime();
+            var body = document.getElementById('review-body');
+            body.innerHTML = '';
+            function line(text) {
+                var p = document.createElement('p');
+                p.style.margin = '0 0 8px';
+                p.textContent = text;
+                body.appendChild(p);
+            }
+            line(company ? company.name : '');
+            line(document.getElementById('start-date').value + ' → ' + document.getElementById('end-date').value + ' · ' + pad2(time.hour) + ':' + pad2(time.minute));
+            line(document.getElementById('form-date').textContent);
+            line('I ' + document.getElementById('line-i').textContent + ' · II ' + document.getElementById('line-ii').textContent + ' · III ' + document.getElementById('line-iii').textContent);
+            line(tr('cbReasonOver', 'Lý do — Thừa') + ': ' + (document.getElementById('reason-thua').value || '—'));
+            line(tr('cbReasonShort', 'Lý do — Thiếu') + ': ' + (document.getElementById('reason-thieu').value || '—'));
+            line(tr('cbConclusion', 'Kết luận sau khi kiểm kê quỹ') + ': ' + (document.getElementById('conclusion').value || '—'));
+            reps.forEach(function(rep) {
+                line(tr(rep.labelKey, rep.labelKey) + ' — ' + (rep.name || '—'));
+            });
+            document.getElementById('review-modal').hidden = false;
+        }
         async function init() {
-            document.getElementById('nav-user').textContent = user.name || user.email || '';
+            var name = user.name || user.email || '';
+            var role = user.role || user.position || '';
+            var avatar = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(name) + '&background=' + (user.isAdmin ? 'ea580c' : '007AFF') + '&color=fff';
+            document.getElementById('sidebar-name').textContent = name;
+            document.getElementById('sidebar-role').textContent = role;
+            document.getElementById('sidebar-avatar').src = avatar;
+            document.getElementById('nav-avatar').src = avatar;
+            document.getElementById('sign-out').addEventListener('click', signOut);
+            var start = document.getElementById('start-date');
             var end = document.getElementById('end-date');
-            end.max = todayVN();
-            end.value = todayVN();
+            var today = todayVN();
+            start.max = today;
+            end.max = today;
+            start.value = today.slice(0, 4) + '-01-01';
+            end.value = today;
             buildDenom();
             renderDateLine();
             var companyRes = await post({ action: 'getCompanies' });
-            if (!companyRes.success) {
-                setStatus(companyRes.message || 'Không tải được danh sách công ty.', true);
+            var rows = (companyRes.success && companyRes.data && companyRes.data.companies_data) || [];
+            var sel = document.getElementById('company');
+            if (!rows.length) {
+                setStatus(companyRes.message || 'Không có dữ liệu công ty.', true);
                 return;
             }
-            companies = (companyRes.data.companies_data || []).map(function(row) {
-                return { name: row['Tên công ty'], code: row['Mã công ty'], key: row['Mã định danh'] };
+            companies = rows.map(function(row) {
+                return { name: row['Tên công ty'] || '', code: row['Mã công ty'] || '', key: row['Mã định danh'] || '' };
             });
-            var sel = document.getElementById('company');
             companies.forEach(function(company) {
                 var opt = document.createElement('option');
-                opt.value = company.key || company.name;
-                opt.textContent = company.name;
+                var display = company.key ? company.name + ' (' + company.key + ')' : company.name;
+                opt.value = display;
+                opt.textContent = display;
+                opt.dataset.code = company.code;
+                opt.dataset.name = company.name;
+                opt.dataset.key = company.key;
                 sel.appendChild(opt);
             });
+            var params = new URLSearchParams(location.search);
+            var wanted = params.get('company') || '';
+            var wantedDate = params.get('date') || '';
+            if (wantedDate && wantedDate <= todayVN()) end.value = wantedDate;
+            if (wanted) {
+                var match = companies.find(function(company) { return company.key === wanted || company.name === wanted; });
+                if (match) sel.value = match.key ? match.name + ' (' + match.key + ')' : match.name;
+            }
+            makeSearchable(sel);
             var empRes = await post({ action: 'getEmployees' });
             employees = (empRes.success && empRes.data && empRes.data.employees) || [];
             sel.addEventListener('change', async function() {
@@ -781,17 +1076,133 @@
                 fillRepOptions();
                 loadBook();
             });
+            start.addEventListener('change', function() { renderDateLine(); loadBook(); });
             end.addEventListener('change', function() { renderDateLine(); loadBook(); });
-            document.getElementById('hour').addEventListener('input', function() { renderDateLine(); renderSaveBar(); });
-            document.getElementById('minute').addEventListener('input', function() { renderDateLine(); renderSaveBar(); });
+            document.getElementById('count-time').addEventListener('input', function() { renderDateLine(); renderSaveBar(); });
             document.getElementById('book-prev').addEventListener('click', function() { if (pages.book > 0) { pages.book--; renderBook(); } });
             document.getElementById('book-next').addEventListener('click', function() { pages.book++; renderBook(); });
             document.getElementById('pending-prev').addEventListener('click', function() { if (pages.pending > 0) { pages.pending--; renderBook(); } });
             document.getElementById('pending-next').addEventListener('click', function() { pages.pending++; renderBook(); });
             document.getElementById('save-btn').addEventListener('click', save);
             document.getElementById('print-btn').addEventListener('click', function() { window.print(); });
-            renderBook();
+            document.getElementById('review-btn').addEventListener('click', openReview);
+            document.getElementById('review-close').addEventListener('click', function() { document.getElementById('review-modal').hidden = true; });
+            document.getElementById('review-print').addEventListener('click', function() { window.print(); });
+            document.getElementById('review-modal').addEventListener('click', function(e) {
+                if (e.target.id === 'review-modal') document.getElementById('review-modal').hidden = true;
+            });
+            if (sel.value) sel.dispatchEvent(new Event('change'));
+            else renderBook();
         }
+        TLCI18n.extend({
+            vi: {
+                cbMenu: 'Menu',
+                cbWorkflows: 'Quy trình',
+                cbComm: 'Trao đổi',
+                cbTitle: 'Sổ quỹ',
+                cbNavCash: 'Tiền mặt & Phiếu',
+                labelCompany: 'Công ty',
+                cbStartDate: 'Từ ngày',
+                cbEndDate: 'Đến ngày',
+                cbBookBalance: 'Số dư theo sổ quỹ',
+                cbPending: 'Phiếu chưa vào quỹ',
+                cbInBook: 'Phiếu đã vào quỹ',
+                cbColNo: 'Số phiếu',
+                cbColDate: 'Ngày',
+                cbColType: 'Loại',
+                cbColDesc: 'Diễn giải',
+                cbColAmount: 'Số tiền',
+                cbColStatus: 'Trạng thái',
+                cbPrev: 'Trước',
+                cbNext: 'Sau',
+                cbCountTitle: 'Bảng kiểm kê quỹ',
+                cbSavedBanner: 'Đã có bảng kiểm kê ngày này.',
+                cbTime: 'Giờ kiểm kê',
+                cbReasonOver: 'Lý do — Thừa',
+                cbReasonShort: 'Lý do — Thiếu',
+                cbConclusion: 'Kết luận sau khi kiểm kê quỹ',
+                cbWeInclude: 'Chúng tôi gồm',
+                cbReview: 'Xem lại',
+                cbPrint: 'In',
+                cbSave: 'Lưu bảng kiểm kê',
+                cbClose: 'Đóng',
+                cbRoleLegal: 'Đại diện pháp luật',
+                cbRoleAccountant: 'Kế toán trưởng',
+                cbRoleTreasurer: 'Thủ quỹ',
+                cbChooseName: 'Chọn tên',
+                cbTypeToSearch: 'Gõ để tìm...',
+                cbNoMatch: 'Không tìm thấy',
+                cbNeedDates: 'Chọn công ty, ngày bắt đầu và ngày kết thúc.',
+                cbFuture: 'Không chọn ngày trong tương lai.',
+                cbStartAfterEnd: 'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.',
+                cbBadTime: 'Chọn giờ kiểm kê.',
+                cbMissingName: 'Còn thiếu tên.',
+                cbMissingSig: 'Còn thiếu chữ ký.',
+                cbCannotSave: 'Chỉ người đại diện của công ty này mới lưu được bảng kiểm kê.',
+                cbDateLine: 'Hôm nay, vào {h} giờ {m} phút, ngày {d} tháng {mo} năm {y}',
+                cbThu: 'Thu',
+                cbChi: 'Chi',
+                cbLoading: 'Đang tải sổ quỹ…',
+                cbReplaceConfirm: 'Đã có bảng kiểm kê cho ngày này. Lưu sẽ giữ bản cũ và ghi bản mới.'
+            },
+            en: {
+                cbMenu: 'Menu',
+                cbWorkflows: 'Workflows',
+                cbComm: 'Communications',
+                cbTitle: 'Cash book',
+                cbNavCash: 'Cash & Vouchers',
+                labelCompany: 'Company',
+                cbStartDate: 'From date',
+                cbEndDate: 'To date',
+                cbBookBalance: 'Book balance',
+                cbPending: 'Not yet in the cash book',
+                cbInBook: 'In the cash book',
+                cbColNo: 'Voucher no.',
+                cbColDate: 'Date',
+                cbColType: 'Type',
+                cbColDesc: 'Description',
+                cbColAmount: 'Amount',
+                cbColStatus: 'Status',
+                cbPrev: 'Previous',
+                cbNext: 'Next',
+                cbCountTitle: 'Cash count',
+                cbSavedBanner: 'A count already exists for this date.',
+                cbTime: 'Count time',
+                cbReasonOver: 'Reason — over',
+                cbReasonShort: 'Reason — short',
+                cbConclusion: 'Conclusion after the cash count',
+                cbWeInclude: 'We include',
+                cbReview: 'Review',
+                cbPrint: 'Print',
+                cbSave: 'Save cash count',
+                cbClose: 'Close',
+                cbRoleLegal: 'Legal representative',
+                cbRoleAccountant: 'Chief accountant',
+                cbRoleTreasurer: 'Treasurer',
+                cbChooseName: 'Choose a name',
+                cbTypeToSearch: 'Type to search...',
+                cbNoMatch: 'No matches',
+                cbNeedDates: 'Choose a company, a start date, and an end date.',
+                cbFuture: 'Future dates are not allowed.',
+                cbStartAfterEnd: 'The start date must be on or before the end date.',
+                cbBadTime: 'Choose the count time.',
+                cbMissingName: 'A name is missing.',
+                cbMissingSig: 'A signature is missing.',
+                cbCannotSave: 'Only a representative of this company can save the cash count.',
+                cbDateLine: 'Today, at {h}:{m}, day {d} month {mo} year {y}',
+                cbThu: 'In',
+                cbChi: 'Out',
+                cbLoading: 'Loading the cash book…',
+                cbReplaceConfirm: 'A count already exists for this date. Saving keeps the old one and writes a new one.'
+            }
+        });
+        TLCI18n.onChange(function() {
+            var company = document.getElementById('company');
+            if (company && company._syncSearchInput) company._syncSearchInput();
+            renderDateLine();
+            renderReps();
+            renderBook();
+        });
         init();
     </script>
 </body>

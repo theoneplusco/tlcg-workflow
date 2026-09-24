@@ -995,7 +995,7 @@
                 </div>
                 <div class="form-card-body">
                     <input type="hidden" id="company_name">
-                    <input type="hidden" id="company_key_or_taxid">
+                    <input type="hidden" id="company_key">
                     <input type="hidden" id="request_id">
                     <div class="form-row">
                         <div class="form-group full">
@@ -2333,7 +2333,7 @@
         const name = opt?.dataset?.name || '';
         const key  = opt?.dataset?.key  || '';
         document.getElementById('company_name').value          = name;
-        document.getElementById('company_key_or_taxid').value  = key;
+        document.getElementById('company_key').value  = key;
         clearVendorFields();
         generateRequestNumber();
         if (sel.value) loadVendors(key);
@@ -3240,7 +3240,7 @@
             prNo:             resubmitPrNo || _prNo,
             companyCode:      document.getElementById('company_code').value,
             companyName:      document.getElementById('company_name').value,
-            companyKey:       document.getElementById('company_key_or_taxid').value,
+            companyKey:       document.getElementById('company_key').value,
             department:       document.getElementById('department').value.trim(),
             requesterName:    document.getElementById('requester_name').value.trim(),
             requiredDate:     document.getElementById('required_date').value,
@@ -3337,7 +3337,7 @@
     function resetForm() {
         document.getElementById('company_code').value           = '';
         document.getElementById('company_name').value           = '';
-        document.getElementById('company_key_or_taxid').value   = '';
+        document.getElementById('company_key').value   = '';
         document.getElementById('request_id').value             = '';
         document.getElementById('department').value             = '';
         document.getElementById('requester_name').value         = '';

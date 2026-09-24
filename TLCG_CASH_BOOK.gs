@@ -95,6 +95,28 @@ function cashBookFindCompany_(companyName, companyKey) {
   return null;
 }
 
+function cashBookCompanyMiss_(companyName, companyKey) {
+  var sent = String(companyKey || '').trim();
+  var keys = [];
+  try {
+    var ss = safeOpenSpreadsheet(TLCG_MASTER_DATA_SHEET_ID, 'cashBookCompanyMiss_');
+    var sheet = safeGetSheet(ss, COMPANY_SHEET_NAME, 'cashBookCompanyMiss_');
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      var searchName = cashBookNorm_(companyName);
+      for (var i = 1; i < data.length; i++) {
+        var rowName = String(data[i][0] || '').trim();
+        var rowKey = String(data[i][2] || '').trim();
+        if (rowKey && cashBookNorm_(rowName) === searchName) keys.push(rowKey);
+      }
+    }
+  } catch (err) {}
+  var msg = 'Không tìm thấy công ty: ' + companyName;
+  if (sent) msg += ' (' + sent + ')';
+  if (keys.length) msg += '. Mã trên sổ: ' + keys.join(', ');
+  return msg;
+}
+
 function cashBookReadEmployees_() {
   var ss = safeOpenSpreadsheet(USERS_SHEET_ID, 'cashBookReadEmployees_');
   var sheet = safeGetSheet(ss, EMPLOYEES_SHEET_NAME, 'cashBookReadEmployees_');
@@ -181,17 +203,21 @@ function handleGetCashBook(requestBody) {
   try {
     var companyName = String((requestBody && (requestBody.companyName || requestBody.company)) || '').trim();
     var companyKey = String((requestBody && requestBody.companyKey) || '').trim();
+    var startDate = cashBookYmd_(requestBody && requestBody.startDate);
     var endDate = cashBookYmd_(requestBody && requestBody.endDate);
     var callerEmail = String((requestBody && requestBody.callerEmail) || '').trim();
     if (!companyName || !endDate) return createResponse(false, 'Chọn công ty và ngày kết thúc.');
     if (endDate > cashBookToday_()) return createResponse(false, 'Ngày kết thúc không được ở tương lai.');
+    if (startDate && startDate > cashBookToday_()) return createResponse(false, 'Ngày bắt đầu không được ở tương lai.');
+    if (startDate && startDate > endDate) return createResponse(false, 'Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.');
 
     var companyRow = cashBookFindCompany_(companyName, companyKey);
-    if (!companyRow) return createResponse(false, 'Không tìm thấy công ty: ' + companyName);
+    if (!companyRow) return createResponse(false, cashBookCompanyMiss_(companyName, companyKey));
 
     var ss = safeOpenSpreadsheet(VOUCHER_HISTORY_SHEET_ID, 'handleGetCashBook');
     var sheet = safeGetSheet(ss, VH_SHEET_NAME, 'handleGetCashBook');
     if (!sheet) return createResponse(false, msg_('sheetMissingCash', VH_SHEET_NAME));
+    if (typeof ensureVoucherHistoryHeaders_ === 'function') ensureVoucherHistoryHeaders_(sheet);
 
     var lastRow = sheet.getLastRow();
     var groups = {};
@@ -222,6 +248,7 @@ function handleGetCashBook(requestBody) {
       var row = group.row;
       if (!cashBookCompanyHit_(row[2], row[3], companyName, companyKey || String(companyRow[2] || '').trim())) return;
       if (!group.firstYmd || group.firstYmd > endDate) return;
+      if (startDate && group.firstYmd < startDate) return;
       var type = cashBookType_(row[1]);
       var amount = cashBookAmount_(row[8]);
       if (!type || !(amount > 0)) return;
@@ -277,7 +304,7 @@ function handleGetCashCount(requestBody) {
     var endDate = cashBookYmd_(requestBody && requestBody.endDate);
     if (!companyName || !endDate) return createResponse(false, 'Chọn công ty và ngày kết thúc.');
     var companyRow = cashBookFindCompany_(companyName, companyKey);
-    if (!companyRow) return createResponse(false, 'Không tìm thấy công ty: ' + companyName);
+    if (!companyRow) return createResponse(false, cashBookCompanyMiss_(companyName, companyKey));
     var key = cashBookCountKey_(companyRow, companyName);
     var sheet = cashBookEnsureSheet_();
     var rows = cashBookReadCountRows_(sheet);
@@ -371,7 +398,7 @@ function handleSaveCashCount(requestBody) {
     }
 
     var companyRow = cashBookFindCompany_(companyName, companyKey);
-    if (!companyRow) return createResponse(false, 'Không tìm thấy công ty: ' + companyName);
+    if (!companyRow) return createResponse(false, cashBookCompanyMiss_(companyName, companyKey));
     var employees = cashBookReadEmployees_();
     var repsIn = body.reps || [];
     var repEmail = repsIn[0] && repsIn[0].email;
@@ -434,6 +461,41 @@ function handleSaveCashCount(requestBody) {
     return createResponse(true, 'Đã lưu bảng kiểm kê.', { savedAt: savedAt });
   } catch (error) {
     Logger.log('❌ handleSaveCashCount: ' + error);
+    return createResponse(false, msg_('errGeneric') + error.message);
+  }
+}
+
+function handleGetCashBookSummary() {
+  try {
+    var ss = safeOpenSpreadsheet(VOUCHER_HISTORY_SHEET_ID, 'handleGetCashBookSummary');
+    var sheet = ss.getSheetByName(CASH_COUNT_SHEET);
+    if (!sheet || sheet.getLastRow() < 2) {
+      return createResponse(true, 'Thành công', { currentCounts: 0, companyCount: 0, latestEndDate: '', latestSavedAt: '' });
+    }
+    var rows = cashBookReadCountRows_(sheet);
+    var companies = {};
+    var current = 0;
+    var latestSaved = '';
+    var latestEnd = '';
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][14] || '').trim() !== 'current') continue;
+      current++;
+      var key = String(rows[i][0] || '').trim();
+      if (key) companies[key] = true;
+      var savedAt = String(rows[i][13] || '');
+      if (savedAt >= latestSaved) {
+        latestSaved = savedAt;
+        latestEnd = cashBookYmd_(rows[i][2]);
+      }
+    }
+    return createResponse(true, 'Thành công', {
+      currentCounts: current,
+      companyCount: Object.keys(companies).length,
+      latestEndDate: latestEnd,
+      latestSavedAt: latestSaved
+    });
+  } catch (error) {
+    Logger.log('❌ handleGetCashBookSummary: ' + error);
     return createResponse(false, msg_('errGeneric') + error.message);
   }
 }

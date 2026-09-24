@@ -1467,23 +1467,13 @@ function getOrCreateSheet(sheetName) {
     
     // Create headers based on sheet type
     if (sheetName === CONFIG.SHEET_NAME) {
-      const headers = [
-        'Request ID', 'Request Date', 'Company', 'Requestor', 'Requestor Email', 'Department',
-        'Purchase Type', 'PR Request No', 'Purpose', 'Supplier', 'Recipient',
-        'Product Items (JSON)', 'Total Amount', 'Payment Type', 'Payment Phases (JSON)',
-        'Budget Approver', 'Budget Status', 'Budget Signature',
-        'Supplier Approver', 'Supplier Status', 'Supplier Signature',
-        'Legal Approver', 'Legal Status', 'Legal Signature',
-        'Accounting Approver', 'Accounting Status', 'Accounting Signature',
-        'Director Approver', 'Director Status', 'Director Signature',
-        'Final Approver', 'Final Status', 'Final Signature',
-        'Overall Status', 'Submitted At', 'Metadata (JSON)'
-      ];
-      sheet.appendRow(headers);
+      sheet.appendRow(PMT_HEADERS_.concat(P2P_HISTORY_HEADERS_));
     } else if (sheetName === CONFIG.SHEET_NAME) {
       // Payment_Request_History sheet - will be created manually by user
       // Header row should already exist
     }
+  } else if (sheetName === CONFIG.SHEET_NAME) {
+    standardizeWorkflowSheet_(sheet, PMT_HEADERS_);
   }
   
   return sheet;
@@ -2006,13 +1996,11 @@ function _appendAuditLog_(opts) {
     var sheet = ss.getSheetByName(opts.sheetName);
     if (!sheet) {
       sheet = ss.insertSheet(opts.sheetName);
-      sheet.appendRow([
-        'Document No', 'Flow', 'Company', 'Action', 'Role',
-        'Actor Email', 'Actor Name', 'Prev Status', 'New Status',
-        'Timestamp', 'Note', 'Extra (JSON)'
-      ]);
+      sheet.appendRow(AUDIT_HEADERS_);
       sheet.setFrozenRows(1);
       Logger.log('[Audit] Created sheet: ' + opts.sheetName);
+    } else {
+      applyStandardHeaders_(sheet, AUDIT_HEADERS_);
     }
     sheet.appendRow([
       opts.docNo      || '',
@@ -2038,7 +2026,7 @@ function _appendAuditLog_(opts) {
 
 /**
  * Sheet: Purchase_Request_History
- * Columns: A=PR No, B=Company, C=Company Key, D=Department, E=Requester Name,
+ * Columns: A=PR No, B=Company, C=company_key, D=Department, E=Requester Name,
  *          F=Required Date, G=Priority, H=Purpose, I=Suggested Vendor,
  *          J=Budget Code, K=Budget Approver Email, L=Supplier Approver Email,
  *          M=Items (JSON), N=Grand Total, O=Status, P=Submitted At, Q=Metadata (JSON)
@@ -2184,30 +2172,10 @@ function handlePurchaseRequest(data) {
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
     if (!sheet) {
       sheet = ss.insertSheet(PR_SHEET_NAME);
-      sheet.appendRow([
-        'PR No', 'Company', 'Company Key', 'Department', 'Requester Name',
-        'Required Date', 'Priority', 'Purpose', 'Suggested Vendor', 'Budget Code',
-        'Budget Approver Email', 'Supplier Approver Email',
-        'Items (JSON)', 'Grand Total', 'Status', 'Submitted At', 'Metadata (JSON)',
-        'Contract Approver Email', 'Purchasing Approver Email', 'Attachment URLs'
-      ].concat(P2P_HISTORY_HEADERS_));
+      sheet.appendRow(PR_HEADERS_.concat(P2P_HISTORY_HEADERS_));
       Logger.log('[P2P] Created sheet: ' + PR_SHEET_NAME);
     } else {
-      // Ensure new columns exist on an existing sheet (migration-safe)
-      var headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      var expectedHeaders = [
-        /*0*/'PR No', /*1*/'Company', /*2*/'Company Key', /*3*/'Department', /*4*/'Requester Name',
-        /*5*/'Required Date', /*6*/'Priority', /*7*/'Purpose', /*8*/'Suggested Vendor', /*9*/'Budget Code',
-        /*10*/'Budget Approver Email', /*11*/'Supplier Approver Email',
-        /*12*/'Items (JSON)', /*13*/'Grand Total', /*14*/'Status', /*15*/'Submitted At', /*16*/'Metadata (JSON)',
-        /*17*/'Contract Approver Email', /*18*/'Purchasing Approver Email', /*19*/'Attachment URLs'
-      ];
-      for (var hi = headerRow.length; hi < expectedHeaders.length; hi++) {
-        sheet.getRange(1, hi + 1).setValue(expectedHeaders[hi]);
-        Logger.log('[P2P] Added missing column: ' + expectedHeaders[hi]);
-      }
-      // Ensure append-only history event columns exist
-      ensureP2PHistoryColumns_(sheet);
+      standardizeWorkflowSheet_(sheet, PR_HEADERS_);
     }
 
     sheet.appendRow([
@@ -2413,6 +2381,7 @@ function handleGetPurchaseRequestHistory(data) {
 
     var ss    = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
+    if (sheet) standardizeWorkflowSheet_(sheet, PR_HEADERS_);
     if (!sheet || sheet.getLastRow() <= 1) {
       return createResponse(true, 'Thành công', { requests: [] });
     }
@@ -3329,12 +3298,10 @@ function getOrCreateAMSheet_() {
   var sheet = ss.getSheetByName(AM_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(AM_SHEET_NAME);
-    sheet.appendRow([
-      'AM No', 'Company', 'PR No', 'Department', 'Receiver Name',
-      'Receiver Email', 'AM Date', 'Items Received (JSON)', 'Status',
-      'Submitted At', 'Dept Head Approver Email', 'Metadata (JSON)'
-    ]);
+    sheet.appendRow(AM_HEADERS_);
     Logger.log('[AM] Created sheet: ' + AM_SHEET_NAME);
+  } else {
+    standardizeWorkflowSheet_(sheet, AM_HEADERS_);
   }
   return sheet;
 }
@@ -4017,17 +3984,113 @@ function handleGetPaymentProgressByPR(data) {
  *   +9: Event_Meta_JSON
  */
 
-var P2P_HISTORY_HEADERS_ = [
-  'Row_Type', 'Event_Action', 'Event_Role',
-  'Event_Actor_Email', 'Event_Actor_Name',
-  'Event_Prev_Status', 'Event_New_Status',
-  'Event_Timestamp', 'Event_Note', 'Event_Meta_JSON'
+var PMT_HEADERS_ = [
+  'request_id', 'request_date', 'company_name', 'requestor_name', 'requestor_email', 'department',
+  'purchase_type', 'pr_no', 'purpose', 'supplier', 'recipient',
+  'product_items_json', 'total_amount', 'payment_type', 'payment_phases_json',
+  'budget_approver', 'budget_status', 'budget_signature',
+  'supplier_approver', 'supplier_status', 'supplier_signature',
+  'legal_approver', 'legal_status', 'legal_signature',
+  'accounting_approver', 'accounting_status', 'accounting_signature',
+  'director_approver', 'director_status', 'director_signature',
+  'final_approver', 'final_status', 'final_signature',
+  'status', 'submitted_at', 'metadata_json'
 ];
+
+var PR_HEADERS_ = [
+  'pr_no', 'company_name', 'company_key', 'department', 'requester_name',
+  'required_date', 'priority', 'purpose', 'suggested_vendor', 'budget_code',
+  'budget_approver_email', 'supplier_approver_email',
+  'items_json', 'grand_total', 'status', 'submitted_at', 'metadata_json',
+  'contract_approver_email', 'purchasing_approver_email', 'attachment_urls'
+];
+
+var AM_HEADERS_ = [
+  'am_no', 'company_name', 'pr_no', 'department', 'receiver_name',
+  'receiver_email', 'am_date', 'items_received_json', 'status',
+  'submitted_at', 'dept_head_approver_email', 'metadata_json'
+];
+
+var CT_HEADERS_ = [
+  'contract_no', 'pr_no', 'vendor_name', 'vendor_contact', 'contract_value',
+  'start_date', 'end_date', 'payment_terms', 'contract_doc_url', 'status',
+  'created_by', 'created_at', 'approved_by', 'approved_at', 'notes', 'metadata_json'
+];
+
+var CT_AMEND_HEADERS_ = [
+  'amendment_no', 'contract_no', 'pr_no', 'amendment_type',
+  'old_value', 'new_value', 'description', 'doc_url', 'status',
+  'requested_by', 'requested_at', 'approved_by', 'approved_at', 'metadata_json'
+];
+
+var AUDIT_HEADERS_ = [
+  'document_no', 'flow', 'company_name', 'action', 'role',
+  'actor_email', 'actor_name', 'prev_status', 'new_status',
+  'timestamp', 'note', 'extra_json'
+];
+
+var P2P_HISTORY_HEADERS_ = [
+  'row_type', 'event_action', 'event_role',
+  'event_actor_email', 'event_actor_name',
+  'event_prev_status', 'event_new_status',
+  'event_timestamp', 'event_note', 'event_metadata_json'
+];
+
+function applyStandardHeaders_(sheet, headers) {
+  if (!sheet || !headers || !headers.length) return;
+  var last = Math.max(sheet.getLastColumn(), headers.length);
+  var current = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var changed = false;
+  for (var i = 0; i < headers.length; i++) {
+    if (String(current[i] == null ? '' : current[i]).trim() !== headers[i]) {
+      current[i] = headers[i];
+      changed = true;
+    }
+  }
+  if (changed) sheet.getRange(1, 1, 1, headers.length).setValues([current.slice(0, headers.length)]);
+}
+
+function workflowBaseHeaders_(baseWidth) {
+  if (baseWidth === 36) return PMT_HEADERS_;
+  if (baseWidth === 20) return PR_HEADERS_;
+  if (baseWidth === 12) return AM_HEADERS_;
+  if (baseWidth === 16) return CT_HEADERS_;
+  return null;
+}
+
+function standardizeWorkflowSheet_(sheet, baseHeaders) {
+  if (!sheet || !baseHeaders) return;
+  applyStandardHeaders_(sheet, baseHeaders.concat(P2P_HISTORY_HEADERS_));
+  ensureP2PHistoryColumns_(sheet);
+}
 
 /** Ensure the 10 event columns exist in the header row; add if missing. */
 function ensureP2PHistoryColumns_(sheet) {
+  if (!sheet || sheet.getLastColumn() < 1) return;
   var lastCol = sheet.getLastColumn();
-  var header  = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var alias = {
+    'row_type': 'row_type',
+    'event_action': 'event_action',
+    'event_role': 'event_role',
+    'event_actor_email': 'event_actor_email',
+    'event_actor_name': 'event_actor_name',
+    'event_prev_status': 'event_prev_status',
+    'event_new_status': 'event_new_status',
+    'event_timestamp': 'event_timestamp',
+    'event_note': 'event_note',
+    'event_meta_json': 'event_metadata_json',
+    'event_metadata_json': 'event_metadata_json'
+  };
+  var changed = false;
+  for (var i = 0; i < header.length; i++) {
+    var key = String(header[i] || '').trim().toLowerCase().replace(/[\s]+/g, '_');
+    if (alias[key] && String(header[i]).trim() !== alias[key]) {
+      header[i] = alias[key];
+      changed = true;
+    }
+  }
+  if (changed) sheet.getRange(1, 1, 1, lastCol).setValues([header]);
   var missing = P2P_HISTORY_HEADERS_.filter(function(h) { return header.indexOf(h) === -1; });
   if (missing.length === 0) return;
   for (var j = 0; j < missing.length; j++) {
@@ -4044,6 +4107,8 @@ function ensureP2PHistoryColumns_(sheet) {
  * @param {object} opts       - { action, role, actorEmail, actorName, prevStatus, newStatus, note, metaJson }
  */
 function appendP2PHistoryRow_(sheet, baseWidth, docNo, opts) {
+  var baseHeaders = workflowBaseHeaders_(baseWidth);
+  if (baseHeaders) standardizeWorkflowSheet_(sheet, baseHeaders);
   var base = new Array(baseWidth).fill('');
   base[0] = docNo;
   sheet.appendRow(base.concat([
@@ -4078,7 +4143,10 @@ function handleGetP2PHistory(data) {
     if (!cfg || !docNo) return createResponse(false, msg_('invalidDocNoFlow'));
     var ss    = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
     var sheet = ss.getSheetByName(cfg.sheetName);
-    if (!sheet || sheet.getLastRow() <= 1) return createResponse(true, 'OK', { history: [] });
+    if (!sheet || sheet.getLastRow() < 1) return createResponse(true, 'OK', { history: [] });
+    var baseHeaders = workflowBaseHeaders_(cfg.baseWidth);
+    if (baseHeaders) standardizeWorkflowSheet_(sheet, baseHeaders);
+    if (sheet.getLastRow() <= 1) return createResponse(true, 'OK', { history: [] });
     var typeColIdx = cfg.baseWidth; // 0-based index of Row_Type column
     var rows = sheet.getDataRange().getValues().slice(1);
     var history = rows
@@ -4131,12 +4199,10 @@ function getOrCreateContractSheet_() {
   var sheet = ss.getSheetByName(CT_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(CT_SHEET_NAME);
-    sheet.appendRow([
-      'Contract No.', 'PR No.', 'Vendor Name', 'Vendor Contact', 'Contract Value',
-      'Start Date', 'End Date', 'Payment Terms', 'Contract Doc URL', 'Status',
-      'Created By', 'Created At', 'Approved By', 'Approved At', 'Notes', 'Metadata (JSON)'
-    ]);
+    sheet.appendRow(CT_HEADERS_);
     sheet.setFrozenRows(1);
+  } else {
+    standardizeWorkflowSheet_(sheet, CT_HEADERS_);
   }
   return sheet;
 }
@@ -4146,12 +4212,10 @@ function getOrCreateContractAmendmentSheet_() {
   var sheet = ss.getSheetByName(CT_AMEND_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(CT_AMEND_SHEET);
-    sheet.appendRow([
-      'Amendment No.', 'Contract No.', 'PR No.', 'Amendment Type',
-      'Old Value', 'New Value', 'Description', 'Doc URL', 'Status',
-      'Requested By', 'Requested At', 'Approved By', 'Approved At', 'Metadata (JSON)'
-    ]);
+    sheet.appendRow(CT_AMEND_HEADERS_);
     sheet.setFrozenRows(1);
+  } else {
+    applyStandardHeaders_(sheet, CT_AMEND_HEADERS_);
   }
   return sheet;
 }

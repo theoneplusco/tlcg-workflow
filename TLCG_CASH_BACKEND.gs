@@ -553,10 +553,12 @@ function doPost(e) {
         return handleGetCompanies();
       case 'getCashBook':
       case 'getCashCount':
+      case 'getCashBookSummary':
       case 'saveCashCount':
         // Handlers live in TLCG_CASH_BOOK.gs (same Cash project).
         if (normalizedAction === 'getCashBook') return handleGetCashBook(requestBody);
         if (normalizedAction === 'getCashCount') return handleGetCashCount(requestBody);
+        if (normalizedAction === 'getCashBookSummary') return handleGetCashBookSummary();
         return handleSaveCashCount(requestBody);
       case 'createVoucherUploadSession':
         return handleCreateVoucherUploadSession_(requestBody);
@@ -667,7 +669,7 @@ function getVoucherFromHistory(voucherNumber) {
     
     // Find FIRST entry (Submit row) to get base meta with companyApprovers
     // Column structure: A(0)=voucher_number, B(1)=voucher_type, C(2)=company_name,
-    //   D(3)=company_key_or_taxid, E(4)=employee_name, F(5)=submited_email,
+    //   D(3)=company_key, E(4)=employee_name, F(5)=submited_email,
     //   G(6)=submitted_by, H(7)=submitted_at, I(8)=amount, J(9)=status,
     //   K(10)=due_date, L(11)=action, M(12)=attachments, N(13)=description,
     //   O(14)=note, P(15)=approver_email, Q(16)=approved_at, R(17)=MetaJSON
@@ -1076,7 +1078,7 @@ function handleSendEmail(requestBody) {
     }
     
 
-    // Look up authoritative Company_Key_Or_Taxid from Master Company sheet col C
+    // Look up authoritative company_key from Master Company sheet col C
     // Only overwrite frontend value if exact name+key match found in sheet
     let verifiedCompanyKey = voucher.companyKey || '';
     try {
@@ -2213,7 +2215,7 @@ function handleImportFromVHImport(requestBody) {
     let pendingRows = []; // rows that are valid and not yet imported
 
     // VH_import mirrors Voucher_History columns A–R:
-    // A(0)=voucher_number, B(1)=voucher_type, C(2)=company_name, D(3)=company_key_or_taxid,
+    // A(0)=voucher_number, B(1)=voucher_type, C(2)=company_name, D(3)=company_key,
     // E(4)=employee_name, F(5)=submited_email, G(6)=submitted_by, H(7)=submitted_at,
     // I(8)=amount, J(9)=status, K(10)=due_date, L(11)=action, M(12)=attachments,
     // N(13)=description, O(14)=note, P(15)=approver_email, Q(16)=approved_at, R(17)=MetaJSON
@@ -3561,7 +3563,7 @@ function handleGetCompanies() {
     if (rows.length < 2) {
       return createResponse(true, 'Thành công', { companies_data: [] });
     }
-    // A=0 Company_Name, B=1 Company_Code, C=2 Company_Key_Or_Taxid
+    // A=0 company_name, B=1 company_code, C=2 company_key
     const companies_data = [];
     for (var i = 1; i < rows.length; i++) {
       var row = rows[i];
@@ -3697,7 +3699,7 @@ function handleGetCompanyApprovers(requestBody, directCompanyName) {
     // Column mapping based on new "Master Company" sheet structure:
     // A: Company_Name - index 0 (MATCH HERE)
     // B: Company_Code - index 1
-    // C: Company_Key_Or_Taxid - index 2 (ALSO MATCH HERE for uniqueness)
+    // C: company_key - index 2 (ALSO MATCH HERE for uniqueness)
     // D: Legal_Representative_Name - index 3
     // E: Legal_Representative_Email - index 4
     // F: Legal_Representative_Signature - index 5
@@ -3720,7 +3722,7 @@ function handleGetCompanyApprovers(requestBody, directCompanyName) {
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const rowName = (row[0] || '').toString().trim(); // Column A (index 0): Company_Name
-      const rowKey  = (row[2] || '').toString().trim(); // Column C (index 2): Company_Key_Or_Taxid
+      const rowKey  = (row[2] || '').toString().trim(); // Column C (index 2): company_key
       
       Logger.log('Row ' + (i + 1) + ' - Name: "' + rowName + '" Key: "' + rowKey + '"');
 
@@ -3841,7 +3843,7 @@ function handleGetVoucherSummary(requestBody) {
       });
     }
 
-    // Column structure: A=voucher_number, B=voucher_type, C=company_name, D=company_key_or_taxid,
+    // Column structure: A=voucher_number, B=voucher_type, C=company_name, D=company_key,
     //   E=employee_name, F=submited_email, G=submitted_by, H=submitted_at, I=amount, J=status,
     //   K=due_date, L=action, M=attachments, N=description, O=note, P=approver_email, Q=approved_at
     // data contains data rows only (header row was not read).
@@ -4453,6 +4455,32 @@ function uploadFilesToDrive_(files, folderName) {
   });
 }
 
+function applyStandardHeaders_(sheet, headers) {
+  if (!sheet || !headers || !headers.length) return;
+  var last = Math.max(sheet.getLastColumn(), headers.length);
+  var current = sheet.getRange(1, 1, 1, last).getValues()[0];
+  var changed = false;
+  for (var i = 0; i < headers.length; i++) {
+    if (String(current[i] == null ? '' : current[i]).trim() !== headers[i]) {
+      current[i] = headers[i];
+      changed = true;
+    }
+  }
+  if (changed) sheet.getRange(1, 1, 1, headers.length).setValues([current.slice(0, headers.length)]);
+}
+
+var VOUCHER_HISTORY_HEADERS_ = [
+  'voucher_number', 'voucher_type', 'company_name', 'company_key',
+  'employee_name', 'submitted_email', 'submitted_by', 'submitted_at',
+  'amount', 'status', 'due_date', 'action', 'attachments', 'description',
+  'note', 'approver_email', 'approved_at', 'metadata_json',
+  'acknowledged_at', 'acknowledged_by', 'signature_url', 'rejection_reason'
+];
+
+function ensureVoucherHistoryHeaders_(sheet) {
+  applyStandardHeaders_(sheet, VOUCHER_HISTORY_HEADERS_);
+}
+
 function appendHistory_(entry) {
   try {
     Logger.log('📝 Attempting to append history for voucher: ' + entry.voucherNumber);
@@ -4465,6 +4493,7 @@ function appendHistory_(entry) {
       Logger.log('❌ ERROR: ' + errorMsg);
       throw new Error(errorMsg);
     }
+    ensureVoucherHistoryHeaders_(sheet);
     
     // Validate entry data
     if (!entry.voucherNumber) {
@@ -4476,9 +4505,9 @@ function appendHistory_(entry) {
       entry.voucherNumber || '',                       // A (0):  voucher_number
       entry.voucherType || '',                         // B (1):  voucher_type
       entry.company || '',                             // C (2):  company_name
-      entry.companyKey || '',                          // D (3):  company_key_or_taxid
+      entry.companyKey || '',                          // D (3):  company_key
       entry.employee || '',                            // E (4):  employee_name
-      entry.requestorEmail || '',                      // F (5):  submited_email
+      entry.requestorEmail || '',                      // F (5):  submitted_email
       entry.submittedBy || entry.employee || '',       // G (6):  submitted_by
       new Date(),                                      // H (7):  submitted_at
       parseFloat((entry.amount || '0').toString().replace(/\./g, '').replace(/,/g, '.')) || 0,  // I (8):  amount (VN format: dots=thousands, comma=decimal)
@@ -4490,7 +4519,7 @@ function appendHistory_(entry) {
       entry.note || '',                                // O (14): note
       entry.approverEmail || '',                       // P (15): approver_email
       entry.approvedAt || '',                          // Q (16): approved_at
-      entry.metaJson || '',                            // R (17): MetaJSON
+      entry.metaJson || '',                            // R (17): metadata_json
       entry.acknowledgedAt || '',                      // S (18): acknowledged_at
       entry.acknowledgedBy || '',                      // T (19): acknowledged_by
       entry.signatureUrl || '',                        // U (20): signature_url
@@ -5028,7 +5057,7 @@ function patchOneVoucherMissingApprovers_(voucherNumber, sheet, data) {
 
   const base = rows[0].row; // Submit row — base voucher fields
   const companyName = (base[2] || '').toString().trim();  // C(2) = company_name
-  const companyKey  = (base[3] || '').toString().trim();  // D(3) = company_key_or_taxid
+  const companyKey  = (base[3] || '').toString().trim();  // D(3) = company_key
 
   Logger.log('🔍 ' + voucherNumber + ': looking up approvers for company "' + companyName + '" key "' + companyKey + '"');
   const approversResult = handleGetCompanyApprovers({ companyName: companyName, companyKey: companyKey }, companyName);
