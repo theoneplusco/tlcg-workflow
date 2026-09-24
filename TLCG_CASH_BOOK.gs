@@ -17,10 +17,9 @@ var CASH_COUNT_HEADERS = [
   'conclusion', 'reps', 'saved_by_email', 'saved_at', 'row_status'
 ];
 var CASH_BOOK_ROLES = [
-  { key: 'keToan', label: 'Đại diện kế toán' },
+  { key: 'nguoiChiuTrachNhiem', label: 'Người chịu trách nhiệm kiểm kê quỹ' },
   { key: 'keToanTruong', label: 'Kế toán trưởng' },
-  { key: 'thuQuy', label: 'Thủ quỹ' },
-  { key: 'giamDoc', label: 'Giám đốc' }
+  { key: 'thuQuy', label: 'Thủ quỹ' }
 ];
 
 function cashBookNorm_(value) {
@@ -382,6 +381,67 @@ function cashBookStoreSignature_(dataUrl, url, fileName) {
   return existing;
 }
 
+function cashBookMoney_(value) {
+  var n = Math.round(Number(value) || 0);
+  var sign = n < 0 ? '-' : '';
+  var digits = String(Math.abs(n));
+  return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function cashBookEsc_(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function cashBookNotify_(companyName, companyKey, endDate, hour, minute, bookBalance, counted, storedReps, callerEmail) {
+  var to = [];
+  var seen = {};
+  for (var i = 0; i < storedReps.length; i++) {
+    var email = String(storedReps[i].email || '').trim();
+    var id = cashBookNorm_(email);
+    if (!email || email.indexOf('@') === -1 || seen[id]) continue;
+    seen[id] = true;
+    to.push(email);
+  }
+  if (!to.length) return 'Không có email người ký để gửi thông báo.';
+  var labels = ['Người chịu trách nhiệm kiểm kê quỹ', 'Kế toán trưởng', 'Thủ quỹ'];
+  var people = '';
+  for (var r = 0; r < storedReps.length; r++) {
+    var person = storedReps[r];
+    people += '<li><b>' + (r + 1) + '. ' + labels[r] + ':</b> ' + cashBookEsc_(person.name);
+    if (person.email) people += ' (' + cashBookEsc_(person.email) + ')';
+    people += '</li>';
+  }
+  var diff = (Number(bookBalance) || 0) - counted;
+  var link = BASE_URL + '/cash_book.html?company=' + encodeURIComponent(companyKey || companyName) + '&date=' + encodeURIComponent(endDate);
+  var hh = ('0' + hour).slice(-2);
+  var mm = ('0' + minute).slice(-2);
+  var body = ''
+    + '<p>Kính gửi các cấp quản lý,</p>'
+    + '<p>Bảng kiểm kê quỹ đã được lưu. Thứ tự ký: (1) Người chịu trách nhiệm kiểm kê quỹ, (2) Kế toán trưởng, (3) Thủ quỹ.</p>'
+    + '<p><b>Thông tin chi tiết:</b></p>'
+    + '<ul>'
+    + '<li><b>Công ty:</b> ' + cashBookEsc_(companyName) + '</li>'
+    + '<li><b>Ngày kiểm kê:</b> ' + cashBookEsc_(endDate) + '</li>'
+    + '<li><b>Giờ kiểm kê:</b> ' + hh + ' giờ ' + mm + ' phút</li>'
+    + '<li><b>Số dư theo sổ quỹ:</b> ' + cashBookMoney_(bookBalance) + '</li>'
+    + '<li><b>Số kiểm kê thực tế:</b> ' + cashBookMoney_(counted) + '</li>'
+    + '<li><b>Chênh lệch (I − II):</b> ' + cashBookMoney_(diff) + '</li>'
+    + people
+    + '</ul>'
+    + '<p style="margin-top: 15px;"><a href="' + link + '" style="background: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Xem bảng kiểm kê quỹ</a></p>'
+    + '<p>Trân trọng,<br>Hệ thống Kế toán Tự động</p>';
+  var caller = String(callerEmail || '').trim();
+  var options = { htmlBody: body };
+  if (caller && caller.indexOf('@') !== -1 && !seen[cashBookNorm_(caller)]) options.cc = caller;
+  if (caller && caller.indexOf('@') !== -1) options.replyTo = caller;
+  GmailApp.sendEmail(to.join(','), '[THÔNG BÁO] Bảng kiểm kê quỹ ' + companyName + ' ngày ' + endDate, '', options);
+  return '';
+}
+
 function handleSaveCashCount(requestBody) {
   try {
     var body = requestBody || {};
@@ -458,7 +518,15 @@ function handleSaveCashCount(requestBody) {
     ]);
     var newRow = sheet.getLastRow();
     cashBookMarkReplaced_(sheet, key, endDate, newRow);
-    return createResponse(true, 'Đã lưu bảng kiểm kê.', { savedAt: savedAt });
+    var emailWarning = '';
+    try {
+      emailWarning = cashBookNotify_(String(companyRow[0] || companyName), key, endDate, hour, minute, Number(body.bookBalance) || 0, counted, storedReps, callerEmail);
+    } catch (emailError) {
+      Logger.log('⚠️ Cash count saved but email failed: ' + emailError);
+      emailWarning = 'Bảng đã lưu. Email thông báo chưa gửi được.';
+    }
+    var message = emailWarning ? 'Đã lưu bảng kiểm kê. ' + emailWarning : 'Đã lưu bảng kiểm kê và đã gửi email thông báo.';
+    return createResponse(true, message, { savedAt: savedAt });
   } catch (error) {
     Logger.log('❌ handleSaveCashCount: ' + error);
     return createResponse(false, msg_('errGeneric') + error.message);

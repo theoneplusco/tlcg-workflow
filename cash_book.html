@@ -484,7 +484,7 @@
         var savedCount = null;
         var pages = { book: 0, pending: 0 };
         var reps = [
-            { key: 'legalRep', labelKey: 'cbRoleLegal', name: '', email: '', signatureUrl: '', signatureData: '' },
+            { key: 'nguoiChiuTrachNhiem', labelKey: 'cbRoleOwner', name: '', email: '', signatureUrl: '', signatureData: '' },
             { key: 'keToanTruong', labelKey: 'cbRoleAccountant', name: '', email: '', signatureUrl: '', signatureData: '' },
             { key: 'thuQuy', labelKey: 'cbRoleTreasurer', name: '', email: '', signatureUrl: '', signatureData: '' }
         ];
@@ -671,8 +671,8 @@
             root.innerHTML = '';
             var printSigs = document.getElementById('print-sigs');
             printSigs.innerHTML = '';
-            var printOrder = [2, 1, 0];
-            var titles = [tr('cbRoleTreasurer', 'Thủ quỹ'), tr('cbRoleAccountant', 'Kế toán trưởng'), tr('cbRoleLegal', 'Đại diện pháp luật')];
+            var printOrder = [0, 1, 2];
+            var titles = [tr('cbRoleOwner', 'Người chịu trách nhiệm kiểm kê quỹ'), tr('cbRoleAccountant', 'Kế toán trưởng'), tr('cbRoleTreasurer', 'Thủ quỹ')];
             reps.forEach(function(rep) {
                 var row = document.createElement('div');
                 row.className = 'rep';
@@ -821,7 +821,8 @@
             document.getElementById('reason-thieu').value = count.reasonThieu || '';
             document.getElementById('conclusion').value = count.conclusion || '';
             (count.reps || []).forEach(function(saved) {
-                var key = saved.role === 'giamDoc' ? 'legalRep' : saved.role;
+                var key = saved.role;
+                if (key === 'giamDoc' || key === 'legalRep' || key === 'keToan') key = 'nguoiChiuTrachNhiem';
                 var rep = null;
                 for (var i = 0; i < reps.length; i++) if (reps[i].key === key) rep = reps[i];
                 if (!rep) return;
@@ -834,23 +835,52 @@
             renderReps();
             lineTotals();
         }
+        function personOption(person) {
+            if (!person || !person.name) return null;
+            return { name: person.name, email: person.email || '', signatureUrl: person.signature || '' };
+        }
+        function keyPersonOptions() {
+            var people = [approvers && approvers.legalRep, approvers && approvers.accountant, approvers && approvers.treasurer];
+            var options = [];
+            people.forEach(function(person) {
+                var opt = personOption(person);
+                if (!opt) return;
+                var id = norm(opt.email || opt.name);
+                if (options.some(function(item) { return norm(item.email || item.name) === id; })) return;
+                options.push(opt);
+            });
+            return options;
+        }
         function fillRepOptions() {
-            var map = [
-                { index: 0, person: approvers && approvers.legalRep },
+            var fixed = [
                 { index: 1, person: approvers && approvers.accountant },
                 { index: 2, person: approvers && approvers.treasurer }
             ];
-            map.forEach(function(item) {
-                var person = item.person || {};
+            var owner = reps[0];
+            owner.options = keyPersonOptions();
+            var ownerStillListed = owner.options.some(function(opt) {
+                return norm(opt.email || opt.name) === norm(owner.email || owner.name);
+            });
+            if (!savedCount && !ownerStillListed) {
+                owner.name = '';
+                owner.email = '';
+                owner.signatureUrl = '';
+                owner.signatureData = '';
+            }
+            if (owner.name && !owner.options.some(function(opt) { return norm(opt.email || opt.name) === norm(owner.email || owner.name); })) {
+                owner.options.unshift({ name: owner.name, email: owner.email, signatureUrl: owner.signatureUrl });
+            }
+            fixed.forEach(function(item) {
+                var opt = personOption(item.person);
                 var rep = reps[item.index];
                 if (!savedCount) {
-                    rep.name = person.name || '';
-                    rep.email = person.email || '';
-                    rep.signatureUrl = person.signature || '';
+                    rep.name = opt ? opt.name : '';
+                    rep.email = opt ? opt.email : '';
+                    rep.signatureUrl = opt ? opt.signatureUrl : '';
                     rep.signatureData = '';
                 }
-                rep.options = person.name ? [{ name: person.name, email: person.email || '', signatureUrl: person.signature || '' }] : [];
-                if (rep.name && !rep.options.some(function(opt) { return opt.name === rep.name; })) {
+                rep.options = opt ? [opt] : [];
+                if (rep.name && !rep.options.some(function(item) { return item.name === rep.name; })) {
                     rep.options.unshift({ name: rep.name, email: rep.email, signatureUrl: rep.signatureUrl });
                 }
             });
@@ -1069,7 +1099,7 @@
                 return '<tr><td class="ctr">' + (i + 1) + '</td><td>- Loại ' + face.toLocaleString('vi-VN') + '</td><td class="ctr">' + qtyText + '</td><td class="num">' + amtText + '</td></tr>';
             }).join('');
             var people = [
-                { name: reviewPersonName(0), role: 'đại diện pháp luật' },
+                { name: reviewPersonName(0), role: 'người chịu trách nhiệm kiểm kê quỹ' },
                 { name: reviewPersonName(1), role: 'đại diện Kế toán trưởng' },
                 { name: reviewPersonName(2), role: 'đại diện Thủ quỹ' }
             ];
@@ -1077,9 +1107,9 @@
                 return '<p class="mau-who">- Ông/Bà: ' + esc(person.name || '………………') + ', ' + person.role + '</p>';
             }).join('');
             var signOrder = [
-                { name: reviewPersonName(2), rep: reps[2], title: 'Thủ quỹ' },
+                { name: reviewPersonName(0), rep: reps[0], title: 'Người chịu trách nhiệm kiểm kê quỹ' },
                 { name: reviewPersonName(1), rep: reps[1], title: 'Kế toán trưởng' },
-                { name: reviewPersonName(0), rep: reps[0], title: 'Người chịu trách nhiệm kiểm kê quỹ' }
+                { name: reviewPersonName(2), rep: reps[2], title: 'Thủ quỹ' }
             ];
             var signs = signOrder.map(function(slot) {
                 var src = sigSrc(slot.rep);
@@ -1235,7 +1265,7 @@
                 cbPrint: 'In',
                 cbSave: 'Lưu bảng kiểm kê',
                 cbClose: 'Đóng',
-                cbRoleLegal: 'Đại diện pháp luật',
+                cbRoleOwner: 'Người chịu trách nhiệm kiểm kê quỹ',
                 cbRoleAccountant: 'Kế toán trưởng',
                 cbRoleTreasurer: 'Thủ quỹ',
                 cbChooseName: 'Chọn tên',
@@ -1285,7 +1315,7 @@
                 cbPrint: 'Print',
                 cbSave: 'Save cash count',
                 cbClose: 'Close',
-                cbRoleLegal: 'Legal representative',
+                cbRoleOwner: 'Person responsible for the cash count',
                 cbRoleAccountant: 'Chief accountant',
                 cbRoleTreasurer: 'Treasurer',
                 cbChooseName: 'Choose a name',
