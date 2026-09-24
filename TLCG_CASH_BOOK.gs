@@ -703,6 +703,7 @@ function handleGetRecentCashCounts(requestBody) {
         people.push({
           role: CASH_BOOK_ROLES[r].label,
           name: String(person.name || ''),
+          email: String(person.email || ''),
           signed: !!String(person.signatureUrl || '').trim()
         });
       }
@@ -715,7 +716,9 @@ function handleGetRecentCashCounts(requestBody) {
         countedTotal: Number(rows[i][7]) || 0,
         signProgress: progress,
         signStatus: cashBookSignStatus_(progress),
+        savedByEmail: String(rows[i][12] || ''),
         nextName: next ? String(next.name || '') : '',
+        nextEmail: next ? String(next.email || '') : '',
         nextRole: next && CASH_BOOK_ROLES[progress] ? CASH_BOOK_ROLES[progress].label : '',
         people: people
       });
@@ -724,7 +727,7 @@ function handleGetRecentCashCounts(requestBody) {
       if (a.savedAt === b.savedAt) return a.endDate < b.endDate ? 1 : -1;
       return a.savedAt < b.savedAt ? 1 : -1;
     });
-    if (counts.length > 40) counts = counts.slice(0, 40);
+    if (counts.length > 200) counts = counts.slice(0, 200);
     return createResponse(true, 'Thành công', { counts: counts, pipeline: pipeline });
   } catch (error) {
     Logger.log('❌ handleGetRecentCashCounts: ' + error);

@@ -3488,14 +3488,17 @@
                                 <div>
                                     <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
                                         <i class="fas fa-book text-sky-600"></i>
-                                        Recent Cash Book
+                                        Recent Cash Counts
                                     </h3>
-                                    <p class="text-sm text-slate-500 mt-1" id="recent-cashbook-meta">Latest cash book entries</p>
+                                    <p class="text-xs text-slate-500 mt-1" id="recent-cashbook-meta"></p>
                                 </div>
-                                <button type="button" onclick="loadCashBookSummary()" class="text-sm text-sky-600 hover:text-sky-700 font-semibold flex items-center gap-2">
-                                    <i class="fas fa-sync-alt"></i>
-                                    Refresh
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="loadCashBookSummary()" class="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-sky-500 text-white text-sm font-medium hover:bg-sky-600">
+                                        <i class="fas fa-sync-alt"></i>
+                                        Làm mới
+                                    </button>
+                                    <button type="button" id="cashbook-mytask" onclick="toggleCashBookMyTask()" title="Chỉ hiện việc cần làm của tôi" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border-2 border-orange-500 bg-white text-orange-500 text-sm font-semibold whitespace-nowrap">⚡ Việc của tôi</button>
+                                </div>
                             </div>
                             <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide" for="recent-cashbook-company">Company</label>
                             <select id="recent-cashbook-company" class="w-full mt-1 mb-4 px-3 py-2 border border-slate-200 rounded-lg text-sm" onchange="loadCashBookSummary()">
@@ -5664,7 +5667,25 @@
 
         var recentCashStep = 0;
         var recentCashCounts = [];
-        var recentCashPipeline = { step1: 0, step2: 0, step3: 0 };
+        var recentCashMyTask = false;
+
+        function isMyHomeCashTask(item) {
+            const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
+            if (!email) return false;
+            return String(item.nextEmail || '').trim().toLowerCase() === email
+                || String(item.savedByEmail || '').trim().toLowerCase() === email;
+        }
+
+        function toggleCashBookMyTask() {
+            recentCashMyTask = !recentCashMyTask;
+            const btn = document.getElementById('cashbook-mytask');
+            if (btn) {
+                btn.style.background = recentCashMyTask ? '#f97316' : 'white';
+                btn.style.color = recentCashMyTask ? 'white' : '#f97316';
+                btn.title = recentCashMyTask ? 'Đang lọc việc của tôi — nhấn để xem tất cả' : 'Chỉ hiện việc cần làm của tôi';
+            }
+            renderRecentCashBook_();
+        }
 
         function renderRecentCashBook_() {
             const pipe = document.getElementById('recent-cashbook-pipe');
@@ -5674,9 +5695,10 @@
                 { step: 2, label: 'Duyệt 2/3', sub: 'Kế toán trưởng', dot: 'bg-indigo-400' },
                 { step: 3, label: 'Đã duyệt', sub: 'Thủ quỹ', dot: 'bg-emerald-400' }
             ];
+            const scoped = recentCashMyTask ? recentCashCounts.filter(isMyHomeCashTask) : recentCashCounts;
             if (pipe) {
                 pipe.innerHTML = steps.map((step) => {
-                    const count = recentCashPipeline['step' + step.step] || 0;
+                    const count = scoped.filter((item) => item.signProgress === step.step).length;
                     const on = recentCashStep === step.step ? ' ring-2 ring-sky-500' : '';
                     return `<button type="button" data-step="${step.step}" class="rounded-xl border border-slate-200 bg-white px-2 py-2 text-center${on}">
                         <div class="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ${step.dot}">${step.step}</div>
@@ -5695,8 +5717,8 @@
             }
             if (!list) return;
             const shown = (recentCashStep
-                ? recentCashCounts.filter((item) => item.signProgress === recentCashStep)
-                : recentCashCounts).slice(0, 8);
+                ? scoped.filter((item) => item.signProgress === recentCashStep)
+                : scoped).slice(0, 8);
             if (!shown.length) {
                 list.innerHTML = '<div class="text-center py-8 text-slate-400"><p>No cash counts for this company yet.</p></div>';
                 return;
@@ -5794,10 +5816,9 @@
                 set('cashbook-counts', bookCount);
                 set('cashbook-companies', pendingCount);
                 set('cashbook-latest', balance);
-                if (meta) meta.textContent = companyName + ' · signing progress';
+                if (meta) meta.textContent = '(Cập nhật: ' + new Date().toLocaleTimeString('vi-VN') + ')';
                 if (!recent.success) {
                     recentCashCounts = [];
-                    recentCashPipeline = { step1: 0, step2: 0, step3: 0 };
                     var recentMsg = recent.message || 'Could not load cash counts.';
                     if (/không hợp lệ|not found|Script function/i.test(recentMsg)) {
                         recentMsg = 'The cash-count list is not on the server yet. Paste the Cash files and publish a new version.';
@@ -5807,7 +5828,6 @@
                     return;
                 }
                 recentCashCounts = (recent.data && recent.data.counts) || [];
-                recentCashPipeline = (recent.data && recent.data.pipeline) || { step1: 0, step2: 0, step3: 0 };
                 renderRecentCashBook_();
             } catch (error) {
                 console.error('Cash book summary failed:', error);

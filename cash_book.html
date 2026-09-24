@@ -253,32 +253,94 @@
             background: #E8F1FF; color: #1d4ed8; font-size: 13px; font-weight: 700;
         }
         .sign-status.is-done { background: #E7F8EE; color: #15803d; }
-        .count-pipe { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 16px; }
-        .count-step {
-            border: 0.5px solid var(--sep); border-radius: 12px; background: white;
-            padding: 10px 8px; text-align: center; cursor: pointer; font: inherit; color: inherit;
+        #recent-counts { padding: 0; overflow: hidden; }
+        .cb-recent-head {
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            padding: 1.25rem 1.5rem; border-bottom: 1px solid rgba(148, 163, 184, 0.2); background: #f8fafc;
         }
-        .count-step.is-on { box-shadow: 0 0 0 2px var(--primary); }
-        .count-step .dot {
-            width: 28px; height: 28px; margin: 0 auto 6px; border-radius: 999px;
-            display: flex; align-items: center; justify-content: center;
-            color: white; font-size: 13px; font-weight: 700;
+        .cb-recent-head h2 { margin: 0; font-size: 1.125rem; }
+        .cb-recent-actions { display: flex; gap: 0.5rem; align-items: center; }
+        .cb-refresh {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.5rem 1rem; background: #0ea5e9; color: white; border: 0; border-radius: 6px;
+            cursor: pointer; font-size: 0.875rem; font-weight: 500;
         }
-        .count-step.s1 .dot { background: #60a5fa; }
-        .count-step.s2 .dot { background: #818cf8; }
-        .count-step.s3 .dot { background: #34d399; }
-        .count-step .n { font-size: 20px; font-weight: 700; line-height: 1.1; }
-        .count-step .lbl { font-size: 12px; font-weight: 650; margin-top: 2px; }
-        .count-step .sub { font-size: 11px; color: var(--text-secondary); }
-        .count-row {
-            display: flex; align-items: center; gap: 12px; width: 100%;
-            padding: 12px 0; border: 0; border-top: 0.5px solid var(--sep);
-            background: transparent; text-align: left; font: inherit; cursor: pointer; color: inherit;
+        .cb-refresh:hover { background: #0284c7; }
+        .cb-mytask {
+            display: inline-flex; align-items: center; gap: 0.35rem;
+            padding: 0.375rem 0.75rem; border: 1.5px solid #f97316; border-radius: 6px;
+            font-size: 0.8125rem; font-weight: 600; background: white; color: #f97316; cursor: pointer; white-space: nowrap;
         }
-        .count-badge { font-size: 12px; font-weight: 700; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
-        .count-badge.s1 { background: #E8F1FF; color: #1d4ed8; }
-        .count-badge.s2 { background: #EEF2FF; color: #4338ca; }
-        .count-badge.s3 { background: #E7F8EE; color: #15803d; }
+        .cb-mytask.is-on { background: #f97316; color: white; }
+        .cb-stats { padding: 1rem 1.5rem; background: white; border-bottom: 1px solid #e2e8f0; }
+        .cb-stats-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .cb-stats-title { font-size: 0.7rem; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.07em; }
+        .cb-stats-total { font-size: 0.72rem; color: #94a3b8; }
+        .cb-stats-total .overdue-highlight { color: #fb7185; font-weight: 600; }
+        .cb-steps { display: flex; align-items: stretch; }
+        .cb-step {
+            flex: 1; display: flex; flex-direction: column; align-items: center; position: relative;
+            cursor: pointer; padding: 0.5rem 0.375rem; border-radius: 10px; background: transparent; border: 0; font: inherit; color: inherit;
+        }
+        .cb-step:hover { background: #f8fafc; }
+        .cb-step.is-on { background: #f8fafc; }
+        .cb-step:not(:last-child)::after {
+            content: '›'; position: absolute; right: -5px; top: 50%; transform: translateY(-50%);
+            color: #cbd5e1; font-size: 1rem;
+        }
+        .cb-dot {
+            width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem; font-weight: 700; margin-bottom: 0.3rem; color: #fff;
+        }
+        .cb-step.s1 .cb-dot { background: #60a5fa; }
+        .cb-step.s2 .cb-dot { background: #818cf8; }
+        .cb-step.s3 .cb-dot { background: #34d399; }
+        .cb-count { font-size: 1.2rem; font-weight: 700; color: #1e293b; line-height: 1; }
+        .cb-label { font-size: 0.6rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; margin-top: 0.2rem; }
+        .cb-sub { font-size: 0.58rem; color: #94a3b8; text-align: center; }
+        .cb-bottom { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.625rem; border-top: 1px solid #f1f5f9; }
+        .cb-overdue {
+            display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.62rem; color: #fb7185;
+            background: #fff1f2; border: 1px solid #fecdd3; border-radius: 20px; padding: 0.12rem 0.45rem; cursor: pointer;
+        }
+        .cb-overdue[hidden] { display: none; }
+        .cb-filters { padding: 0.625rem 1rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+        .cb-filters-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+        .cb-filters select { flex: 0 0 168px; }
+        .cb-filters input[type="date"] { flex: 0 0 142px; }
+        .cb-filters input, .cb-filters select {
+            padding: 0.4375rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.8125rem; background: white;
+        }
+        .cb-filters input[type="search"] { flex: 1 1 220px; min-width: 180px; }
+        .cb-clear { padding: 0.4375rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; background: white; color: #ef4444; cursor: pointer; white-space: nowrap; font-size: 0.8125rem; }
+        .cb-filter-count { font-size: 0.75rem; color: #64748b; margin-top: 0.375rem; min-height: 1rem; }
+        .cb-workspace { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr); min-height: 420px; }
+        .cb-list { max-height: 620px; overflow-y: auto; background: white; border-right: 1px solid #e2e8f0; }
+        .cb-item { display: flex; align-items: center; gap: 12px; padding: 1rem 1.5rem; border: 0; border-bottom: 1px solid rgba(148,163,184,0.18); width: 100%; background: white; text-align: left; font: inherit; cursor: pointer; color: inherit; }
+        .cb-item:hover { background: #f1f5f9; }
+        .cb-item.active { background: #eff6ff; box-shadow: inset 3px 0 0 #38bdf8; }
+        .cb-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .cb-icon.s1, .cb-icon.s2 { background: #fef3c7; color: #d97706; }
+        .cb-icon.s3 { background: #d1fae5; color: #059669; }
+        .cb-item-title { font-weight: 600; color: #0f172a; font-size: 0.9375rem; }
+        .cb-item-meta { font-size: 0.8125rem; color: #64748b; margin-top: 0.25rem; }
+        .cb-amount { font-weight: 600; margin-left: auto; white-space: nowrap; }
+        .cb-badge { font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 20px; white-space: nowrap; }
+        .cb-badge.s1 { background: #dbeafe; color: #1e40af; }
+        .cb-badge.s2 { background: #e0e7ff; color: #3730a3; }
+        .cb-badge.s3 { background: #d1fae5; color: #065f46; }
+        .cb-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-left: 1rem; }
+        .cb-detail-line { font-size: 0.7rem; color: #64748b; white-space: nowrap; }
+        .cb-drawer { background: #f8fafc; display: flex; flex-direction: column; min-height: 420px; }
+        .cb-drawer h3 { margin: 0; padding: 1rem 1.25rem; border-bottom: 1px solid #e2e8f0; font-size: 0.95rem; }
+        .cb-drawer-body { padding: 1rem 1.25rem; }
+        .cb-drawer-empty { color: #64748b; font-size: 0.875rem; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 1rem; background: #f1f5f9; }
+        .cb-rail { display: grid; gap: 0.75rem; margin-top: 0.75rem; }
+        .cb-rail-step { display: flex; gap: 0.6rem; align-items: flex-start; }
+        .cb-rail-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; background: #cbd5e1; flex-shrink: 0; }
+        .cb-rail-step.done .cb-rail-dot { background: #10b981; }
+        .cb-rail-step.current .cb-rail-dot { background: #f59e0b; }
+        .cb-empty { padding: 3rem 1rem; text-align: center; color: #94a3b8; }
         .banner {
             background: rgba(255,149,0,0.10); border: 0.5px solid rgba(255,149,0,0.28);
             color: #9a6700; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; font-weight: 500;
@@ -314,7 +376,10 @@
             .bar { left: 0; }
         }
         @media (max-width: 720px) {
-            .filters, .rep, .balance-card { grid-template-columns: 1fr; }
+            .filters, .rep, .balance-card, .cb-workspace, .cb-filters-row { grid-template-columns: 1fr; }
+            .cb-filters-row { flex-wrap: wrap; }
+            .cb-list { border-right: 0; border-bottom: 1px solid #e2e8f0; }
+            .cb-recent-head { flex-wrap: wrap; }
             .review-modal { padding: 16px 8px; }
             .bar { flex-direction: column; align-items: stretch; }
             .bar-actions { justify-content: stretch; }
@@ -384,7 +449,7 @@
             <i class="fas fa-chevron-right" style="font-size:10px;color:#C7C7CC;"></i>
             <span data-i18n="cbTitle">Sổ quỹ</span>
         </nav>
-        <h1 class="page-title no-print" data-i18n="cbTitle">Sổ quỹ</h1>
+        <h1 class="page-title no-print">SỔ QUỸ</h1>
         <div class="card filters no-print">
             <div>
                 <label class="field-label" for="company" data-i18n="labelCompany">Công ty</label>
@@ -444,7 +509,7 @@
         </section>
 
         <section class="card" id="count-form">
-            <h2 class="form-head" data-i18n="cbCountTitle">Bảng kiểm kê quỹ</h2>
+            <h2 class="form-head">Bảng kiểm kê quỹ</h2>
             <p id="sign-status" class="sign-status" hidden></p>
             <p id="saved-banner" class="banner" hidden data-i18n="cbSavedBanner">Đã có bảng kiểm kê ngày này.</p>
             <p id="form-date">Hôm nay, vào … giờ … phút, ngày … tháng … năm …</p>
@@ -477,35 +542,79 @@
                     <textarea id="conclusion" rows="2"></textarea>
                 </div>
             </div>
-            <h2 class="form-head" style="margin-top: 20px;" data-i18n="cbWeInclude">Chúng tôi gồm</h2>
+            <h2 style="margin-top: 20px;" data-i18n="cbWeInclude">Chúng tôi gồm</h2>
             <div id="reps"></div>
             <div id="print-sigs"></div>
         </section>
 
         <section class="card no-print" id="recent-counts">
-            <h2 data-i18n="cbRecent">Phiếu kiểm kê gần đây</h2>
-            <p class="form-meta" data-i18n="cbRecentHint">Tiến độ ký, cùng cách với phiếu thu chi.</p>
-            <div class="count-pipe" id="count-pipe">
-                <button type="button" class="count-step s1" data-step="1">
-                    <div class="dot">1</div>
-                    <div class="n" id="count-step-1">0</div>
-                    <div class="lbl">Duyệt 1/3</div>
-                    <div class="sub">Người kiểm kê</div>
-                </button>
-                <button type="button" class="count-step s2" data-step="2">
-                    <div class="dot">2</div>
-                    <div class="n" id="count-step-2">0</div>
-                    <div class="lbl">Duyệt 2/3</div>
-                    <div class="sub">Kế toán trưởng</div>
-                </button>
-                <button type="button" class="count-step s3" data-step="3">
-                    <div class="dot">3</div>
-                    <div class="n" id="count-step-3">0</div>
-                    <div class="lbl">Đã duyệt</div>
-                    <div class="sub">Thủ quỹ</div>
-                </button>
+            <div class="cb-recent-head">
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <h2 data-i18n="cbRecent">Phiếu kiểm kê gần đây</h2>
+                    <span id="cb-refresh-time" style="font-size:0.75rem;color:#64748b;font-weight:400;"></span>
+                </div>
+                <div class="cb-recent-actions">
+                    <button type="button" class="cb-refresh" id="cb-refresh" data-i18n-title="refreshListTitle" title="Làm mới danh sách">
+                        <i class="fas fa-sync-alt"></i> Làm mới
+                    </button>
+                    <button type="button" class="cb-mytask" id="cb-mytask" data-i18n-title="myTaskFilterTitle" title="Chỉ hiện việc cần làm của tôi">⚡ Việc của tôi</button>
+                </div>
             </div>
-            <div id="recent-count-list"></div>
+            <div class="cb-stats">
+                <div class="cb-stats-head">
+                    <span class="cb-stats-title" id="cb-pipe-title">Tiến độ phê duyệt · Toàn công ty</span>
+                    <span class="cb-stats-total" id="cb-pipe-total">—</span>
+                </div>
+                <div class="cb-steps" id="count-pipe">
+                    <button type="button" class="cb-step s1" data-step="1">
+                        <div class="cb-dot">1</div>
+                        <div class="cb-count" id="count-step-1">0</div>
+                        <div class="cb-label" data-i18n="cbPipe1">Duyệt 1/3</div>
+                        <div class="cb-sub" data-i18n="cbRoleOwnerShort">Người kiểm kê</div>
+                    </button>
+                    <button type="button" class="cb-step s2" data-step="2">
+                        <div class="cb-dot">2</div>
+                        <div class="cb-count" id="count-step-2">0</div>
+                        <div class="cb-label" data-i18n="cbPipe2">Duyệt 2/3</div>
+                        <div class="cb-sub" data-i18n="cbRoleAccountant">Kế toán trưởng</div>
+                    </button>
+                    <button type="button" class="cb-step s3" data-step="3">
+                        <div class="cb-dot">✓</div>
+                        <div class="cb-count" id="count-step-3">0</div>
+                        <div class="cb-label" data-i18n="cbPipeDone">Đã duyệt</div>
+                        <div class="cb-sub" data-i18n="cbRoleTreasurer">Thủ quỹ</div>
+                    </button>
+                </div>
+                <div class="cb-bottom">
+                    <button type="button" class="cb-overdue" id="cb-overdue" hidden>⚠ <span id="cb-overdue-n">0</span> quá hạn</button>
+                </div>
+            </div>
+            <div class="cb-filters">
+                <div class="cb-filters-row">
+                    <input id="cb-search" type="search" placeholder="Tìm công ty, người ký, ngày…">
+                    <select id="cb-status">
+                        <option value="" data-i18n="cbAllStatus">Tất cả TT</option>
+                        <option value="1" data-i18n="cbStatus1">Đang duyệt (1/3)</option>
+                        <option value="2" data-i18n="cbStatus2">Đang duyệt (2/3)</option>
+                        <option value="3" data-i18n="cbStatus3">Đã duyệt (3/3)</option>
+                        <option value="overdue" data-i18n="cbOverdueFilter">Quá hạn</option>
+                    </select>
+                    <input id="cb-date-from" type="date" data-i18n-title="cbStartDate" title="Từ ngày">
+                    <span style="color:#64748b;font-size:0.75rem;">→</span>
+                    <input id="cb-date-to" type="date" data-i18n-title="cbEndDate" title="Đến ngày">
+                    <button type="button" class="cb-clear" id="cb-clear">✕ Xóa lọc</button>
+                </div>
+                <div class="cb-filter-count" id="cb-filter-count"></div>
+            </div>
+            <div class="cb-workspace">
+                <div class="cb-list" id="recent-count-list"></div>
+                <aside class="cb-drawer">
+                    <h3 data-i18n="cbDrawerTitle">Bảng kiểm kê</h3>
+                    <div class="cb-drawer-body" id="cb-drawer">
+                        <div class="cb-drawer-empty">Chọn một phiếu trong danh sách để xem luồng ký và mở bảng kiểm kê.</div>
+                    </div>
+                </aside>
+            </div>
         </section>
     </main>
     <div class="bar no-print">
@@ -541,9 +650,9 @@
         var book = null;
         var savedCount = null;
         var recentCounts = [];
-        var recentPipeline = { step1: 0, step2: 0, step3: 0 };
         var recentError = '';
-        var recentStep = 0;
+        var recentMyTask = false;
+        var recentSelected = '';
         var pages = { book: 0, pending: 0 };
         var reps = [
             { key: 'nguoiChiuTrachNhiem', labelKey: 'cbRoleOwner', name: '', email: '', signatureUrl: '', signatureData: '', masterSignature: '', signed: false },
@@ -664,12 +773,8 @@
             var end = document.getElementById('end-date').value;
             var time = countTime();
             var parts = end ? end.split('-') : [];
-            var text = tr('cbDateLine', 'Hôm nay, vào {h} giờ {m} phút, ngày {d} tháng {mo} năm {y}')
-                .replace('{h}', pad2(time.hour))
-                .replace('{m}', pad2(time.minute))
-                .replace('{d}', parts[2] || '…')
-                .replace('{mo}', parts[1] || '…')
-                .replace('{y}', parts[0] || '…');
+            var text = 'Hôm nay, vào ' + pad2(time.hour) + ' giờ ' + pad2(time.minute) +
+                ' phút, ngày ' + (parts[2] || '…') + ' tháng ' + (parts[1] || '…') + ' năm ' + (parts[0] || '…');
             document.getElementById('form-date').textContent = text;
         }
         function lineTotals() {
@@ -1097,60 +1202,171 @@
             if (progress === 2) return 's2';
             return 's1';
         }
-        function renderRecentCounts() {
-            [1, 2, 3].forEach(function(step) {
-                var n = recentPipeline['step' + step] || 0;
-                var el = document.getElementById('count-step-' + step);
-                if (el) el.textContent = String(n);
-                var btn = document.querySelector('.count-step[data-step="' + step + '"]');
-                if (btn) btn.classList.toggle('is-on', recentStep === step);
+        function recentKey(item) {
+            return String(item.companyKey || '') + '|' + String(item.endDate || '');
+        }
+        function recentEmail() {
+            return String((user && user.email) || '').trim().toLowerCase();
+        }
+        function recentOverdue(item) {
+            if (!item || item.signProgress >= 3 || !item.savedAt) return false;
+            var saved = new Date(item.savedAt).getTime();
+            return isFinite(saved) && (Date.now() - saved) > 2 * 24 * 60 * 60 * 1000;
+        }
+        function isMyCashTask(item) {
+            var email = recentEmail();
+            if (!email) return false;
+            if (String(item.nextEmail || '').trim().toLowerCase() === email) return true;
+            if (String(item.savedByEmail || '').trim().toLowerCase() === email) return true;
+            return false;
+        }
+        function recentStamp(value) {
+            var date = new Date(value || '');
+            if (!isFinite(date.getTime())) return '';
+            return date.toLocaleString('vi-VN', { hour12: false });
+        }
+        function recentScope() {
+            return recentMyTask ? recentCounts.filter(isMyCashTask) : recentCounts.slice();
+        }
+        function recentFiltered() {
+            var search = String(document.getElementById('cb-search').value || '').trim().toLowerCase();
+            var status = document.getElementById('cb-status').value;
+            var from = document.getElementById('cb-date-from').value;
+            var to = document.getElementById('cb-date-to').value;
+            return recentScope().filter(function(item) {
+                if (search) {
+                    var people = (item.people || []).map(function(person) { return person.name || ''; }).join(' ');
+                    var hay = (item.companyName + ' ' + item.endDate + ' ' + item.nextName + ' ' + item.signStatus + ' ' + people).toLowerCase();
+                    if (hay.indexOf(search) === -1) return false;
+                }
+                if (status === '1' && item.signProgress !== 1) return false;
+                if (status === '2' && item.signProgress !== 2) return false;
+                if (status === '3' && item.signProgress < 3) return false;
+                if (status === 'overdue' && !recentOverdue(item)) return false;
+                if (from && item.endDate < from) return false;
+                if (to && item.endDate > to) return false;
+                return true;
             });
-            var list = document.getElementById('recent-count-list');
-            if (!list) return;
-            if (recentError) {
-                list.innerHTML = '<p class="form-meta">' + esc(recentError) + '</p>';
+        }
+        function renderCountDrawer(item) {
+            var drawer = document.getElementById('cb-drawer');
+            if (!drawer) return;
+            if (!item) {
+                drawer.innerHTML = '<div class="cb-drawer-empty">Chọn một phiếu trong danh sách để xem luồng ký và mở bảng kiểm kê.</div>';
                 return;
             }
-            var shown = recentStep ? recentCounts.filter(function(item) { return item.signProgress === recentStep; }) : recentCounts;
+            var waiting = item.signProgress < 3 && item.nextName
+                ? ('Đang chờ ' + item.nextName + ' ký.')
+                : item.signStatus;
+            var rail = (item.people || []).map(function(person, index) {
+                var done = index < item.signProgress;
+                var current = index === item.signProgress && item.signProgress < 3;
+                var mark = done ? 'Đã ký' : (current ? 'Đến lượt ký' : '');
+                return '<div class="cb-rail-step' + (done ? ' done' : '') + (current ? ' current' : '') + '">' +
+                    '<span class="cb-rail-dot"></span><div><div style="font-weight:650;">' + esc(person.role || '') + '</div>' +
+                    '<div class="cb-detail-line">' + esc(person.name || 'Chưa chọn') + (mark ? ' · ' + mark : '') + '</div></div></div>';
+            }).join('');
+            drawer.innerHTML =
+                '<div style="font-weight:700;font-size:1rem;color:#1e293b;">' + esc(item.companyName) + '</div>' +
+                '<div class="cb-detail-line" style="margin-top:4px;">' + esc(item.endDate) + ' · ' + esc(recentStamp(item.savedAt)) + '</div>' +
+                '<div style="font-size:1.05rem;font-weight:700;margin-top:8px;">' + esc(vnd(item.bookBalance)) + '</div>' +
+                '<span class="cb-badge ' + recentStatusClass(item.signProgress) + '" style="display:inline-block;margin-top:8px;">' + esc(item.signStatus) + '</span>' +
+                '<div class="cb-detail-line" style="margin-top:6px;">' + esc(waiting) + '</div>' +
+                '<div class="cb-rail">' + rail + '</div>' +
+                '<button type="button" class="btn btn-primary" id="cb-open-count" style="margin-top:14px;">Mở bảng kiểm kê</button>';
+            document.getElementById('cb-open-count').addEventListener('click', function() {
+                var sel = document.getElementById('company');
+                var match = Array.prototype.find.call(sel.options, function(opt) {
+                    return opt.dataset.key === item.companyKey || opt.dataset.name === item.companyName;
+                });
+                if (match) sel.value = match.value;
+                if (item.endDate) document.getElementById('end-date').value = item.endDate;
+                if (match) sel.dispatchEvent(new Event('change'));
+                else loadBook();
+                document.getElementById('count-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
+        function renderRecentCounts() {
+            var scope = recentScope();
+            var stats = { step1: 0, step2: 0, step3: 0, overdue: 0 };
+            scope.forEach(function(item) {
+                if (item.signProgress === 1) stats.step1++;
+                else if (item.signProgress === 2) stats.step2++;
+                else if (item.signProgress >= 3) stats.step3++;
+                if (recentOverdue(item)) stats.overdue++;
+            });
+            document.getElementById('count-step-1').textContent = String(stats.step1);
+            document.getElementById('count-step-2').textContent = String(stats.step2);
+            document.getElementById('count-step-3').textContent = String(stats.step3);
+            var status = document.getElementById('cb-status').value;
+            document.querySelectorAll('.cb-step').forEach(function(btn) {
+                btn.classList.toggle('is-on', btn.dataset.step === status);
+            });
+            var active = stats.step1 + stats.step2;
+            var title = document.getElementById('cb-pipe-title');
+            title.textContent = 'Tiến độ phê duyệt · ' + (recentMyTask ? 'Việc của tôi' : 'Toàn công ty');
+            var total = document.getElementById('cb-pipe-total');
+            total.innerHTML = scope.length + ' phiếu · ' + active + ' đang xử lý' +
+                (stats.overdue ? ' · <span class="overdue-highlight">⚠ ' + stats.overdue + ' quá hạn</span>' : '');
+            var overdueBtn = document.getElementById('cb-overdue');
+            document.getElementById('cb-overdue-n').textContent = String(stats.overdue);
+            overdueBtn.hidden = stats.overdue === 0;
+            var myBtn = document.getElementById('cb-mytask');
+            myBtn.classList.toggle('is-on', recentMyTask);
+            myBtn.title = recentMyTask
+                ? 'Đang lọc việc của tôi — nhấn để xem tất cả'
+                : 'Chỉ hiện việc cần làm của tôi';
+            var list = document.getElementById('recent-count-list');
+            if (recentError) {
+                list.innerHTML = '<div class="cb-empty">' + esc(recentError) + '</div>';
+                renderCountDrawer(null);
+                return;
+            }
+            var shown = recentFiltered();
+            var countEl = document.getElementById('cb-filter-count');
+            var filtering = status || document.getElementById('cb-search').value || document.getElementById('cb-date-from').value || document.getElementById('cb-date-to').value || recentMyTask;
+            countEl.textContent = filtering
+                ? ('Hiển thị ' + shown.length + ' / ' + scope.length + ' phiếu')
+                : (scope.length + ' phiếu');
             if (!shown.length) {
-                list.innerHTML = '<p class="form-meta">' + esc(tr('cbRecentEmpty', 'Chưa có bảng kiểm kê.')) + '</p>';
+                list.innerHTML = '<div class="cb-empty">Chưa có bảng kiểm kê.</div>';
+                renderCountDrawer(null);
                 return;
             }
             list.innerHTML = shown.map(function(item) {
                 var waiting = item.signProgress < 3 && item.nextName
-                    ? tr('cbWaiting', 'Đang chờ {name} ký.').replace('{name}', item.nextName)
+                    ? ('Đang chờ ' + item.nextName + ' ký.')
                     : item.signStatus;
-                return '<button type="button" class="count-row" data-date="' + esc(item.endDate) + '">' +
-                    '<div style="flex:1;min-width:0;">' +
-                        '<div style="font-weight:650;">' + esc(item.endDate) + ' · ' + esc(item.companyName) + '</div>' +
-                        '<div class="form-meta" style="margin:2px 0 0;">' + esc(waiting) + '</div>' +
-                    '</div>' +
-                    '<span class="count-badge ' + recentStatusClass(item.signProgress) + '">' + esc(item.signStatus) + '</span>' +
+                var cls = recentStatusClass(item.signProgress);
+                var icon = item.signProgress >= 3 ? 'fa-check' : 'fa-clock';
+                return '<button type="button" class="cb-item' + (recentKey(item) === recentSelected ? ' active' : '') + '" data-key="' + esc(recentKey(item)) + '">' +
+                    '<span class="cb-icon ' + cls + '"><i class="fas ' + icon + '"></i></span>' +
+                    '<span style="min-width:0;flex:1;">' +
+                        '<span class="cb-item-title">' + esc(item.endDate) + ' · ' + esc(item.companyName) + '</span>' +
+                        '<span class="cb-item-meta">' + esc(waiting) + (item.savedAt ? ' · ' + esc(recentStamp(item.savedAt)) : '') + '</span>' +
+                    '</span>' +
+                    '<span class="cb-amount">' + esc(vnd(item.bookBalance)) + '</span>' +
+                    '<span class="cb-side"><span class="cb-badge ' + cls + '">' + esc(item.signStatus) + '</span>' +
+                    (recentOverdue(item) ? '<span class="cb-detail-line">Quá hạn</span>' : '') + '</span>' +
                 '</button>';
             }).join('');
-            list.querySelectorAll('.count-row').forEach(function(row) {
+            list.querySelectorAll('.cb-item').forEach(function(row) {
                 row.addEventListener('click', function() {
-                    document.getElementById('end-date').value = row.dataset.date;
-                    loadBook();
-                    document.getElementById('count-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    recentSelected = row.dataset.key;
+                    var item = shown.find(function(entry) { return recentKey(entry) === recentSelected; });
+                    list.querySelectorAll('.cb-item').forEach(function(el) { el.classList.toggle('active', el === row); });
+                    renderCountDrawer(item || null);
                 });
             });
+            var selected = shown.find(function(entry) { return recentKey(entry) === recentSelected; });
+            renderCountDrawer(selected || null);
         }
         async function loadRecentCounts() {
-            var company = selectedCompany();
-            var list = document.getElementById('recent-count-list');
-            if (!company) {
-                recentCounts = [];
-                recentPipeline = { step1: 0, step2: 0, step3: 0 };
-                recentError = '';
-                if (list) list.innerHTML = '';
-                renderRecentCounts();
-                return;
-            }
-            var result = await post({ action: 'getRecentCashCounts', companyName: company.name, companyKey: company.key });
+            var result = await post({ action: 'getRecentCashCounts' });
+            var stamp = document.getElementById('cb-refresh-time');
+            if (stamp) stamp.textContent = '(Cập nhật: ' + new Date().toLocaleTimeString('vi-VN') + ')';
             if (!result.success) {
                 recentCounts = [];
-                recentPipeline = { step1: 0, step2: 0, step3: 0 };
                 var msg = result.message || '';
                 if (/không hợp lệ|not found|Script function/i.test(msg)) {
                     msg = tr('cbRecentMissing', 'Chưa có danh sách phiếu kiểm kê trên máy chủ. Cần dán file Cash và tạo phiên bản mới.');
@@ -1161,7 +1377,6 @@
             }
             recentError = '';
             recentCounts = (result.data && result.data.counts) || [];
-            recentPipeline = (result.data && result.data.pipeline) || { step1: 0, step2: 0, step3: 0 };
             renderRecentCounts();
         }
         async function save() {
@@ -1458,14 +1673,36 @@
                 if (e.target.id === 'review-modal') document.getElementById('review-modal').hidden = true;
             });
             document.getElementById('count-pipe').addEventListener('click', function(e) {
-                var btn = e.target.closest('.count-step');
+                var btn = e.target.closest('.cb-step');
                 if (!btn) return;
-                var step = Number(btn.dataset.step);
-                recentStep = recentStep === step ? 0 : step;
+                var status = document.getElementById('cb-status');
+                status.value = status.value === btn.dataset.step ? '' : btn.dataset.step;
                 renderRecentCounts();
             });
+            document.getElementById('cb-refresh').addEventListener('click', loadRecentCounts);
+            document.getElementById('cb-mytask').addEventListener('click', function() {
+                recentMyTask = !recentMyTask;
+                renderRecentCounts();
+            });
+            document.getElementById('cb-overdue').addEventListener('click', function() {
+                var status = document.getElementById('cb-status');
+                status.value = status.value === 'overdue' ? '' : 'overdue';
+                renderRecentCounts();
+            });
+            document.getElementById('cb-clear').addEventListener('click', function() {
+                document.getElementById('cb-search').value = '';
+                document.getElementById('cb-status').value = '';
+                document.getElementById('cb-date-from').value = '';
+                document.getElementById('cb-date-to').value = '';
+                recentMyTask = false;
+                renderRecentCounts();
+            });
+            ['cb-search', 'cb-status', 'cb-date-from', 'cb-date-to'].forEach(function(id) {
+                document.getElementById(id).addEventListener('input', renderRecentCounts);
+                document.getElementById(id).addEventListener('change', renderRecentCounts);
+            });
             if (sel.value) sel.dispatchEvent(new Event('change'));
-            else renderBook();
+            else { renderBook(); loadRecentCounts(); }
         }
         TLCI18n.extend({
             vi: {
@@ -1514,6 +1751,32 @@
                 cbNotYourTurn: 'Chỉ {name} mới ký bước này.',
                 cbWaiting: 'Đang chờ {name} ký.',
                 cbSignStart: 'Ký và gửi',
+                cbMyTask: 'Việc của tôi',
+                cbMyTaskOn: 'Đang lọc việc của tôi — nhấn để xem tất cả',
+                cbPipeTitle: 'Tiến độ phê duyệt',
+                cbAllCompany: 'Toàn công ty',
+                cbPipe1: 'Duyệt 1/3',
+                cbPipe2: 'Duyệt 2/3',
+                cbPipeDone: 'Đã duyệt',
+                cbRoleOwnerShort: 'Người kiểm kê',
+                cbPipeSummary: '{n} phiếu · {a} đang xử lý',
+                cbShown: 'Hiển thị {n} / {t} phiếu',
+                cbCountN: '{n} phiếu',
+                cbOverdue: 'quá hạn',
+                cbOverdueFilter: 'Quá hạn',
+                cbSearch: 'Tìm công ty, người ký, ngày…',
+                cbAllStatus: 'Tất cả TT',
+                cbStatus1: 'Đang duyệt (1/3)',
+                cbStatus2: 'Đang duyệt (2/3)',
+                cbStatus3: 'Đã duyệt (3/3)',
+                cbClear: '✕ Xóa lọc',
+                cbDrawerTitle: 'Bảng kiểm kê',
+                cbDrawerEmpty: 'Chọn một phiếu trong danh sách để xem luồng ký và mở bảng kiểm kê.',
+                cbOpenCount: 'Mở bảng kiểm kê',
+                cbSigned: 'Đã ký',
+                cbYourTurn: 'Đến lượt ký',
+                cbNoName: 'Chưa chọn',
+                cbUpdated: '(Cập nhật: {time})',
                 cbRecent: 'Phiếu kiểm kê gần đây',
                 cbRecentHint: 'Tiến độ ký, cùng cách với phiếu thu chi.',
                 cbRecentEmpty: 'Chưa có bảng kiểm kê.',
@@ -1571,7 +1834,33 @@
                 cbNotYourTurn: 'Only {name} can sign this step.',
                 cbWaiting: 'Waiting for {name} to sign.',
                 cbSignStart: 'Sign and send',
-                cbRecent: 'Recent cash counts',
+                cbMyTask: 'My tasks',
+                cbMyTaskOn: 'Showing my tasks — click to see all',
+                cbPipeTitle: 'Approval progress',
+                cbAllCompany: 'Whole company',
+                cbPipe1: 'Approval 1/3',
+                cbPipe2: 'Approval 2/3',
+                cbPipeDone: 'Approved',
+                cbRoleOwnerShort: 'Person responsible',
+                cbPipeSummary: '{n} counts · {a} in progress',
+                cbShown: 'Showing {n} / {t} counts',
+                cbCountN: '{n} counts',
+                cbOverdue: 'overdue',
+                cbOverdueFilter: 'Overdue',
+                cbSearch: 'Search company, signer, date…',
+                cbAllStatus: 'All statuses',
+                cbStatus1: 'In review (1/3)',
+                cbStatus2: 'In review (2/3)',
+                cbStatus3: 'Approved (3/3)',
+                cbClear: '✕ Clear filters',
+                cbDrawerTitle: 'Cash count panel',
+                cbDrawerEmpty: 'Select a count to see the signing steps and open it.',
+                cbOpenCount: 'Open cash count',
+                cbSigned: 'Signed',
+                cbYourTurn: 'Your turn to sign',
+                cbNoName: 'Not chosen',
+                cbUpdated: '(Updated: {time})',
+                cbRecent: 'Recent Cash Counts',
                 cbRecentHint: 'Signing progress, the same way as vouchers.',
                 cbRecentEmpty: 'No cash counts yet.',
                 cbRecentMissing: 'The cash-count list is not on the server yet. Paste the Cash files and publish a new version.',
@@ -1589,6 +1878,8 @@
             renderDateLine();
             renderReps();
             renderBook();
+            renderSaveBar();
+            renderRecentCounts();
         });
         init();
     </script>

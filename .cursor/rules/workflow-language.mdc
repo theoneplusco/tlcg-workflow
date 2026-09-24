@@ -1,0 +1,43 @@
+---
+description: Language display for every TLCG workflow — official titles stay Vietnamese, the rest follows EN/VI
+alwaysApply: true
+---
+
+# Workflow language
+
+One setting for the whole app: `localStorage` key `tlc_language`, implemented in `i18n.js`. Order: saved choice, then browser (`vi*` → Vietnamese, `en*` → English), then Vietnamese. Picking EN or VI on any page applies to every workflow.
+
+## Official document title stays Vietnamese
+
+The centered page title is the form name. It does not change when English is on. Do not put `data-i18n` on it, and do not translate it in JavaScript.
+
+- Voucher: `PHIẾU THU/CHI` (or `PHIẾU THU` / `PHIẾU CHI` once the type is known)
+- Cash book: `SỔ QUỸ`
+- Cash count form: `Bảng kiểm kê quỹ`
+- Printed official forms (Mẫu 08a and the same kind of form) stay fully Vietnamese
+
+Breadcrumbs, menus, and section labels are chrome. Those do switch language.
+
+## What switches, matching Voucher
+
+Copy `voucher.html` before inventing a translation. In English that page shows:
+
+- Section heading in title case: `Recent Vouchers`
+- Pipeline step labels and the status filter in English: `Approval 1/3`, `All statuses`, `In review (1/3)`
+- Form field labels in English
+
+These stay Vietnamese even when English is selected. Do not put `data-i18n` on the visible text:
+
+- Buttons `Làm mới` and `Việc của tôi` (the tooltip may translate)
+- Search placeholder, `✕ Xóa lọc`
+- Pipeline line `Tiến độ phê duyệt · Toàn công ty` and `· Việc của tôi`
+- List counts (`450 phiếu`), `quá hạn`, `(Cập nhật: …)`, and the empty-list sentence
+- Status text on a row (`Đang duyệt (1/3)`, `Đã duyệt`)
+
+Other labels, placeholders, and filters that Voucher translates use `data-i18n` (or `data-i18n-placeholder` / `data-i18n-title` / `data-i18n-aria`). Leave the Vietnamese text in the HTML as the fallback. Strings built in JavaScript use `TLCI18n.t(key, fallback)` and must be redrawn from `TLCI18n.onChange`. Heading English is title case: `Recent Cash Counts`, not `Recent cash counts`.
+
+## Do not translate stored values
+
+Status strings written to Sheets and used in comparisons stay Vietnamese (`Chờ duyệt`, `Đang duyệt (1/3)`, `Đã duyệt`). Show them with `TLCI18n.tStatus()` only. The `(1/3)` counter stays. An unknown status is shown unchanged.
+
+Emails stay Vietnamese. They go to the recipient, not the person who clicked English. Sheet names, column headers, and comparison strings are never translated.
