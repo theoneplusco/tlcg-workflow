@@ -4061,7 +4061,7 @@ function handleGetVoucherSummary(requestBody) {
         const isFull = prog >= 3 || rawStatus.includes('approved') || rawStatus.includes('đã duyệt');
         if (isRej)  { gs.rejected += 1; return; }
         if (isAck)  { gs.acknowledged += 1; return; }
-        if (isFull) { gs.approved += 1; return; }
+        if (isFull) { gs.approved += 1; gs.s3 += 1; return; }
         if (prog === 0)      gs.pending += 1;
         else if (prog === 1) gs.s1 += 1;
         else if (prog === 2) gs.s2 += 1;

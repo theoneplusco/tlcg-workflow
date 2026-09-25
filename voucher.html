@@ -5313,12 +5313,12 @@
                     pending: globalStatsCache.pending || 0,
                     s1: globalStatsCache.s1 || 0,
                     s2: globalStatsCache.s2 || 0,
-                    s3: globalStatsCache.s3 || 0,
+                    s3: globalStatsCache.approved || 0,
                     approved: globalStatsCache.approved || 0,
                     acknowledged: globalStatsCache.acknowledged || 0,
                     rejected: globalStatsCache.rejected || 0,
                     overdue: globalStatsCache.overdue || 0,
-                    inProgress: (globalStatsCache.s1 || 0) + (globalStatsCache.s2 || 0) + (globalStatsCache.s3 || 0),
+                    inProgress: (globalStatsCache.s1 || 0) + (globalStatsCache.s2 || 0),
                     awaitingAck: globalStatsCache.approved || 0,
                     total: globalStatsCache.total || 0
                 };
@@ -5329,8 +5329,8 @@
                 vouchers.forEach(v => {
                     const s = normalizeVoucherState(v);
                     if (s.bucket === 'pending')      { stats.pending += 1; }
-                    if (s.bucket === 'in-progress')  { stats.inProgress += 1; if (s.progressNum === 1) stats.s1 += 1; else if (s.progressNum === 2) stats.s2 += 1; else stats.s3 += 1; }
-                    if (s.bucket === 'approved')     { stats.approved += 1; stats.awaitingAck += 1; }
+                    if (s.bucket === 'in-progress')  { stats.inProgress += 1; if (s.progressNum === 1) stats.s1 += 1; else if (s.progressNum === 2) stats.s2 += 1; }
+                    if (s.bucket === 'approved')     { stats.approved += 1; stats.awaitingAck += 1; stats.s3 += 1; }
                     if (s.bucket === 'acknowledged') { stats.acknowledged += 1; }
                     if (s.bucket === 'rejected')     { stats.rejected += 1; }
                     if (s.isOverdue)                 { stats.overdue += 1; }
@@ -5419,7 +5419,7 @@
                     statusClass: 'acknowledged'
                 };
             }
-            if (state.bucket === 'approved') return { status: 'Đã duyệt (3/3)', detail: 'Chờ người nộp xác nhận', statusClass: 'approved' };
+            if (state.bucket === 'approved') return { status: 'Đã duyệt', detail: 'Chờ người nộp xác nhận', statusClass: 'approved' };
             if (state.bucket === 'in-progress') {
                 const role = getCallerRole();
                 const isMyTurn = (role === 'accountant' && state.progressNum === 0)
@@ -5431,7 +5431,7 @@
                     statusClass: 'in-progress'
                 };
             }
-            return { status: 'Đang treo', detail: 'Chưa có phê duyệt', statusClass: 'pending' };
+            return { status: 'Chờ duyệt', detail: 'Chưa có phê duyệt', statusClass: 'pending' };
         }
 
         function renderVoucherRows(batch, offset = 0) {
@@ -5823,7 +5823,7 @@
                 } else if (status === 'InProgress2') {
                     if (state.bucket !== 'in-progress' || state.progressNum !== 2) return false;
                 } else if (status === 'InProgress3') {
-                    if (state.bucket !== 'in-progress' || state.progressNum !== 3) return false;
+                    if (state.bucket !== 'approved') return false;
                 } else if (status === 'Pending') {
                     if (state.bucket !== 'pending') return false;
                 } else if (status === 'Approved') {
