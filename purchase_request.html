@@ -817,6 +817,17 @@
             padding: 7px 14px; border-radius: 8px; background: #f59e0b; color: white;
             font-size: 12px; font-weight: 700; border: none; cursor: pointer; font-family: var(--font-body);
         }
+        .pr-sent-banner {
+            background: #ecfdf3; border-left: 4px solid #34C759;
+            padding: 12px 14px; border-radius: 0 8px 8px 0;
+            font-size: 13px; color: #14532d; line-height: 1.5;
+        }
+        .pr-sent-banner strong { display: block; margin-bottom: 3px; font-size: 14px; }
+        .pr-sent-banner .pr-sent-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .pr-sent-banner button {
+            border: none; border-radius: 8px; font-family: var(--font-body);
+            font-size: 13px; font-weight: 600; cursor: pointer; padding: 8px 14px;
+        }
         /* ── Approval rail send-back note ───────────────────────── */
         .rail-sendback-note {
             display: block; font-size: 11px; color: #92400e;
@@ -960,6 +971,15 @@
     <main class="page-content" id="main-content" tabindex="-1">
 
         <h1 style="font-family:var(--font-display); font-size:22px; font-weight:700; text-align:center; margin:4px 0 0; text-wrap:balance;" data-i18n="prPageTitle">ĐỀ NGHỊ MUA HÀNG</h1>
+
+        <div id="sent-next-banner" class="pr-sent-banner" style="display:none" role="status">
+            <strong id="sent-next-title">Đã gửi</strong>
+            <span id="sent-next-body">Phiếu vẫn mở để gửi tiếp. Sửa nội dung rồi bấm Gửi đề nghị. Số phiếu mới đã được tạo.</span>
+            <div class="pr-sent-actions">
+                <button type="button" class="btn-primary" onclick="dismissSentNextBanner()" data-i18n="continueThisPr">Tiếp tục phiếu này</button>
+                <button type="button" class="btn-secondary" onclick="resetForm()" data-i18n="createNewPr">Tạo đề nghị mới</button>
+            </div>
+        </div>
 
         <!-- Progress stepper -->
         <div class="progress-stepper" role="navigation" aria-label="Các bước phiếu" data-i18n-aria="formSteps">
@@ -1776,6 +1796,9 @@
             sumGoodsServices: 'Hàng hóa / Dịch vụ',
             prSubmitted: 'Đề Nghị Đã Được Gửi!',
             prSubmittedBody: 'ĐỀ NGHỊ MUA HÀNG của bạn đã được gửi thành công. Người phê duyệt sẽ nhận được thông báo qua email.',
+            sentNextTitle: 'Đã gửi',
+            sentNextBody: 'Phiếu vẫn mở để gửi tiếp. Sửa nội dung rồi bấm Gửi đề nghị. Số phiếu mới đã được tạo.',
+            continueThisPr: 'Tiếp tục phiếu này',
             createNewPr: 'Tạo đề nghị mới',
             toDashboard: 'Về Dashboard',
             recentPrHeading: 'ĐỀ NGHỊ MUA HÀNG gần đây',
@@ -1881,6 +1904,9 @@
             sumGoodsServices: 'Goods / Services',
             prSubmitted: 'Request Submitted!',
             prSubmittedBody: 'Your PURCHASE REQUEST was submitted successfully. Approvers will be notified by email.',
+            sentNextTitle: 'Sent',
+            sentNextBody: 'This form stays open for the next request. Edit it, then send. A new request number is ready.',
+            continueThisPr: 'Continue this request',
             createNewPr: 'Create new request',
             toDashboard: 'Back to Dashboard',
             recentPrHeading: 'Recent PURCHASE REQUESTS',
@@ -3309,12 +3335,20 @@
                 btn.disabled = false;
                 btn.innerHTML = orig;
 
-                // Show success screen
-                document.querySelector('.page-content').querySelectorAll('.form-step, .progress-stepper, h1').forEach(el => el.style.display = 'none');
-                const ss = document.getElementById('success-screen');
-                ss.style.display = 'flex';
                 const displayPrNo = resubmitPrNo || _prNo;
-                document.getElementById('success-pr-no').textContent = 'Số phiếu: ' + displayPrNo;
+                // Keep what they typed. A new number is issued so the next send is a new request.
+                // Hiding the form here left the page blank/locked, so the next request could not be filled.
+                document.querySelectorAll('.form-step, .progress-stepper, h1').forEach(el => { el.style.display = ''; });
+                document.getElementById('success-screen').style.display = 'none';
+                unlockPurchaseForm();
+                generateRequestNumber();
+                const reqSel = document.getElementById('requester_name');
+                if (reqSel && reqSel._syncSearchInput) reqSel._syncSearchInput();
+                const banner = document.getElementById('sent-next-banner');
+                document.getElementById('sent-next-title').textContent = TLCI18n.t('sentNextTitle', 'Đã gửi') + ' ' + displayPrNo;
+                document.getElementById('sent-next-body').textContent = TLCI18n.t('sentNextBody', 'Phiếu vẫn mở để gửi tiếp. Sửa nội dung rồi bấm Gửi đề nghị. Số phiếu mới đã được tạo.');
+                banner.style.display = 'block';
+                goToStep(1);
                 showToast(resubmitPrNo ? '✅ Đã gửi lại đề nghị thành công!' : 'ĐỀ NGHỊ MUA HÀNG đã được gửi thành công!', 'success', 4000);
                 // Invalidate cache and reload list so new PR appears immediately
                 localStorage.removeItem(_PR_CACHE_KEY);
@@ -3331,6 +3365,24 @@
             btn.innerHTML = orig;
         }
         isSubmitting = false;
+    }
+
+    const LOCKED_FIELD_IDS = new Set(['department', 'vd-name', 'vd-type', 'vd-taxid', 'vd-address']);
+
+    function unlockPurchaseForm() {
+        document.querySelectorAll('.page-content input, .page-content select, .page-content textarea').forEach(el => {
+            el.disabled = false;
+            if (!LOCKED_FIELD_IDS.has(el.id)) el.readOnly = false;
+        });
+        const submitBtn = document.getElementById('submit-btn');
+        if (submitBtn) submitBtn.disabled = false;
+        const step1Back = document.querySelector('#step-1 .step-navigation .btn-secondary');
+        if (step1Back) step1Back.disabled = true;
+    }
+
+    function dismissSentNextBanner() {
+        const banner = document.getElementById('sent-next-banner');
+        if (banner) banner.style.display = 'none';
     }
 
     /* ── Reset ──────────────────────────────────────────────────── */
@@ -3367,7 +3419,11 @@
         initSections();
         setPriority('binh_thuong');
         document.getElementById('success-screen').style.display = 'none';
+        dismissSentNextBanner();
         document.querySelectorAll('.form-step, .progress-stepper, h1').forEach(el => el.style.display = '');
+        unlockPurchaseForm();
+        const reqSel = document.getElementById('requester_name');
+        if (reqSel && reqSel._syncSearchInput) reqSel._syncSearchInput();
         const submitBtn = document.getElementById('submit-btn');
         if (submitBtn) {
             submitBtn.disabled = false;
