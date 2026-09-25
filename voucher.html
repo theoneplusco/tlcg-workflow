@@ -5231,8 +5231,11 @@
             const fetcher = async () => {
                 const _u = (() => { try { return JSON.parse(localStorage.getItem('tlc_current_user') || '{}'); } catch(e) { return {}; } })();
                 const callerEmail = encodeURIComponent((_u.email || '').toLowerCase());
-                const callerRole  = encodeURIComponent((_u._approverRole || _u.role || '').toLowerCase());
-                const isAdmin     = _u.isAdmin ? 'true' : 'false';
+                const isAdminFlag = _u.isAdmin === true || _u.isAdmin === 'true' || String(_u.isAdmin).toUpperCase() === 'TRUE';
+                // An admin who is also an approver must still see the company list.
+                // Sending the approver role hides every finished voucher that is not theirs.
+                const callerRole  = encodeURIComponent((isAdminFlag ? 'admin' : (_u._approverRole || _u.role || '')).toLowerCase());
+                const isAdmin     = isAdminFlag ? 'true' : 'false';
                 const url = `${GOOGLE_APPS_SCRIPT_WEB_APP_URL}?action=getVoucherSummary&callerEmail=${callerEmail}&callerRole=${callerRole}&isAdmin=${isAdmin}`;
                 const response = await fetch(url, {
                     method: 'GET',
