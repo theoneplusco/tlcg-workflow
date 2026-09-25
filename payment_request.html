@@ -450,6 +450,7 @@
         /* ── Reduced motion ────────────────────────────────────────── */
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
     </style>
+<link rel="stylesheet" href="flow-chrome.css">
 </head>
 <body class="min-h-screen" style="background: #F2F2F7;">
 
@@ -569,7 +570,7 @@
 
         <!-- ── Page content ──────────────────────────────────────────── -->
         <div class="page-content">
-            <h1 style="font-family: var(--font-display); font-size: 22px; font-weight: 700; text-align: center; margin: 4px 0 0;" data-i18n="pmtPageTitle">ĐỀ NGHỊ THANH TOÁN</h1>
+            <h1 class="doc-title">ĐỀ NGHỊ THANH TOÁN</h1>
 
             <div class="progress-stepper">
                 <div class="stepper-container">
@@ -975,13 +976,16 @@
 
             <!-- ── PO Status History ──────────────────────────────────── -->
             <div class="form-card" id="po-history-card">
-                <div class="form-card-header" style="cursor:pointer;" onclick="togglePoHistory()">
-                    <i class="fas fa-history" style="color: var(--primary); font-size: 14px;"></i>
-                    <h2 style="flex:1;" data-i18n="pmtHistory">Lịch Sử Đề Nghị Thanh Toán</h2>
-                    <i class="fas fa-chevron-down" id="po-history-chevron" style="color: var(--text-secondary); font-size: 13px; transition: transform 0.2s;"></i>
+                <div class="flow-recent-head">
+                    <h2 data-i18n="pmtHistory">Đề nghị thanh toán gần đây</h2>
+                    <div class="flow-recent-actions">
+                        <button type="button" class="flow-refresh" onclick="loadPoHistory()" title="Làm mới danh sách" data-i18n-title="refreshListTitle">
+                            <i class="fas fa-rotate-right" aria-hidden="true"></i> Làm mới
+                        </button>
+                    </div>
                 </div>
-                <div id="po-history-body" style="display:none;">
-                    <div id="po-history-list" style="padding: 12px 20px;">
+                <div id="po-history-body">
+                    <div id="po-history-list" style="padding: 4px 18px 12px;">
                         <p style="font-size: 14px; color: var(--text-secondary); text-align: center; padding: 16px 0;" data-i18n="loading">Đang tải...</p>
                     </div>
                 </div>
@@ -1044,7 +1048,7 @@
             colGrossTotal: 'Tổng tiền',
             totalColon: 'Tổng:',
             submitRequest: 'Gửi đề nghị',
-            pmtHistory: 'Lịch Sử Đề Nghị Thanh Toán'
+            pmtHistory: 'Đề nghị thanh toán gần đây'
         },
         en: {
             pmtPageTitle: 'PAYMENT REQUEST',
@@ -1096,7 +1100,7 @@
             colGrossTotal: 'Gross total',
             totalColon: 'Total:',
             submitRequest: 'Submit request',
-            pmtHistory: 'Payment Request History'
+            pmtHistory: 'Recent Payment Requests'
         }
     });
     // ═══════════════════════════════════════════════════════════════════
@@ -2208,14 +2212,7 @@
                 document.getElementById('vendor-dropdown-list')?.classList.remove('show');
         });
 
-        // ── PO History load on open ─────────────────────────────────
-        document.getElementById('po-history-card')
-            .querySelector('.form-card-header')
-            .addEventListener('click', () => {
-                const body = document.getElementById('po-history-body');
-                if (body.style.display !== 'none') return;
-                loadPoHistory();
-            });
+        loadPoHistory();
     });
 
     // ═══════════════════════════════════════════════════════════════════
@@ -2224,12 +2221,7 @@
     let poHistoryLoaded = false;
 
     function togglePoHistory() {
-        const body    = document.getElementById('po-history-body');
-        const chevron = document.getElementById('po-history-chevron');
-        const open    = body.style.display === 'none';
-        body.style.display = open ? '' : 'none';
-        chevron.style.transform = open ? 'rotate(180deg)' : '';
-        if (open && !poHistoryLoaded) loadPoHistory();
+        loadPoHistory();
     }
 
     async function loadPoHistory() {

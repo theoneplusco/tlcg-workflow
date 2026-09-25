@@ -2432,6 +2432,7 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="flow-chrome.css">
 </head>
 <body class="min-h-screen" style="background: #F2F2F7;">
     <!-- iPad Sidebar Navigation -->
@@ -2590,7 +2591,7 @@
         <main id="page-voucher-form" class="page-content active">
         <div class="flex-1 py-6" style="background: #F2F2F7;">
         <div class="container form-section-container" id="voucher-form">
-        <h1 id="form-title" style="font-weight: 700; font-size: 28px; text-align: center;">PHIẾU THU/CHI</h1>
+        <h1 id="form-title" class="doc-title">PHIẾU THU/CHI</h1>
         
         <!-- Progress Stepper -->
         <div class="progress-stepper">
@@ -3033,18 +3034,17 @@
     <!-- Recent Vouchers Section -->
     <div class="recent-vouchers-section">
         <div class="recent-vouchers-card">
-            <div class="recent-vouchers-header">
+            <div class="recent-vouchers-header flow-recent-head">
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <h3 data-i18n="recentVouchersHeading">📋 Phiếu gần đây</h3>
+                    <h3 data-i18n="recentVouchersHeading">Phiếu gần đây</h3>
                     <span id="last-refresh-time" style="font-size: 0.75rem; color: #64748b; font-weight: normal;"></span>
                 </div>
-                <div style="display:flex;gap:0.5rem;align-items:center;">
-                    <button class="refresh-btn" onclick="loadRecentVouchers(true)" title="Làm mới danh sách phiếu" data-i18n-title="refreshListTitle">
+                <div class="flow-recent-actions">
+                    <button class="refresh-btn flow-refresh" onclick="loadRecentVouchers(true)" title="Làm mới danh sách phiếu" data-i18n-title="refreshListTitle">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                         Làm mới
                     </button>
-                    <button id="my-task-btn" onclick="toggleMyTaskFilter()" title="Chỉ hiện việc cần làm của tôi" data-i18n-title="myTaskFilterTitle"
-                        style="display:flex;align-items:center;gap:0.35rem;padding:0.375rem 0.75rem;border:1.5px solid #f97316;border-radius:6px;font-size:0.8125rem;font-weight:600;background:white;color:#f97316;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;">
+                    <button type="button" id="my-task-btn" class="flow-mytask" onclick="toggleMyTaskFilter()" title="Chỉ hiện việc cần làm của tôi" data-i18n-title="myTaskFilterTitle">
                         ⚡ Việc của tôi
                     </button>
                 </div>
@@ -5782,8 +5782,7 @@
             myTaskFilterActive = !myTaskFilterActive;
             const btn = document.getElementById('my-task-btn');
             if (btn) {
-                btn.style.background = myTaskFilterActive ? '#f97316' : 'white';
-                btn.style.color      = myTaskFilterActive ? 'white'   : '#f97316';
+                btn.classList.toggle('is-on', myTaskFilterActive);
                 btn.title = myTaskFilterActive
                     ? 'Đang lọc việc của tôi — nhấn để xem tất cả'
                     : 'Chỉ hiện việc cần làm của tôi';
@@ -5860,7 +5859,7 @@
             // Reset My Task toggle
             myTaskFilterActive = false;
             const btn = document.getElementById('my-task-btn');
-            if (btn) { btn.style.background = 'white'; btn.style.color = '#f97316'; }
+            if (btn) btn.classList.remove('is-on');
             saveVoucherFilterState();
             applyVoucherFilter();
         }
@@ -10563,7 +10562,7 @@
                 noData: 'No data',
                 btnPrev: '\u2190 Back',
                 btnNext: 'Next \u2192',
-                recentVouchersHeading: '\ud83d\udccb Recent Vouchers',
+                recentVouchersHeading: 'Recent Vouchers',
                 refreshListTitle: 'Refresh voucher list',
                 myTaskFilterTitle: 'Show only my tasks',
                 approvalPipeline: 'Approval progress',
@@ -10671,7 +10670,7 @@
                 noData: 'Chưa có dữ liệu',
                 btnPrev: '\u2190 Quay lại',
                 btnNext: 'Tiếp theo \u2192',
-                recentVouchersHeading: '\ud83d\udccb Phiếu gần đây',
+                recentVouchersHeading: 'Phiếu gần đây',
                 refreshListTitle: 'Làm mới danh sách phiếu',
                 myTaskFilterTitle: 'Chỉ hiện việc cần làm của tôi',
                 approvalPipeline: 'Tiến độ phê duyệt',

@@ -848,6 +848,7 @@
         }
 
     </style>
+<link rel="stylesheet" href="flow-chrome.css">
 </head>
 <body>
 <a href="#main-content" class="skip-to-main" data-i18n="skipToMain">Bỏ qua đến nội dung</a>
@@ -970,7 +971,7 @@
     <!-- ── Page content ────────────────────────────────────────── -->
     <main class="page-content" id="main-content" tabindex="-1">
 
-        <h1 style="font-family:var(--font-display); font-size:22px; font-weight:700; text-align:center; margin:4px 0 0; text-wrap:balance;" data-i18n="prPageTitle">ĐỀ NGHỊ MUA HÀNG</h1>
+        <h1 class="doc-title">ĐỀ NGHỊ MUA HÀNG</h1>
 
         <div id="sent-next-banner" class="pr-sent-banner" style="display:none" role="status">
             <strong id="sent-next-title">Đã gửi</strong>
@@ -1623,17 +1624,16 @@
     <div class="recent-pr-section">
         <div class="recent-pr-card">
             <!-- Header -->
-            <div class="recent-pr-header">
-                <h3><i class="fas fa-list-check" style="color:var(--primary);margin-right:8px;" aria-hidden="true"></i><span data-i18n="recentPrHeading">ĐỀ NGHỊ MUA HÀNG gần đây</span></h3>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div class="recent-pr-header flow-recent-head">
+                <h3 data-i18n="recentPrHeading">Đề nghị mua hàng gần đây</h3>
+                <div class="flow-recent-actions">
                     <span id="pr-last-refresh" style="font-size:12px;color:var(--text-secondary);"></span>
-                    <button type="button" id="my-pr-task-btn" onclick="toggleMyPRTaskFilter()"
-                        title="Chỉ hiện việc cần làm của tôi" data-i18n-title="myTaskFilterTitle"
-                        style="display:flex;align-items:center;gap:0.35rem;padding:6px 12px;border:1.5px solid #f97316;border-radius:6px;font-size:13px;font-weight:600;background:white;color:#f97316;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;font-family:var(--font-body);">
-                        ⚡ Việc của tôi
+                    <button type="button" class="recent-pr-refresh-btn flow-refresh" onclick="loadRecentPR(true)" aria-label="Làm mới danh sách" data-i18n-aria="refreshListTitle">
+                        <i class="fas fa-rotate-right" style="font-size:12px;" aria-hidden="true"></i> Làm mới
                     </button>
-                    <button type="button" class="recent-pr-refresh-btn" onclick="loadRecentPR(true)" aria-label="Làm mới danh sách" data-i18n-aria="refreshListTitle">
-                        <i class="fas fa-rotate-right" style="font-size:12px;" aria-hidden="true"></i> <span data-i18n="refresh">Làm mới</span>
+                    <button type="button" id="my-pr-task-btn" class="flow-mytask" onclick="toggleMyPRTaskFilter()"
+                        title="Chỉ hiện việc cần làm của tôi" data-i18n-title="myTaskFilterTitle">
+                        ⚡ Việc của tôi
                     </button>
                 </div>
             </div>
@@ -1801,7 +1801,7 @@
             continueThisPr: 'Tiếp tục phiếu này',
             createNewPr: 'Tạo đề nghị mới',
             toDashboard: 'Về Dashboard',
-            recentPrHeading: 'ĐỀ NGHỊ MUA HÀNG gần đây',
+            recentPrHeading: 'Đề nghị mua hàng gần đây',
             filterByStatus: 'Lọc theo trạng thái',
             phPrSearch: 'Tìm số phiếu, công ty, người đề nghị...',
             searchPr: 'Tìm kiếm đề nghị',
@@ -1909,7 +1909,7 @@
             continueThisPr: 'Continue this request',
             createNewPr: 'Create new request',
             toDashboard: 'Back to Dashboard',
-            recentPrHeading: 'Recent PURCHASE REQUESTS',
+            recentPrHeading: 'Recent Purchase Requests',
             filterByStatus: 'Filter by status',
             phPrSearch: 'Search request no., company, requester...',
             searchPr: 'Search requests',
@@ -4509,8 +4509,7 @@
         _myPRTaskFilter = !_myPRTaskFilter;
         const btn = document.getElementById('my-pr-task-btn');
         if (btn) {
-            btn.style.background = _myPRTaskFilter ? '#f97316' : 'white';
-            btn.style.color      = _myPRTaskFilter ? 'white'   : '#f97316';
+            btn.classList.toggle('is-on', _myPRTaskFilter);
             btn.title = _myPRTaskFilter
                 ? 'Đang lọc việc của tôi — nhấn để xem tất cả'
                 : 'Chỉ hiện việc cần làm của tôi';

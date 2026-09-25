@@ -206,6 +206,7 @@
         .dropdown-option:hover { background: rgba(0,122,255,0.08); }
         .dropdown-empty { padding: 10px 12px; font-size: 13px; color: #8e8e93; text-align: center; }
     </style>
+<link rel="stylesheet" href="flow-chrome.css">
 </head>
 <body>
 
@@ -318,7 +319,7 @@
     <!-- ── Page content ──────────────────────────────────────── -->
     <main class="page-content" id="main-content" tabindex="-1">
 
-        <h1 style="font-family:var(--font-display);font-size:22px;font-weight:700;text-align:center;margin:4px 0 0;" data-i18n="amPageTitle">BIÊN BẢN NGHIỆM THU</h1>
+        <h1 class="doc-title">BIÊN BẢN NGHIỆM THU</h1>
         <p id="am-type-subtitle" style="text-align:center;font-size:13px;color:var(--text-secondary);margin:0 0 8px;" data-i18n="amSubtitle">Nghiệm thu dịch vụ / nhận hàng</p>
 
         <!-- Progress stepper -->
@@ -565,11 +566,16 @@
              AM LIST
         ══════════════════════════════════════════════════════ -->
         <div class="am-list-section">
-            <div class="am-list-header">
-                <h2 style="font-size:15px;font-weight:600;" data-i18n="amListTitle">Danh Sách Biên Bản Nghiệm Thu</h2>
-                <button type="button" class="btn btn-ghost" style="font-size:13px;padding:7px 14px;" onclick="loadAMHistory(true)">
-                    <i class="fas fa-sync-alt"></i> <span data-i18n="refresh">Làm mới</span>
-                </button>
+            <div class="am-list-header flow-recent-head">
+                <h2 data-i18n="amListTitle">Biên bản nghiệm thu gần đây</h2>
+                <div class="flow-recent-actions">
+                    <button type="button" class="flow-refresh" onclick="loadAMHistory(true)" title="Làm mới danh sách" data-i18n-title="refreshListTitle">
+                        <i class="fas fa-rotate-right" aria-hidden="true"></i> Làm mới
+                    </button>
+                    <button type="button" id="am-mytask" class="flow-mytask" onclick="toggleAMMyTask()" title="Chỉ hiện việc cần làm của tôi" data-i18n-title="myTaskFilterTitle">
+                        ⚡ Việc của tôi
+                    </button>
+                </div>
             </div>
             <div class="am-list-filters">
                 <button class="am-filter-pill active" onclick="applyAMFilter('')" data-i18n="statAll">Tất cả</button>
@@ -659,7 +665,7 @@ TLCI18n.extend({
         amAddFile: 'Thêm tệp',
         amSecReview: 'Kiểm Tra Trước Khi Gửi',
         amSubmit: 'Gửi Biên Bản Nghiệm Thu',
-        amListTitle: 'Danh Sách Biên Bản Nghiệm Thu',
+        amListTitle: 'Biên bản nghiệm thu gần đây',
         amFilterPending: 'Chờ xác nhận',
         amFilterAccepted: 'Đã nghiệm thu',
         amRejectTitle: 'Từ Chối Nghiệm Thu',
@@ -705,7 +711,7 @@ TLCI18n.extend({
         amAddFile: 'Add file',
         amSecReview: 'Review Before Submitting',
         amSubmit: 'Submit Acceptance Minutes',
-        amListTitle: 'Acceptance Minutes List',
+        amListTitle: 'Recent Acceptance Minutes',
         amFilterPending: 'Awaiting confirmation',
         amFilterAccepted: 'Accepted',
         amRejectTitle: 'Reject Acceptance',
@@ -736,6 +742,7 @@ let _amNo            = '';
 let _allAMs          = [];
 let _filteredAMs     = [];
 let _currentAMFilter = '';
+let _amMyTask        = false;
 let _currentAMDrawer = null;
 let _allEmployees    = [];
 let _receiverSigData = null;
@@ -1609,6 +1616,18 @@ function _amStatusClass(status) {
     return 'am-status-pending';
 }
 
+function toggleAMMyTask() {
+    _amMyTask = !_amMyTask;
+    const btn = document.getElementById('am-mytask');
+    if (btn) {
+        btn.classList.toggle('is-on', _amMyTask);
+        btn.title = _amMyTask
+            ? 'Đang lọc việc của tôi — nhấn để xem tất cả'
+            : 'Chỉ hiện việc cần làm của tôi';
+    }
+    applyAMFilter(_currentAMFilter);
+}
+
 function applyAMFilter(bucket) {
     _currentAMFilter = bucket;
     document.querySelectorAll('.am-filter-pill').forEach(p => {
@@ -1616,14 +1635,19 @@ function applyAMFilter(bucket) {
                        (p.getAttribute('onclick') || '').includes(`'${bucket}'`);
         p.classList.toggle('active', active);
     });
-    _filteredAMs = bucket === '' ? _allAMs : _allAMs.filter(am => _amStatusBucket(am.status) === bucket);
+    _filteredAMs = bucket === '' ? _allAMs.slice() : _allAMs.filter(am => _amStatusBucket(am.status) === bucket);
+    if (_amMyTask) {
+        const mine = new Set(_pendingAMItems(_allAMs).map(am => am.amNo));
+        _filteredAMs = _filteredAMs.filter(am => mine.has(am.amNo));
+    }
     renderAMList();
 }
 
 function renderAMList() {
     const body = document.getElementById('am-list-body');
     if (_filteredAMs.length === 0) {
-        body.innerHTML = '<div class="am-empty"><i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:8px;color:#d1d5db;"></i>Không có biên bản nào.</div>';
+        const msg = _amMyTask ? 'Không có việc cần làm' : 'Không có biên bản nào.';
+        body.innerHTML = '<div class="am-empty"><i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:8px;color:#d1d5db;"></i>' + msg + '</div>';
         return;
     }
     body.innerHTML = _filteredAMs.map(am => `
