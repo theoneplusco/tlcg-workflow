@@ -5506,6 +5506,13 @@
         }
         
         // ============ VOUCHER ITEM RENDERER ============
+        function voucherStatusIcon(statusClass) {
+            if (statusClass === 'rejected') return 'fa-times-circle';
+            if (statusClass === 'acknowledged') return 'fa-check-double';
+            if (statusClass === 'approved') return 'fa-check-circle';
+            return 'fa-clock';
+        }
+
         function renderVoucherItem(voucher, index) {
             const voucherId = `voucher-${voucher.voucherNumber || index}`;
             const amount = typeof voucher.amount === 'number'
@@ -5513,13 +5520,15 @@
                 : voucher.amount || '0 ₫';
             const formattedTimestamp = formatTimestamp(voucher.timestamp);
             const safeVNum = (voucher.voucherNumber || '').replace(/'/g, "\\'");
+            const activeStatus = getActiveStatusLabel(voucher);
+            const statusIcon = voucherStatusIcon(activeStatus.statusClass);
             return `
                 <div id="${voucherId}" class="voucher-item" onclick="openVoucherFromList('${safeVNum}', '${voucherId}')">
                     <div class="voucher-checkbox-wrap" onclick="event.stopPropagation()">
                         <input type="checkbox" class="voucher-select-cb" data-voucher-number="${voucher.voucherNumber || ''}" onchange="updateBulkSelection()">
                     </div>
-                    <div class="voucher-icon pending">
-                        <i class="fas fa-clock"></i>
+                    <div class="voucher-icon ${activeStatus.statusClass}">
+                        <i class="fas ${statusIcon}"></i>
                     </div>
                     <div class="voucher-info">
                         <div class="voucher-title">${voucher.voucherNumber || 'N/A'} - ${voucher.voucherType || ''}</div>
@@ -5527,11 +5536,11 @@
                     </div>
                     <div class="voucher-amount">${amount}</div>
                     <div class="voucher-status-container">
-                        <span class="voucher-status pending">
-                            <i class="fas fa-circle mr-1"></i>
-                            <span class="status-text">Đang tải...</span>
+                        <span class="voucher-status ${activeStatus.statusClass}">
+                            <i class="fas ${statusIcon} mr-1"></i>
+                            <span class="status-text">${escapeHtml(activeStatus.status)}</span>
                         </span>
-                        <p class="voucher-approval-detail">Đang tải thông tin...</p>
+                        <p class="voucher-approval-detail">${escapeHtml(activeStatus.detail)}</p>
                     </div>
                 </div>
             `;
