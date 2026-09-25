@@ -2003,7 +2003,7 @@
     // Files are held in memory and sent as base64 at submit time via GAS/DriveApp.
     // DO NOT pre-upload via /api/drive-upload — Service Accounts have no quota on personal Drive.
     const MAX_ATTACH_FILES  = 5;
-    const MAX_ATTACH_BYTES  = 5 * 1024 * 1024;  // 5 MB per file (GAS payload limit)
+    const MAX_ATTACH_BYTES  = 10 * 1024 * 1024; // 10 MB per file
     const MAX_ATTACH_TOTAL  = 30 * 1024 * 1024; // 30 MB total payload
     let _attachmentFiles    = []; // [{file: File, name: string}]
 
@@ -3181,7 +3181,7 @@
                 showToast(`Tối đa ${MAX_ATTACH_FILES} file đính kèm`, 'error'); break;
             }
             if (file.size > MAX_ATTACH_BYTES) {
-                showToast(`"${file.name}" quá lớn (tối đa 5 MB)`, 'error'); continue;
+                showToast(`"${file.name}" quá lớn (tối đa ${MAX_ATTACH_BYTES / (1024 * 1024)} MB)`, 'error'); continue;
             }
             _attachmentFiles.push({ file, name: file.name });
             renderAttachList();

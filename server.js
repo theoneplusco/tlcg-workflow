@@ -47,10 +47,11 @@ app.post('/api/voucher-file', voucherFileHandler);
 
 /* ─────────────────────────────────────────────────────────────
    2. Body parsing for everything else.
-      10mb matches the sizeLimit declared in api/voucher.js.
+      48mb fits the 30 MB attachment total after base64 (~40 MB)
+      plus the rest of the form. A 10 MB file alone is ~13 MB encoded.
    ───────────────────────────────────────────────────────────── */
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '48mb' }));
+app.use(express.urlencoded({ extended: true, limit: '48mb' }));
 
 /* ─────────────────────────────────────────────────────────────
    3. API routes.

@@ -2,11 +2,13 @@
 // Handles requests to /api/voucher (without action in path)
 // Location: api/voucher.js
 
-// Export config to handle large request bodies (up to 10MB)
+// Export config to handle large request bodies.
+// 48mb matches server.js: a 10 MB file is ~13 MB once base64-encoded,
+// and the 30 MB attachment total is ~40 MB encoded.
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '10mb',
+      sizeLimit: '48mb',
     },
   },
   // For Vercel serverless functions, we might need to handle raw body

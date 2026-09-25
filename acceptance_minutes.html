@@ -518,7 +518,7 @@
                     <h2 data-i18n="secAttachments">Tài Liệu Đính Kèm</h2>
                 </div>
                 <div class="form-card-body">
-                    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;" data-i18n="amAttachHint">Phiếu giao hàng, biên bản kiểm tra chất lượng, ảnh thực tế,... (tối đa 5 file, 30 MB)</p>
+                    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;" data-i18n="amAttachHint">Phiếu giao hàng, biên bản kiểm tra chất lượng, ảnh thực tế,... (tối đa 5 file, mỗi file ≤ 10 MB, tổng 30 MB)</p>
                     <button type="button" class="btn btn-ghost" onclick="document.getElementById('am-attach-input').click()" style="font-size:13px;padding:8px 16px;">
                         <i class="fas fa-plus"></i> <span data-i18n="amAddFile">Thêm tệp</span>
                     </button>
@@ -655,7 +655,7 @@ TLCI18n.extend({
         amTapToUpload: 'Nhấn để tải lên chữ ký',
         amSigHint: 'PNG hoặc JPG, tối đa 500 KB',
         amSigConfirmText: 'Chữ ký này xác nhận rằng bạn đã thực sự nhận hàng và kiểm tra theo danh sách trên.',
-        amAttachHint: 'Phiếu giao hàng, biên bản kiểm tra chất lượng, ảnh thực tế,... (tối đa 5 file, 30 MB)',
+        amAttachHint: 'Phiếu giao hàng, biên bản kiểm tra chất lượng, ảnh thực tế,... (tối đa 5 file, mỗi file ≤ 10 MB, tổng 30 MB)',
         amAddFile: 'Thêm tệp',
         amSecReview: 'Kiểm Tra Trước Khi Gửi',
         amSubmit: 'Gửi Biên Bản Nghiệm Thu',
@@ -701,7 +701,7 @@ TLCI18n.extend({
         amTapToUpload: 'Click to upload your signature',
         amSigHint: 'PNG or JPG, up to 500 KB',
         amSigConfirmText: 'This signature confirms that you have actually received and checked the goods listed above.',
-        amAttachHint: 'Delivery notes, quality inspection reports, photos, etc. (up to 5 files, 30 MB)',
+        amAttachHint: 'Delivery notes, quality inspection reports, photos, etc. (up to 5 files, 10 MB each, 30 MB total)',
         amAddFile: 'Add file',
         amSecReview: 'Review Before Submitting',
         amSubmit: 'Submit Acceptance Minutes',
@@ -727,7 +727,7 @@ const _PR_LIST_TTL   = 5 * 60 * 1000;
 const _RECEIVER_SIG_KEY  = 'tlcg_user_signature';
 const _DH_SIG_KEY        = 'tlcg_approver_signature';
 const MAX_ATTACH_FILES   = 5;
-const MAX_ATTACH_BYTES   = 5  * 1024 * 1024;
+const MAX_ATTACH_BYTES   = 10 * 1024 * 1024;
 const MAX_ATTACH_TOTAL   = 30 * 1024 * 1024;
 
 // ── Module state ──────────────────────────────────────────────
@@ -1426,7 +1426,7 @@ function handleAMAttachment(event) {
     }
     let totalBytes = _amAttachFiles.reduce((s, f) => s + f.file.size, 0);
     for (const file of files) {
-        if (file.size > MAX_ATTACH_BYTES) { showToast(file.name + ': tệp quá lớn (tối đa 5 MB).', 'error'); continue; }
+        if (file.size > MAX_ATTACH_BYTES) { showToast(file.name + ': tệp quá lớn (tối đa ' + (MAX_ATTACH_BYTES / (1024 * 1024)) + ' MB).', 'error'); continue; }
         if (totalBytes + file.size > MAX_ATTACH_TOTAL) { showToast('Tổng dung lượng vượt 30 MB.', 'error'); break; }
         totalBytes += file.size;
         _amAttachFiles.push({ file, name: file.name });
