@@ -1799,102 +1799,44 @@
             accent-color: #0ea5e9;
         }
 
-        /* ── Pipeline stats bar ── */
+        /* ── Status counts, same row as the purchase-request list ── */
         .voucher-stats {
-            padding: 1rem 1.5rem;
+            padding: 0;
             background: #ffffff;
-            border-bottom: 1px solid #e2e8f0;
-            box-shadow: 0 1px 4px rgba(15,23,42,0.07);
-        }
-        .stats-pipeline-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-        .stats-pipeline-title {
-            font-size: 0.7rem;
-            font-weight: 600;
-            color: #475569;
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-        }
-        .stats-pipeline-total {
-            font-size: 0.72rem;
-            color: #94a3b8;
+            border-bottom: 0.5px solid rgba(0,0,0,0.10);
         }
         .pipeline-steps {
             display: flex;
-            align-items: stretch;
             gap: 0;
+            overflow-x: auto;
         }
         .pipe-step {
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            position: relative;
+            min-width: 72px;
+            text-align: center;
+            padding: 12px 8px;
             cursor: pointer;
-            padding: 0.5rem 0.375rem;
-            border-radius: 10px;
+            border-right: 0.5px solid rgba(0,0,0,0.10);
             transition: background 0.15s;
-            text-decoration: none;
         }
+        .pipe-step:last-child { border-right: none; }
         .pipe-step:hover { background: #f8fafc; }
-        .pipe-step:not(:last-child)::after {
-            content: '›';
-            position: absolute;
-            right: -5px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #cbd5e1;
-            font-size: 1rem;
-            z-index: 1;
+        .pipe-step.active { background: rgba(0,122,255,0.10); }
+        .pipe-count { font-size: 20px; font-weight: 700; line-height: 1; color: #1d1d1f; }
+        .pipe-label {
+            font-size: 11px;
+            color: rgba(60,60,67,0.60);
+            margin-top: 4px;
+            text-align: center;
         }
-        .pipe-dot {
-            width: 32px; height: 32px;
-            border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 0.7rem; font-weight: 700;
-            margin-bottom: 0.3rem;
-            color: #fff;
-            flex-shrink: 0;
-        }
-        .pipe-step.ps-pending   .pipe-dot { background: #fbbf24; }
-        .pipe-step.ps-s1        .pipe-dot { background: #60a5fa; }
-        .pipe-step.ps-s2        .pipe-dot { background: #818cf8; }
-        .pipe-step.ps-s3        .pipe-dot { background: #a78bfa; }
-        .pipe-step.ps-approved  .pipe-dot { background: #34d399; }
-        .pipe-step.ps-acknowledged .pipe-dot { background: #10b981; }
-        .pipe-count { font-size: 1.2rem; font-weight: 700; color: #1e293b; line-height: 1; }
-        .pipe-label { font-size: 0.6rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; margin-top: 0.2rem; }
-        .pipe-sub   { font-size: 0.58rem; color: #94a3b8; text-align: center; }
-        .pipe-bottom-row {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            margin-top: 0.75rem;
-            padding-top: 0.625rem;
-            border-top: 1px solid #f1f5f9;
-            flex-wrap: wrap;
-        }
-        .pipe-bottom-item {
-            display: inline-flex; align-items: center; gap: 0.35rem;
-            cursor: pointer; padding: 0.2rem 0.5rem; border-radius: 6px;
-            transition: background 0.12s;
-            font-size: 0.72rem;
-        }
-        .pipe-bottom-item:hover { background: #f8fafc; }
-        .pipe-bottom-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-        .pipe-bottom-count { font-weight: 700; color: #1e293b; }
-        .pipe-bottom-label { color: #64748b; }
-        .pipe-overdue-badge {
-            display: inline-flex; align-items: center; gap: 0.2rem;
-            font-size: 0.62rem; color: #fb7185;
-            background: #fff1f2; border: 1px solid #fecdd3;
-            border-radius: 20px; padding: 0.12rem 0.45rem;
-        }
-        .stats-pipeline-total .overdue-highlight { color: #fb7185; font-weight: 600; }
+        .pipe-step.ps-pending .pipe-count,
+        .pipe-step.ps-s1 .pipe-count,
+        .pipe-step.ps-s2 .pipe-count { color: #FF9500; }
+        .pipe-step.ps-s3 .pipe-count,
+        .pipe-step.ps-approved .pipe-count,
+        .pipe-step.ps-acknowledged .pipe-count { color: #34C759; }
+        .pipe-step.ps-rejected .pipe-count,
+        .pipe-step.ps-overdue .pipe-count { color: #FF3B30; }
 
         #voucher-filter-bar {
             position: sticky;
@@ -3061,61 +3003,48 @@
                 </div>
             </div>
             <div class="voucher-stats" id="voucher-stats">
-                <div class="stats-pipeline-header">
-                    <span class="stats-pipeline-title" id="stats-pipeline-title-text" data-i18n="approvalPipeline">Tiến độ phê duyệt</span>
-                    <span class="stats-pipeline-total" id="stat-total-summary">—</span>
-                </div>
-                <div class="pipeline-steps">
-                    <div class="pipe-step ps-pending" onclick="applyStatFilter('Pending')" title="Chờ duyệt (0/3)">
-                        <div class="pipe-dot">0</div>
+                <div class="pipeline-steps" role="group" aria-label="Lọc theo trạng thái">
+                    <div class="pipe-step ps-all active" onclick="applyStatFilter('')" title="Tất cả" role="button" tabindex="0">
+                        <div class="pipe-count" id="stat-total">0</div>
+                        <div class="pipe-label" data-i18n="statAll">Tất cả</div>
+                    </div>
+                    <div class="pipe-step ps-pending" onclick="applyStatFilter('Pending')" title="Chờ duyệt" role="button" tabindex="0">
                         <div class="pipe-count" id="stat-pending">0</div>
                         <div class="pipe-label" data-i18n="pipePending">Chờ duyệt</div>
-                        <div class="pipe-sub" data-i18n="pipeStep0">Bước 0</div>
                     </div>
-                    <div class="pipe-step ps-s1" onclick="applyStatFilter('InProgress1')" title="Đang duyệt 1/3 — Kế toán">
-                        <div class="pipe-dot">1</div>
+                    <div class="pipe-step ps-s1" onclick="applyStatFilter('InProgress1')" title="Đang duyệt 1/3 — Kế toán" role="button" tabindex="0">
                         <div class="pipe-count" id="stat-s1">0</div>
                         <div class="pipe-label" data-i18n="pipeStep1">Duyệt 1/3</div>
-                        <div class="pipe-sub" data-i18n="roleAccountant">Kế toán</div>
                     </div>
-                    <div class="pipe-step ps-s2" onclick="applyStatFilter('InProgress2')" title="Đang duyệt 2/3 — Pháp lý">
-                        <div class="pipe-dot">2</div>
+                    <div class="pipe-step ps-s2" onclick="applyStatFilter('InProgress2')" title="Đang duyệt 2/3 — Pháp lý" role="button" tabindex="0">
                         <div class="pipe-count" id="stat-s2">0</div>
                         <div class="pipe-label" data-i18n="pipeStep2">Duyệt 2/3</div>
-                        <div class="pipe-sub" data-i18n="roleLegal">Pháp lý</div>
                     </div>
-                    <div class="pipe-step ps-s3" onclick="applyStatFilter('InProgress3')" title="Đang duyệt 3/3 — Thủ quỹ">
-                        <div class="pipe-dot">3</div>
+                    <div class="pipe-step ps-s3" onclick="applyStatFilter('InProgress3')" title="Đã duyệt 3/3 — Thủ quỹ" role="button" tabindex="0">
                         <div class="pipe-count" id="stat-s3">0</div>
                         <div class="pipe-label" data-i18n="pipeStep3">Duyệt 3/3</div>
-                        <div class="pipe-sub" data-i18n="roleTreasurer">Thủ quỹ</div>
                     </div>
-                    <div class="pipe-step ps-approved" onclick="applyStatFilter('Approved')" title="Đã duyệt — chờ xác nhận">
-                        <div class="pipe-dot">✓</div>
+                    <div class="pipe-step ps-approved" onclick="applyStatFilter('Approved')" title="Đã duyệt — chờ xác nhận" role="button" tabindex="0">
                         <div class="pipe-count" id="stat-approved">0</div>
                         <div class="pipe-label" data-i18n="pipeApproved">Đã duyệt</div>
-                        <div class="pipe-sub" data-i18n="pipeAwaitAck">Chờ xác nhận</div>
                     </div>
-                    <div class="pipe-step ps-acknowledged" onclick="applyStatFilter('Acknowledged')" title="Đã xác nhận — hoàn tất">
-                        <div class="pipe-dot">✓✓</div>
+                    <div class="pipe-step ps-acknowledged" onclick="applyStatFilter('Acknowledged')" title="Đã xác nhận — hoàn tất" role="button" tabindex="0">
                         <div class="pipe-count" id="stat-acknowledged">0</div>
                         <div class="pipe-label" data-i18n="pipeAcknowledged">Đã xác nhận</div>
-                        <div class="pipe-sub" data-i18n="pipeDone">Hoàn tất</div>
+                    </div>
+                    <div class="pipe-step ps-rejected" onclick="applyStatFilter('Rejected')" title="Từ chối" role="button" tabindex="0">
+                        <div class="pipe-count" id="stat-rejected">0</div>
+                        <div class="pipe-label" data-i18n="pipeRejected">Từ chối</div>
+                    </div>
+                    <div class="pipe-step ps-overdue" id="stat-overdue-wrap" onclick="applyStatFilter('Overdue')" title="Quá hạn > 2 ngày" role="button" tabindex="0" style="display:none;">
+                        <div class="pipe-count" id="stat-overdue">0</div>
+                        <div class="pipe-label" data-i18n="pipeOverdue">Quá hạn</div>
                     </div>
                 </div>
-                <div class="pipe-bottom-row">
-                    <div class="pipe-bottom-item" onclick="applyStatFilter('Rejected')" title="Từ chối">
-                        <div class="pipe-bottom-dot" style="background:#f87171;"></div>
-                        <span class="pipe-bottom-count" id="stat-rejected">0</span>
-                        <span class="pipe-bottom-label" data-i18n="pipeRejected">Từ chối</span>
-                    </div>
-                    <div class="pipe-bottom-item" id="stat-overdue-wrap" onclick="applyStatFilter('Overdue')" title="Quá hạn > 2 ngày" style="display:none;">
-                        <span class="pipe-overdue-badge">⚠ <span id="stat-overdue">0</span> quá hạn</span>
-                    </div>
-                    <!-- hidden compat IDs -->
-                    <span id="stat-in-progress" style="display:none;">0</span>
-                    <span id="stat-awaiting-ack" style="display:none;">0</span>
-                </div>
+                <span id="stats-pipeline-title-text" hidden></span>
+                <span id="stat-total-summary" hidden></span>
+                <span id="stat-in-progress" hidden></span>
+                <span id="stat-awaiting-ack" hidden></span>
             </div>
             <!-- Voucher Filter Bar -->
             <div id="voucher-filter-bar" style="padding:0.625rem 1rem;background:var(--ios-gray-6);border-bottom:0.5px solid var(--ios-separator);">
@@ -5341,6 +5270,7 @@
             const total = stats.total;
             const active = stats.pending + stats.inProgress + stats.approved;
             const mappings = [
+                ['stat-total', stats.total],
                 ['stat-pending', stats.pending],
                 ['stat-s1', stats.s1],
                 ['stat-s2', stats.s2],
@@ -5364,11 +5294,28 @@
                     (stats.overdue > 0 ? ` · <span class="overdue-highlight">⚠ ${stats.overdue} quá hạn</span>` : '');
             }
             const overdueWrap = document.getElementById('stat-overdue-wrap');
-            if (overdueWrap) overdueWrap.style.display = stats.overdue > 0 ? 'inline-flex' : 'none';
+            if (overdueWrap) overdueWrap.style.display = stats.overdue > 0 ? '' : 'none';
 
             // Update nav notification badge
             const _pendingItems = _pendingVoucherItems(vouchers);
             updateNotifBadge(_pendingItems.length, _pendingItems);
+        }
+
+        function syncStatActive(statusValue) {
+            document.querySelectorAll('.pipeline-steps .pipe-step').forEach(el => el.classList.remove('active'));
+            const map = {
+                '': 'ps-all',
+                Pending: 'ps-pending',
+                InProgress1: 'ps-s1',
+                InProgress2: 'ps-s2',
+                InProgress3: 'ps-s3',
+                Approved: 'ps-approved',
+                Acknowledged: 'ps-acknowledged',
+                Rejected: 'ps-rejected',
+                Overdue: 'ps-overdue'
+            };
+            const cls = map[statusValue] || 'ps-all';
+            document.querySelector('.pipeline-steps .' + cls)?.classList.add('active');
         }
 
         function applyStatFilter(statusValue) {
@@ -5377,6 +5324,7 @@
             if (statusValue === 'Overdue') {
                 sel.value = '';
                 applyVoucherFilter();
+                syncStatActive('Overdue');
                 return;
             }
             sel.value = statusValue;
@@ -5861,6 +5809,7 @@
                     : `${allLoadedVouchers.length} phiếu`;
             }
             saveVoucherFilterState();
+            syncStatActive(status === 'Overdue' ? 'Overdue' : status);
         }
 
         function resetVoucherFilter() {
@@ -10587,6 +10536,8 @@
                 pipeAwaitAck: 'Awaiting confirmation',
                 pipeAcknowledged: 'Confirmed',
                 pipeDone: 'Completed',
+                statAll: 'All',
+                pipeOverdue: 'Overdue',
                 pipeRejected: 'Rejected',
                 filterAllStatus: 'All statuses',
                 filterPending: 'Pending',
@@ -10695,6 +10646,8 @@
                 pipeAwaitAck: 'Chờ xác nhận',
                 pipeAcknowledged: 'Đã xác nhận',
                 pipeDone: 'Hoàn tất',
+                statAll: 'Tất cả',
+                pipeOverdue: 'Quá hạn',
                 pipeRejected: 'Từ chối',
                 filterAllStatus: 'Tất cả TT',
                 filterPending: 'Chờ duyệt',
