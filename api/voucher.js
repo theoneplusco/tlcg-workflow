@@ -91,6 +91,14 @@ function readCacheKey(action, source) {
     if (action === 'getCompanyApprovers') {
         return 'getCompanyApprovers:' + field('companyName') + '|' + field('companyKey') + '|' + field('company');
     }
+    // getVoucherSummary: admins all see the same full list — share one 30-second
+    // cache entry across every admin so the second admin does not repeat the
+    // 4-7 s sheet scan that the first admin just did.
+    // Non-admin employees see only their own vouchers, so their key must include
+    // the caller email to keep their personal view isolated.
+    if (field('isAdmin') === 'true') {
+        return 'getVoucherSummary:admin|true';
+    }
     return 'getVoucherSummary:' + field('callerEmail') + '|' + field('userEmail') + '|' + field('email')
         + '|' + field('callerRole') + '|' + field('role') + '|' + field('isAdmin');
 }
