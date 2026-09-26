@@ -200,7 +200,7 @@ const VH_SHEET_NAME = 'Voucher_History';
 const VC_SHEET_NAME = 'Voucher_Current';   // one-row-per-voucher fast-read table
 // Set to true ONLY after backfillVoucherCurrent() has been run and counts verified.
 // While false, handleGetVoucherSummary reads from Voucher_History as usual.
-const USE_VOUCHER_CURRENT_ = false;
+const USE_VOUCHER_CURRENT_ = true; // backfill verified 2026-09-26, switched to fast path
 const EMPLOYEES_SHEET_NAME = 'Master Employee';
 const COMPANY_SHEET_NAME = 'Master Company';
 const VH_IMPORT_SHEET_NAME = 'VH_import';
