@@ -3842,9 +3842,11 @@ function handleGetVoucherSummaryFromCurrent_(requestBody) {
     const rows = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
     Logger.log('Voucher_Current rows: ' + rows.length);
 
-    function parseProgNum(progStr) {
-      const m = (progStr || '').toString().match(/^(\d)/);
-      return m ? parseInt(m[1]) : 0;
+    // Column M stores progress as integer 0-3 (NOT "N/3" — Sheets auto-converts
+    // fraction strings like "3/3" to dates).  Build the display string here.
+    function parseProgNum(val) {
+      const n = parseInt(val);
+      return (isNaN(n) || n < 0) ? 0 : Math.min(n, 3);
     }
 
     const vouchers = rows
@@ -3865,7 +3867,7 @@ function handleGetVoucherSummaryFromCurrent_(requestBody) {
           action:        r[9] || '',
           submittedAt:   r[10] || '',
           dueDate:       r[11] || '',
-          approvalProgress: r[12] || '0/3',
+          approvalProgress: progNum + '/3',   // build display string from stored integer
           progNum:       progNum,
           timestamp:     ts
         };
@@ -4697,18 +4699,19 @@ function upsertVoucherCurrent_(entry) {
       const vNum = (entry.voucherNumber || '').toString().trim();
       if (!vNum) return;
 
-      // Derive progress string from status
-      function progStr_(status) {
+      // Derive numeric progress from status (stored as integer 0-3, NOT "N/3"
+      // because Google Sheets auto-converts fraction strings to dates)
+      function progNum_(status) {
         const s = (status || '').toString();
-        if (s === 'Approved' || s === 'Đã duyệt' || s === 'Received' || s === 'Fully Approved') return '3/3';
+        if (s === 'Approved' || s === 'Đã duyệt' || s === 'Received' || s === 'Fully Approved') return 3;
         const m = s.match(/\((\d)\/3\)/);
-        if (m) return m[1] + '/3';
-        if (s === 'Partially Approved' || s === 'In Progress') return '1/3';
-        return '0/3';
+        if (m) return parseInt(m[1]);
+        if (s === 'Partially Approved' || s === 'In Progress') return 1;
+        return 0;
       }
 
       const now = new Date();
-      const prog = progStr_(entry.status);
+      const prog = progNum_(entry.status);
       const amount = parseFloat((entry.amount || '0').toString().replace(/\./g, '').replace(/,/g, '.')) || 0;
 
       // Find existing row for this voucher (column A)
@@ -4866,7 +4869,7 @@ function backfillVoucherCurrent() {
       vNum, v.voucherType, v.company, v.companyKey, v.employee,
       v.requestorEmail, v.submittedBy || v.employee || '',
       amount, v.status, v.action,
-      obj.submittedAt, v.dueDate, prog + '/3', v.timestamp
+      obj.submittedAt, v.dueDate, prog, v.timestamp   // prog stored as integer 0-3
     ]);
   });
 
