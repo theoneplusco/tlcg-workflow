@@ -4565,7 +4565,7 @@
                 params.append('currentPassword', currentPw);
                 params.append('newPassword', newPw);
 
-                const response = await fetch(INTRANET_BACKEND_URL, {
+                const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
                     method: 'POST',
                     mode: 'cors',
                     redirect: 'follow',

@@ -953,13 +953,15 @@ function handleResetPassword(requestBody) {
     if (emailCol === -1) emailCol = 4;
     const colK = 10;
     const colL = 11;
-    const mustChangeCol = headers.indexOf('mustChangePassword');
+    // Use same fallback as handleChangePassword — if no named column, write to column M (index 12)
+    let mustChangeCol = headers.indexOf('mustChangePassword');
+    if (mustChangeCol === -1) mustChangeCol = 12;
 
     for (let i = 1; i < data.length; i++) {
       if ((data[i][emailCol] || '').toString().trim().toLowerCase() === email) {
         sheet.getRange(i + 1, colL + 1).setValue(hashPassword(newPassword));
         sheet.getRange(i + 1, colK + 1).setValue('');
-        if (mustChangeCol >= 0) sheet.getRange(i + 1, mustChangeCol + 1).setValue(false);
+        sheet.getRange(i + 1, mustChangeCol + 1).setValue(false); // always clear the flag
         cache.remove('reset_token_' + email);
         Logger.log('Password reset successfully for: ' + email);
         return createResponse(true, 'Đặt lại mật khẩu thành công');
