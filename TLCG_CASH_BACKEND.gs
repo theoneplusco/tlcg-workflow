@@ -197,6 +197,10 @@ const TLCG_MASTER_DATA_SHEET_ID = getCfg_('MASTER_SPREADSHEET_ID', '1ujmPbtEdkGL
 const USERS_SHEET_ID = TLCG_MASTER_DATA_SHEET_ID; // Same spreadsheet
 const VOUCHER_HISTORY_SHEET_ID = TLCG_MASTER_DATA_SHEET_ID; // Same spreadsheet
 const VH_SHEET_NAME = 'Voucher_History';
+const VC_SHEET_NAME = 'Voucher_Current';   // one-row-per-voucher fast-read table
+// Set to true ONLY after backfillVoucherCurrent() has been run and counts verified.
+// While false, handleGetVoucherSummary reads from Voucher_History as usual.
+const USE_VOUCHER_CURRENT_ = false;
 const EMPLOYEES_SHEET_NAME = 'Master Employee';
 const COMPANY_SHEET_NAME = 'Master Company';
 const VH_IMPORT_SHEET_NAME = 'VH_import';
@@ -2893,6 +2897,8 @@ function _appendHistoryToSheet_(entry, sheet) {
     entry.signatureUrl || '',
     entry.rejectionReason || ''
   ]);
+  // Keep Voucher_Current in sync (non-fatal — errors are swallowed inside)
+  upsertVoucherCurrent_(entry);
 }
 
 /**
@@ -3797,7 +3803,179 @@ function handleGetCompanyApprovers(requestBody, directCompanyName) {
   }
 }
 
+/**
+ * Fast-path summary reader: reads Voucher_Current (one row per voucher)
+ * instead of scanning thousands of history rows.
+ * Only called when USE_VOUCHER_CURRENT_ === true.
+ * Returns the same JSON shape as handleGetVoucherSummary.
+ *
+ * Voucher_Current columns (0-based):
+ *   0 voucherNumber | 1 voucherType | 2 company   | 3 companyKey
+ *   4 employee      | 5 requestorEmail | 6 submittedBy | 7 amount
+ *   8 status        | 9 action      | 10 submittedAt | 11 dueDate
+ *  12 approvalProgress ("N/3")     | 13 lastUpdated
+ */
+function handleGetVoucherSummaryFromCurrent_(requestBody) {
+  try {
+    const callerEmail = ((requestBody && (requestBody.callerEmail || requestBody.userEmail || requestBody.email)) || '').toLowerCase().trim();
+    const callerRoleRaw = ((requestBody && (requestBody.callerRole || requestBody.role)) || '').toLowerCase().trim();
+    const isAdmin = (requestBody && requestBody.isAdmin) === 'true' || (requestBody && requestBody.isAdmin) === true;
+
+    function resolveRoleVC(r) {
+      if (r === 'accountant' || r.includes('kế toán') || r.includes('ke toan')) return 'accountant';
+      if (r === 'legalrep' || r.includes('đại diện') || r.includes('dai dien')) return 'legalRep';
+      if (r === 'treasurer' || r.includes('thủ quỹ') || r.includes('thu quy')) return 'treasurer';
+      if (r === 'manager' || r === 'admin') return 'admin';
+      return r || 'submitter';
+    }
+    const callerRole = resolveRoleVC(callerRoleRaw);
+
+    const ss = safeOpenSpreadsheet(VOUCHER_HISTORY_SHEET_ID, 'handleGetVoucherSummaryFromCurrent_');
+    const sheet = safeGetSheet(ss, VC_SHEET_NAME, 'handleGetVoucherSummaryFromCurrent_');
+    Logger.log('=== GET VOUCHER SUMMARY (fast-path Voucher_Current) ===');
+
+    const lastRow = sheet.getLastRow();
+    const emptyResp = { total:0, pending:0, approved:0, rejected:0, recent:[], callerApproverRole:'submitter',
+      globalStats: isAdmin ? {pending:0,s1:0,s2:0,s3:0,approved:0,acknowledged:0,rejected:0,overdue:0,total:0} : null };
+    if (lastRow < 2) return createResponse(true, 'Thành công', emptyResp);
+
+    const rows = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+    Logger.log('Voucher_Current rows: ' + rows.length);
+
+    function parseProgNum(progStr) {
+      const m = (progStr || '').toString().match(/^(\d)/);
+      return m ? parseInt(m[1]) : 0;
+    }
+
+    const vouchers = rows
+      .filter(function(r) { return r[0] && r[0].toString().trim(); })
+      .map(function(r) {
+        const progNum = parseProgNum(r[12]);
+        const ts = r[13] instanceof Date ? r[13] : new Date(r[13] || 0);
+        return {
+          voucherNumber: r[0].toString().trim(),
+          voucherType:   r[1] || '',
+          company:       r[2] || '',
+          companyKey:    r[3] || '',
+          employee:      r[4] || '',
+          requestorEmail:r[5] || '',
+          submittedBy:   r[6] || '',
+          amount:        r[7] || 0,
+          status:        r[8] || '',
+          action:        r[9] || '',
+          submittedAt:   r[10] || '',
+          dueDate:       r[11] || '',
+          approvalProgress: r[12] || '0/3',
+          progNum:       progNum,
+          timestamp:     ts
+        };
+      });
+
+    // Sort newest-first (by lastUpdated)
+    vouchers.sort(function(a, b) { return b.timestamp.getTime() - a.timestamp.getTime(); });
+
+    function shouldShowVC(v) {
+      if (!callerEmail) return true;
+      const isOwn = (v.requestorEmail || '').toLowerCase().trim() === callerEmail;
+      const isApprover = callerRole === 'accountant' || callerRole === 'legalRep' || callerRole === 'treasurer';
+      if (isAdmin) return true;
+      if (isApprover) {
+        const rs = (v.status || '').toLowerCase();
+        const isFull = v.progNum >= 3 || rs.includes('approved') || rs.includes('đã duyệt');
+        const isAck  = rs.includes('received') || rs.includes('xác nhận') || rs.includes('đã thu') || rs.includes('đã nhận');
+        if ((isFull || isAck) && !isOwn) return false;
+        return true;
+      }
+      return isOwn;
+    }
+
+    const visibleVouchers = vouchers.filter(shouldShowVC);
+    Logger.log('Visible: ' + visibleVouchers.length + ' of ' + vouchers.length);
+
+    const pending  = visibleVouchers.filter(function(v) {
+      const s = (v.status || '').toString();
+      return v.progNum === 0 && s !== 'Rejected' && s !== 'Đã từ chối';
+    }).length;
+    const approved = visibleVouchers.filter(function(v) {
+      const s = (v.status || '').toString();
+      return v.progNum >= 3 || s === 'Received';
+    }).length;
+    const rejected = visibleVouchers.filter(function(v) {
+      const s = (v.status || '').toString();
+      return s === 'Rejected' || s === 'Đã từ chối';
+    }).length;
+
+    const seqLabels = ['accountant', 'legalRep', 'treasurer'];
+    const recent = visibleVouchers.map(function(v) {
+      return {
+        voucherNumber: v.voucherNumber,
+        voucherType:   v.voucherType,
+        company:       v.company,
+        employee:      v.employee,
+        requestorEmail:v.requestorEmail,
+        amount:        v.amount,
+        status:        v.status,
+        action:        v.action,
+        timestamp:     v.timestamp.toISOString(),
+        timestampFormatted: formatTimestamp(v.timestamp),
+        meta: {
+          companyApprovers: {
+            approvalProgress: v.approvalProgress,
+            currentApprover:  v.progNum < 3 ? (seqLabels[v.progNum] || null) : null
+          }
+        }
+      };
+    });
+
+    let callerApproverRole = 'submitter';
+    if (callerEmail) {
+      if ((IMPORT_APPROVERS.accountant.email || '').toLowerCase() === callerEmail) callerApproverRole = 'accountant';
+      else if ((IMPORT_APPROVERS.legalRep.email || '').toLowerCase() === callerEmail) callerApproverRole = 'legalRep';
+      else if ((IMPORT_APPROVERS.treasurer.email || '').toLowerCase() === callerEmail) callerApproverRole = 'treasurer';
+    }
+
+    let globalStats = null;
+    if (isAdmin) {
+      const gs = { pending:0, s1:0, s2:0, s3:0, approved:0, acknowledged:0, rejected:0, overdue:0, total: vouchers.length };
+      const now = new Date();
+      vouchers.forEach(function(v) {
+        const rs = (v.status || '').toLowerCase();
+        const isRej = rs.includes('rejected') || rs.includes('từ chối') || rs.includes('đã từ chối');
+        const isAck = rs.includes('received') || rs.includes('xác nhận') || rs.includes('đã thu') || rs.includes('đã nhận');
+        const isFull = v.progNum >= 3 || rs.includes('approved') || rs.includes('đã duyệt');
+        if (isRej)  { gs.rejected += 1; return; }
+        if (isAck)  { gs.acknowledged += 1; return; }
+        if (isFull) { gs.approved += 1; gs.s3 += 1; return; }
+        if (v.progNum === 0)      gs.pending += 1;
+        else if (v.progNum === 1) gs.s1 += 1;
+        else if (v.progNum === 2) gs.s2 += 1;
+        else if (v.progNum === 3) gs.s3 += 1;
+        const ts = v.timestamp instanceof Date ? v.timestamp : new Date(v.timestamp);
+        if (!isNaN(ts.getTime()) && (now - ts) > 2 * 24 * 60 * 60 * 1000) gs.overdue += 1;
+      });
+      globalStats = gs;
+      Logger.log('globalStats: ' + JSON.stringify(globalStats));
+    }
+
+    return createResponse(true, 'Thành công', {
+      total:   visibleVouchers.length,
+      pending: pending,
+      approved:approved,
+      rejected:rejected,
+      recent:  recent,
+      callerApproverRole: callerApproverRole,
+      globalStats: globalStats
+    });
+  } catch (error) {
+    return createResponse(false, 'Lỗi: ' + error.message);
+  }
+}
+
 function handleGetVoucherSummary(requestBody) {
+  // Fast path: read from Voucher_Current (one row per voucher) instead of
+  // scanning thousands of history rows. Enabled after backfill is verified.
+  if (USE_VOUCHER_CURRENT_) return handleGetVoucherSummaryFromCurrent_(requestBody);
+
   try {
     Logger.log('=== GET VOUCHER SUMMARY ===');
     Logger.log('VOUCHER_HISTORY_SHEET_ID: ' + VOUCHER_HISTORY_SHEET_ID);
@@ -3975,7 +4153,7 @@ function handleGetVoucherSummary(requestBody) {
       if (!callerEmail) return true; // no-auth / dev fallback
       const isOwnVoucher = (v.requestorEmail || '').toLowerCase().trim() === callerEmail;
       const isApprover = callerRole === 'accountant' || callerRole === 'legalRep' || callerRole === 'treasurer';
-      if (isAdmin && !isApprover) return true; // admin with no approver role sees all
+      if (isAdmin) return true; // manager / system admin sees every voucher, including approved
       if (isApprover) {
         // Hide fully-approved (3/3) vouchers that belong to other submitters — no action needed
         const prog = progressMap.get(v.voucherNumber) || 0;
@@ -4185,6 +4363,9 @@ function handleCreateVoucherUploadSession_(body) {
       contentType: 'application/json',
       headers: {
         Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        // Binds the session so the browser at this origin can PUT the bytes
+        // straight to Drive. Without it, Drive hides the upload response.
+        Origin: 'https://workflow.tl-c.us',
         'X-Upload-Content-Type': mimeType,
         'X-Upload-Content-Length': String(Math.floor(size))
       },
@@ -4485,6 +4666,228 @@ function ensureVoucherHistoryHeaders_(sheet) {
   applyStandardHeaders_(sheet, VOUCHER_HISTORY_HEADERS_);
 }
 
+/**
+ * Upsert one voucher into Voucher_Current (one row per voucher).
+ * Called by appendHistory_ and _appendHistoryToSheet_ after every action.
+ * Errors are swallowed — the main history write must never be blocked.
+ *
+ * Columns (A–N):
+ *   A voucherNumber | B voucherType | C company | D companyKey
+ *   E employee      | F requestorEmail | G submittedBy | H amount
+ *   I status        | J action       | K submittedAt  | L dueDate
+ *   M approvalProgress (e.g. "2/3")  | N lastUpdated
+ */
+function upsertVoucherCurrent_(entry) {
+  try {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(8000);
+    try {
+      const ss = SpreadsheetApp.openById(VOUCHER_HISTORY_SHEET_ID);
+      let sheet = ss.getSheetByName(VC_SHEET_NAME);
+      if (!sheet) {
+        sheet = ss.insertSheet(VC_SHEET_NAME);
+        sheet.appendRow([
+          'voucherNumber','voucherType','company','companyKey',
+          'employee','requestorEmail','submittedBy','amount',
+          'status','action','submittedAt','dueDate','approvalProgress','lastUpdated'
+        ]);
+        Logger.log('✅ Created sheet: ' + VC_SHEET_NAME);
+      }
+
+      const vNum = (entry.voucherNumber || '').toString().trim();
+      if (!vNum) return;
+
+      // Derive progress string from status
+      function progStr_(status) {
+        const s = (status || '').toString();
+        if (s === 'Approved' || s === 'Đã duyệt' || s === 'Received' || s === 'Fully Approved') return '3/3';
+        const m = s.match(/\((\d)\/3\)/);
+        if (m) return m[1] + '/3';
+        if (s === 'Partially Approved' || s === 'In Progress') return '1/3';
+        return '0/3';
+      }
+
+      const now = new Date();
+      const prog = progStr_(entry.status);
+      const amount = parseFloat((entry.amount || '0').toString().replace(/\./g, '').replace(/,/g, '.')) || 0;
+
+      // Find existing row for this voucher (column A)
+      const foundCell = sheet.createTextFinder(vNum).matchEntireCell(true).findNext();
+      if (foundCell && foundCell.getColumn() === 1) {
+        // Update in-place; preserve the original submittedAt (column K = index 11)
+        const row = foundCell.getRow();
+        const originalSubmittedAt = sheet.getRange(row, 11).getValue();
+        sheet.getRange(row, 1, 1, 14).setValues([[
+          vNum,
+          entry.voucherType || '',
+          entry.company || '',
+          entry.companyKey || '',
+          entry.employee || '',
+          entry.requestorEmail || '',
+          entry.submittedBy || entry.employee || '',
+          amount,
+          entry.status || '',
+          entry.action || '',
+          originalSubmittedAt || now,
+          entry.dueDate || '',
+          prog,
+          now
+        ]]);
+      } else {
+        // New voucher — append row
+        sheet.appendRow([
+          vNum,
+          entry.voucherType || '',
+          entry.company || '',
+          entry.companyKey || '',
+          entry.employee || '',
+          entry.requestorEmail || '',
+          entry.submittedBy || entry.employee || '',
+          amount,
+          entry.status || '',
+          entry.action || '',
+          now,       // submittedAt
+          entry.dueDate || '',
+          prog,
+          now        // lastUpdated
+        ]);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    // Non-fatal — never break the main history write
+    Logger.log('⚠️ upsertVoucherCurrent_ non-fatal error: ' + e.toString());
+  }
+}
+
+/**
+ * One-time backfill: copy every voucher from Voucher_History into Voucher_Current.
+ * Run this once from the Apps Script editor → Run → backfillVoucherCurrent.
+ * After it completes, check counts in the Voucher_Current sheet, spot-check a
+ * few voucher numbers, then flip USE_VOUCHER_CURRENT_ to true and redeploy.
+ */
+function backfillVoucherCurrent() {
+  Logger.log('=== backfillVoucherCurrent START ===');
+  const ss = SpreadsheetApp.openById(VOUCHER_HISTORY_SHEET_ID);
+  const histSheet = ss.getSheetByName(VH_SHEET_NAME);
+  if (!histSheet) { Logger.log('ERROR: Voucher_History not found'); return; }
+
+  const lastRow = histSheet.getLastRow();
+  Logger.log('History rows (incl header): ' + lastRow);
+  if (lastRow < 2) { Logger.log('No data rows'); return; }
+
+  // Read all history at once (one-time operation, latency acceptable)
+  const data = histSheet.getRange(2, 1, lastRow - 1, 22).getValues();
+  Logger.log('Read ' + data.length + ' history rows');
+
+  // Build maps — same logic as handleGetVoucherSummary
+  const voucherMap = new Map();  // vNum -> { entry, submittedAt }
+  const progressMap = new Map(); // vNum -> highest numeric progress
+  const emailSetMap = new Map(); // vNum -> Set<approverKey>  (fallback for old data)
+
+  function bfProgFromStatus(status) {
+    const s = (status || '').toString();
+    if (s === 'Approved' || s === 'Đã duyệt' || s === 'Received' || s === 'Fully Approved') return 3;
+    const m = s.match(/\((\d)\/3\)/);
+    if (m) return parseInt(m[1]);
+    if (s === 'Partially Approved' || s === 'In Progress' || s.startsWith('Approved ')) return 1;
+    return 0;
+  }
+  function bfIsApprovalAction(action) {
+    const a = (action || '').toString();
+    return a.includes('Duyệt bởi') || a === 'Approved' || a.startsWith('Approved by');
+  }
+
+  data.forEach(function(row) {
+    const vNum = (row[0] || '').toString().trim();
+    if (!vNum) return;
+
+    const ts = row[7] instanceof Date ? row[7] : new Date(row[7] || 0);
+    const rowProg = bfProgFromStatus(row[9]);
+    if (rowProg > (progressMap.get(vNum) || -1)) progressMap.set(vNum, rowProg);
+
+    if (bfIsApprovalAction(row[11])) {
+      const approverEmail = (row[15] || '').toString().trim().toLowerCase();
+      const key = approverEmail || (row[11].toString().replace(/^Duyệt bởi\s*/i, '').trim()) || ('_row_' + vNum);
+      if (key) {
+        if (!emailSetMap.has(vNum)) emailSetMap.set(vNum, new Set());
+        emailSetMap.get(vNum).add(key);
+      }
+    }
+
+    const entry = {
+      voucherType: row[1] || '', company: row[2] || '', companyKey: row[3] || '',
+      employee: row[4] || '', requestorEmail: row[5] || '', submittedBy: row[6] || '',
+      amount: row[8] || 0, status: row[9] || '', dueDate: row[10] || '',
+      action: row[11] || '', timestamp: ts
+    };
+
+    if (!voucherMap.has(vNum)) {
+      voucherMap.set(vNum, { entry: entry, submittedAt: ts });
+    } else {
+      const cur = voucherMap.get(vNum);
+      // Keep the LATEST row as the current state
+      if (ts.getTime() > cur.entry.timestamp.getTime()) cur.entry = entry;
+      // Keep the EARLIEST timestamp as submittedAt
+      if (ts.getTime() < cur.submittedAt.getTime()) cur.submittedAt = ts;
+    }
+  });
+
+  Logger.log('Unique vouchers found: ' + voucherMap.size);
+
+  // Get or create Voucher_Current, clear it for a clean backfill
+  let vcSheet = ss.getSheetByName(VC_SHEET_NAME);
+  if (!vcSheet) {
+    vcSheet = ss.insertSheet(VC_SHEET_NAME);
+    Logger.log('Created ' + VC_SHEET_NAME + ' sheet');
+  } else {
+    vcSheet.clearContents();
+    Logger.log('Cleared existing ' + VC_SHEET_NAME + ' sheet');
+  }
+  vcSheet.appendRow([
+    'voucherNumber','voucherType','company','companyKey',
+    'employee','requestorEmail','submittedBy','amount',
+    'status','action','submittedAt','dueDate','approvalProgress','lastUpdated'
+  ]);
+
+  // Build output rows
+  const outRows = [];
+  voucherMap.forEach(function(obj, vNum) {
+    const v = obj.entry;
+    const sp = progressMap.get(vNum) || 0;
+    const ap = Math.min((emailSetMap.get(vNum) || new Set()).size, 3);
+    let prog = sp > 0 ? sp : ap;
+    const s = (v.status || '').toString();
+    if (s === 'Approved' || s === 'Đã duyệt' || s === 'Fully Approved' || s === 'Received') prog = 3;
+    const amount = typeof v.amount === 'number' ? v.amount
+      : parseFloat((v.amount || '0').toString().replace(/\./g, '').replace(/,/g, '.')) || 0;
+    outRows.push([
+      vNum, v.voucherType, v.company, v.companyKey, v.employee,
+      v.requestorEmail, v.submittedBy || v.employee || '',
+      amount, v.status, v.action,
+      obj.submittedAt, v.dueDate, prog + '/3', v.timestamp
+    ]);
+  });
+
+  // Write in batches of 500
+  const BATCH = 500;
+  for (let i = 0; i < outRows.length; i += BATCH) {
+    const slice = outRows.slice(i, i + BATCH);
+    vcSheet.getRange(vcSheet.getLastRow() + 1, 1, slice.length, 14).setValues(slice);
+    Logger.log('Written rows ' + (i + 1) + '–' + Math.min(i + BATCH, outRows.length));
+  }
+
+  Logger.log('=== backfillVoucherCurrent DONE ===');
+  Logger.log('History rows processed: ' + data.length);
+  Logger.log('Unique vouchers written: ' + outRows.length);
+  Logger.log('NEXT STEPS:');
+  Logger.log('  1. Open the Voucher_Current sheet and confirm row count = ' + outRows.length);
+  Logger.log('  2. Spot-check 3-5 voucher numbers against Voucher_History');
+  Logger.log('  3. Change USE_VOUCHER_CURRENT_ = true in constants section');
+  Logger.log('  4. Deploy > New deployment (or Manage deployments > Update)');
+}
+
 function appendHistory_(entry) {
   try {
     Logger.log('📝 Attempting to append history for voucher: ' + entry.voucherNumber);
@@ -4535,6 +4938,9 @@ function appendHistory_(entry) {
     Logger.log('   - Action: ' + entry.action);
     Logger.log('   - Status: ' + entry.status);
     Logger.log('   - By: ' + entry.by);
+
+    // Keep Voucher_Current in sync (non-fatal — errors are swallowed inside)
+    upsertVoucherCurrent_(entry);
     
     return true;
   } catch (error) {
