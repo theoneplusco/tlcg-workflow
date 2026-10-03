@@ -1661,7 +1661,7 @@
             <!-- Search -->
             <div class="pr-search-bar">
                 <input type="search" id="pr-search" placeholder="Tìm số phiếu, công ty, người đề nghị..." data-i18n-placeholder="phPrSearch"
-                       autocomplete="off" oninput="renderPRList()" aria-label="Tìm kiếm đề nghị" data-i18n-aria="searchPr">
+                       autocomplete="off" oninput="onPRSearchInput()" aria-label="Tìm kiếm đề nghị" data-i18n-aria="searchPr">
             </div>
 
             <!-- List -->
@@ -2401,6 +2401,15 @@
         document.getElementById('req-no-pill').textContent    = _prNo;
         document.getElementById('req-no-row').style.display   = '';
         document.getElementById('request_id').value           = _prNo;
+    }
+
+    function _rememberIssuedPRNo(prNo) {
+        const match = String(prNo || '').match(/^(.*)-PR(\d{8})(\d+)$/);
+        if (!match) return;
+        const key = `vc_${match[1]}_PR_${match[2]}`;
+        const issued = parseInt(match[3], 10);
+        const current = parseInt(localStorage.getItem(key) || '0', 10);
+        if (issued > current) localStorage.setItem(key, String(issued));
     }
 
     /* ── Section items ───────────────────────────────────────────── */
@@ -3335,7 +3344,8 @@
                 btn.disabled = false;
                 btn.innerHTML = orig;
 
-                const displayPrNo = resubmitPrNo || _prNo;
+                const displayPrNo = result.prNo || resubmitPrNo || _prNo;
+                _rememberIssuedPRNo(displayPrNo);
                 // Keep what they typed. A new number is issued so the next send is a new request.
                 // Hiding the form here left the page blank/locked, so the next request could not be filled.
                 document.querySelectorAll('.form-step, .progress-stepper, h1').forEach(el => { el.style.display = ''; });
@@ -4147,12 +4157,17 @@
        RECENT PURCHASE REQUESTS
        ══════════════════════════════════════════════════════════════ */
     let _allPRs           = [];
+    let _archivePRs       = [];
+    let _prDetail         = null;
+    let _prSearchTimer    = null;
     let _prFilter         = '';   // '' | 'Pending' | 'Approved' | 'Rejected'
     let _myPRTaskFilter   = false;
     let _currentPRDrawer  = null; // prNo of currently open drawer
+    let _currentPRSubmittedAt = '';
     let _pendingRejectPrNo = null;
-    const _PR_CACHE_KEY    = 'tlcg_pr_list_cache';
-    const _PR_CACHE_TS_KEY = 'tlcg_pr_list_cache_ts';
+    let _pendingRejectSubmittedAt = '';
+    const _PR_CACHE_KEY    = 'tlcg_pr_list_cache_v2';
+    const _PR_CACHE_TS_KEY = 'tlcg_pr_list_cache_v2_ts';
     const _PR_CACHE_TTL    = 5 * 60 * 1000; // 5 min
 
     /** Returns one of: 'pending' | 'in-progress' | 'approved' | 'rejected' | 'other' */
@@ -4236,12 +4251,42 @@
         renderPRList();
     }
 
+    function onPRSearchInput() {
+        const q = (document.getElementById('pr-search')?.value || '').trim();
+        if (q.length < 2) _archivePRs = [];
+        renderPRList();
+        clearTimeout(_prSearchTimer);
+        if (q.length < 2) return;
+        _prSearchTimer = setTimeout(function() { _searchArchivePRs(q); }, 350);
+    }
+
+    async function _searchArchivePRs(q) {
+        try {
+            const params = new URLSearchParams({ action: 'searchPurchaseRequests', q: q });
+            const res = await fetch(BACKEND_URL, {
+                method: 'POST', mode: 'cors', redirect: 'follow',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            const result = JSON.parse(await res.text());
+            const current = (document.getElementById('pr-search')?.value || '').trim();
+            if (current.toLowerCase() !== String(q).toLowerCase()) return;
+            _archivePRs = result.requests || result.data?.requests || [];
+            renderPRList();
+        } catch (e) { /* the working list stays visible */ }
+    }
+
     function renderPRList() {
         const container = document.getElementById('pr-list');
         if (!container) return;
         const query = (document.getElementById('pr-search')?.value || '').trim().toLowerCase();
+        const pool = query ? _allPRs.concat(_archivePRs) : _allPRs;
+        const seen = {};
 
-        let filtered = _allPRs.filter(pr => {
+        let filtered = pool.filter(pr => {
+            const key = (pr.prNo || '') + '|' + String(pr.submittedAt || '');
+            if (seen[key]) return false;
+            seen[key] = true;
             if (_prFilter && _prStatusBucket(pr.status) !== _prFilter) return false;
             if (query) {
                 const haystack = [pr.prNo, pr.company, pr.requesterName, pr.purpose, pr.suggestedVendor].join(' ').toLowerCase();
@@ -4266,17 +4311,19 @@
             const sc      = _prStatusClass(pr.status);
             const ico     = _prStatusIcon(pr.status);
             const safeNo  = _escAttrPR(pr.prNo || '');
-            const isActive = _currentPRDrawer === pr.prNo ? ' pr-item-active' : '';
+            const isActive = _currentPRDrawer === pr.prNo && String(_currentPRSubmittedAt || '') === String(pr.submittedAt || '') ? ' pr-item-active' : '';
             // Show paperclip if the PR has uploaded Drive attachments in its metadata
-            let hasAttachments = false;
-            try {
-                const m = JSON.parse(pr.metadata || '{}');
-                hasAttachments = Array.isArray(m.attachments) && m.attachments.some(a => a && a.fileUrl);
-            } catch (_) {}
+            let hasAttachments = pr.hasAttachments === true;
+            if (!hasAttachments && pr.metadata) {
+                try {
+                    const m = JSON.parse(pr.metadata || '{}');
+                    hasAttachments = Array.isArray(m.attachments) && m.attachments.some(a => a && a.fileUrl);
+                } catch (_) {}
+            }
             const attachIcon = hasAttachments
                 ? ' <i class="fas fa-paperclip" aria-hidden="true" title="Có tệp đính kèm" style="font-size:10px;opacity:0.6;margin-left:4px;"></i>'
                 : '';
-            return `<div class="pr-item${isActive}" role="listitem" data-prno="${safeNo}" onclick="openPRDrawer('${safeNo.replace(/'/g, "\\'")}')">
+            return `<div class="pr-item${isActive}" role="listitem" data-prno="${safeNo}" data-submitted="${_escAttrPR(pr.submittedAt || '')}" onclick="openPRDrawer('${safeNo.replace(/'/g, "\\'")}', '${String(pr.submittedAt || '').replace(/'/g, '')}')">
                 <div class="pr-item-icon icon-${sc}">
                     <i class="fas ${ico}" aria-hidden="true"></i>
                 </div>
@@ -4306,6 +4353,20 @@
         _updateNotifBadge(_pendingItems.length, _pendingItems);
     }
 
+    function _prStageMeta(pr) {
+        if (pr && (pr.activeStage || pr.budgetStatus || pr.supplierStatus || pr.requesterEmail)) {
+            return {
+                budgetStatus: pr.budgetStatus || '',
+                supplierStatus: pr.supplierStatus || '',
+                contractStatus: pr.contractStatus || '',
+                purchasingStatus: pr.purchasingStatus || '',
+                requesterEmail: pr.requesterEmail || pr.requestorEmail || '',
+                activeStage: pr.activeStage || ''
+            };
+        }
+        try { return JSON.parse((pr && pr.metadata) || '{}'); } catch (e) { return {}; }
+    }
+
     function _pendingPRItems(list) {
         let email = '';
         try { email = (JSON.parse(localStorage.getItem('tlc_current_user')||'{}').email||'').toLowerCase(); } catch(e){}
@@ -4314,16 +4375,15 @@
             const s = (pr.status||'').toLowerCase();
             const isTerminal = s==='hoàn thành'||s==='approved'||s==='đã từ chối'||s==='rejected';
             if (isTerminal) return false;
+            const meta = _prStageMeta(pr);
             if (s === 'trả lại bổ sung') {
-                return (pr.requestorEmail||'').toLowerCase() === email;
+                return (pr.requestorEmail || pr.requesterEmail || meta.requesterEmail || '').toLowerCase() === email;
             }
-            let meta = {};
-            try { meta = typeof pr.metadata==='string' ? JSON.parse(pr.metadata) : (pr.metadata||{}); } catch(e){}
-            const b   = (pr.budgetApproverEmail  ||meta.budgetApproverEmail  ||'').toLowerCase();
-            const sup = (pr.supplierApproverEmail||meta.supplierApproverEmail||'').toLowerCase();
-            const con = (pr.contractApproverEmail||meta.contractApproverEmail||'').toLowerCase();
-            const pur = (pr.purchasingApproverEmail||meta.purchasingApproverEmail||'').toLowerCase();
-            const stage = meta.activeStage || meta.stage || '';
+            const b   = (pr.budgetApproverEmail || pr.budgetApprover || meta.budgetApproverEmail || '').toLowerCase();
+            const sup = (pr.supplierApproverEmail || pr.supplierApprover || meta.supplierApproverEmail || '').toLowerCase();
+            const con = (pr.contractApproverEmail || pr.contractApprover || meta.contractApproverEmail || '').toLowerCase();
+            const pur = (pr.purchasingApproverEmail || pr.purchasingApprover || meta.purchasingApproverEmail || '').toLowerCase();
+            const stage = pr.activeStage || _computePRStage(pr, meta).stage;
             if (stage === 'parallel') {
                 if (email===b   && meta.budgetStatus  !=='Approved') return true;
                 if (email===sup && meta.supplierStatus!=='Approved') return true;
@@ -4356,7 +4416,7 @@
             const tag  = s === 'trả lại bổ sung'
                 ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;margin-left:4px;">Trả lại</span>'
                 : '';
-            return `<div class="pr-notif-item" onclick="_toggleNotifDropdown();openPRDrawer('${no}')">
+            return `<div class="pr-notif-item" onclick="_toggleNotifDropdown();openPRDrawer('${no}', '${String(pr.submittedAt || '').replace(/'/g, '')}')">
                 <div style="font-size:12px;font-weight:700;color:#1d4ed8;">${pr.prNo || '—'}${tag}</div>
                 <div style="font-size:11px;color:#475569;margin-top:1px;">${comp}</div>
             </div>`;
@@ -4395,6 +4455,10 @@
         _showPRSkeletons(6);
         try {
             // Stale-while-revalidate from localStorage
+            try {
+                localStorage.removeItem('tlcg_pr_list_cache');
+                localStorage.removeItem('tlcg_pr_list_cache_ts');
+            } catch (e) {}
             if (!forceRefresh) {
                 const cached = localStorage.getItem(_PR_CACHE_KEY);
                 const ts     = localStorage.getItem(_PR_CACHE_TS_KEY);
@@ -4463,7 +4527,7 @@
 
         const budgetDone    = !budgetEmail    || meta.budgetStatus    === 'Approved';
         const supplierDone  = !supplierEmail  || meta.supplierStatus  === 'Approved';
-        const contractDone  = !contractEmail  || meta.contractStatus  === 'Approved';
+        const contractDone  = !contractEmail  || meta.contractStatus === 'Approved' || meta.contractStatus === 'N/A';
         const purchasingDone= !purchasingEmail|| meta.purchasingStatus=== 'Approved';
         const parallelDone  = budgetDone && supplierDone;
 
@@ -4483,16 +4547,20 @@
         const status = (pr.status || '').toLowerCase();
         if (status === 'rejected' || status === 'approved' || status === 'đã từ chối' || status === 'hoàn thành') return false;
 
-        let meta = {};
-        try { meta = JSON.parse(pr.metadata || '{}'); } catch(e) {}
+        const meta = _prStageMeta(pr);
 
         // Returned to submitter — the submitter is the task owner
         if (status === 'trả lại bổ sung') {
-            const requesterEmail = (meta.requesterEmail || '').toLowerCase().trim();
+            const requesterEmail = (pr.requesterEmail || pr.requestorEmail || meta.requesterEmail || '').toLowerCase().trim();
             return requesterEmail && email === requesterEmail;
         }
 
-        const { stage, budgetEmail, supplierEmail, contractEmail, purchasingEmail } = _computePRStage(pr, meta);
+        const computed = _computePRStage(pr, meta);
+        const stage = pr.activeStage || computed.stage;
+        const budgetEmail = computed.budgetEmail;
+        const supplierEmail = computed.supplierEmail;
+        const contractEmail = computed.contractEmail;
+        const purchasingEmail = computed.purchasingEmail;
 
         if (stage === 'parallel') {
             if (email === budgetEmail   && meta.budgetStatus   !== 'Approved') return true;
@@ -4518,17 +4586,50 @@
     }
 
     /* ── Open / Close Drawer ────────────────────────────────────── */
-    async function openPRDrawer(prNo) {
-        const pr = _allPRs.find(p => p.prNo === prNo);
-        if (!pr) return;
+    async function _fetchPRDetail(prNo, submittedAt) {
+        try {
+            const params = new URLSearchParams({
+                action: 'getPurchaseRequest',
+                prNo: prNo || '',
+                submittedAt: submittedAt || ''
+            });
+            const res = await fetch(BACKEND_URL, {
+                method: 'POST', mode: 'cors', redirect: 'follow',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+            const result = JSON.parse(await res.text());
+            return result.request || result.data?.request || null;
+        } catch (e) { return null; }
+    }
+
+    async function openPRDrawer(prNo, submittedAt) {
+        const card = (submittedAt
+            ? _allPRs.concat(_archivePRs).find(p => p.prNo === prNo && String(p.submittedAt) === String(submittedAt))
+            : null) || _allPRs.concat(_archivePRs).find(p => p.prNo === prNo);
+        if (!card && !prNo) return;
         _currentPRDrawer = prNo;
+        _currentPRSubmittedAt = (card && card.submittedAt) || submittedAt || '';
         document.querySelectorAll('.pr-item').forEach(el => el.classList.remove('pr-item-active'));
-        const row = document.querySelector(`.pr-item[data-prno="${_escAttrPR(prNo)}"]`);
+        const row = document.querySelector(`.pr-item[data-prno="${_escAttrPR(prNo)}"][data-submitted="${_escAttrPR(_currentPRSubmittedAt)}"]`);
         if (row) row.classList.add('pr-item-active');
         document.getElementById('pr-drawer-title').textContent = prNo;
         document.getElementById('pr-drawer-overlay').classList.add('open');
         document.getElementById('pr-drawer').classList.add('open');
-        const history = await _fetchPRHistory(prNo);
+        const body = document.getElementById('pr-drawer-body');
+        if (body) body.innerHTML = '<div class="pr-empty"><span>Đang tải phiếu...</span></div>';
+        const detailAt = _currentPRSubmittedAt;
+        const [full, history] = await Promise.all([
+            _fetchPRDetail(prNo, detailAt),
+            _fetchPRHistory(prNo)
+        ]);
+        if (_currentPRDrawer !== prNo) return;
+        const pr = (full && (full.items || full.metadata)) ? full : ((card && card.items) ? card : (full || card));
+        if (!pr) {
+            if (body) body.innerHTML = '<div class="pr-empty"><span>Không tải được phiếu này.</span></div>';
+            return;
+        }
+        _prDetail = pr;
         renderPRDrawer(pr, history);
     }
 
@@ -4863,13 +4964,13 @@
                            onchange="handlePRApproverSigUpload(event)">
                 </label>
             </div>
-            <button class="pr-action-btn pr-btn-approve" onclick="approvePR('${safePrNo}', '${approveRole}')">
+            <button class="pr-action-btn pr-btn-approve" onclick="approvePR('${safePrNo}', '${approveRole}', '${String(pr.submittedAt || '').replace(/'/g, '')}')">
                 <i class="fas fa-check" aria-hidden="true"></i> Duyệt
             </button>
-            <button class="pr-action-btn pr-btn-reject" onclick="openPRRejectModal('${safePrNo}')">
+            <button class="pr-action-btn pr-btn-reject" onclick="openPRRejectModal('${safePrNo}', '${String(pr.submittedAt || '').replace(/'/g, '')}')">
                 <i class="fas fa-xmark" aria-hidden="true"></i> Từ chối
             </button>
-            <button class="pr-btn-sendback" onclick="openPRSendBackModal('${safePrNo}', '${approveRole}')">
+            <button class="pr-btn-sendback" onclick="openPRSendBackModal('${safePrNo}', '${approveRole}', '${String(pr.submittedAt || '').replace(/'/g, '')}')">
                 <i class="fas fa-rotate-left" aria-hidden="true"></i> Trả lại
             </button>`;
         }
@@ -4879,8 +4980,9 @@
     }
 
     /* ── Approve PR ─────────────────────────────────────────────── */
-    async function approvePR(prNo, role) {
-        const pr = _allPRs.find(p => p.prNo === prNo);
+    async function approvePR(prNo, role, submittedAt) {
+        const pr = _allPRs.find(p => p.prNo === prNo && (!submittedAt || String(p.submittedAt) === String(submittedAt)))
+            || _allPRs.find(p => p.prNo === prNo);
         if (!pr) return;
         let currentUser = {};
         try { currentUser = JSON.parse(localStorage.getItem('tlc_current_user') || '{}'); } catch(e) {}
@@ -4922,7 +5024,7 @@
         try {
             const params = new URLSearchParams({
                 action: 'approvePurchaseRequest',
-                prNo, approverEmail: myEmail, approverRole: role, note: '',
+                prNo, submittedAt: submittedAt || pr.submittedAt || '', approverEmail: myEmail, approverRole: role, note: '',
                 approverSignature: _prApproverSigData,
                 signatureVerification: JSON.stringify(verificationResult)
             });
@@ -4936,10 +5038,7 @@
                 showToast('✅ Đã duyệt thành công!', 'success');
                 const metaKey = role + 'Status';
                 _patchLocalPR(prNo, result.data?.status, { [metaKey]: 'Approved' });
-                renderPRList();
-                _updatePRStats(_allPRs);
-                const updatedPr = _allPRs.find(p => p.prNo === prNo);
-                if (updatedPr) renderPRDrawer(updatedPr);
+                _redrawOpenPR(prNo);
             } else {
                 showToast(result.message || 'Lỗi khi duyệt.', 'error');
             }
@@ -4949,8 +5048,9 @@
     }
 
     /* ── Reject PR ──────────────────────────────────────────────── */
-    function openPRRejectModal(prNo) {
+    function openPRRejectModal(prNo, submittedAt) {
         _pendingRejectPrNo = prNo;
+        _pendingRejectSubmittedAt = submittedAt || '';
         document.getElementById('pr-reject-note').value = '';
         document.getElementById('pr-reject-overlay').classList.add('open');
         setTimeout(() => document.getElementById('pr-reject-note').focus(), 50);
@@ -4974,7 +5074,13 @@
         btn.disabled = true; btn.textContent = 'Đang xử lý...';
 
         try {
-            const params = new URLSearchParams({ action: 'rejectPurchaseRequest', prNo, approverEmail: myEmail, note });
+            const params = new URLSearchParams({
+                action: 'rejectPurchaseRequest',
+                prNo,
+                submittedAt: _pendingRejectSubmittedAt || '',
+                approverEmail: myEmail,
+                note
+            });
             const res    = await fetch(BACKEND_URL, {
                 method: 'POST', mode: 'cors', redirect: 'follow',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -4984,11 +5090,8 @@
             closePRRejectModal();
             if (result.success) {
                 showToast('Đã từ chối đề nghị.', 'info');
-                _patchLocalPR(prNo, 'Rejected', { rejectedBy: myEmail, rejectionNote: note });
-                renderPRList();
-                _updatePRStats(_allPRs);
-                const updatedPr = _allPRs.find(p => p.prNo === prNo);
-                if (updatedPr) renderPRDrawer(updatedPr);
+                _patchLocalPR(prNo, 'Đã từ chối', { rejectedBy: myEmail, rejectionNote: note });
+                _redrawOpenPR(prNo);
             } else {
                 showToast(result.message || 'Lỗi khi từ chối.', 'error');
             }
@@ -5002,10 +5105,12 @@
     /* ── Send Back PR ───────────────────────────────────────────── */
     let _pendingSendBackPrNo   = null;
     let _pendingSendBackRole   = null;
+    let _pendingSendBackSubmittedAt = '';
 
-    function openPRSendBackModal(prNo, role) {
+    function openPRSendBackModal(prNo, role, submittedAt) {
         _pendingSendBackPrNo  = prNo;
         _pendingSendBackRole  = role;
+        _pendingSendBackSubmittedAt = submittedAt || '';
 
         // Build target options based on role
         const roleMaxTarget = { budget: 1, supplier: 1, contract: 2, purchasing: 3 };
@@ -5055,7 +5160,7 @@
         try {
             const params = new URLSearchParams({
                 action: 'sendBackPurchaseRequest',
-                prNo, approverEmail: myEmail, approverRole: role,
+                prNo, submittedAt: _pendingSendBackSubmittedAt || '', approverEmail: myEmail, approverRole: role,
                 targetStep, sentBackNote: note
             });
             const res    = await fetch(BACKEND_URL, {
@@ -5073,21 +5178,12 @@
                 if (targetStep <= 3) { metaPatch.contractStatus = 'Pending'; }
                 metaPatch.purchasingStatus = 'Pending';
                 // Append history entry locally
-                const idx = _allPRs.findIndex(p => p.prNo === prNo);
-                if (idx >= 0) {
-                    let meta = {};
-                    try { meta = JSON.parse(_allPRs[idx].metadata || '{}'); } catch(e) {}
-                    if (!Array.isArray(meta.sentBackHistory)) meta.sentBackHistory = [];
-                    meta.sentBackHistory.push({ targetStep, by: myEmail, byRole: role, at: new Date().toISOString(), note });
-                    Object.assign(meta, metaPatch);
-                    _allPRs[idx].metadata = JSON.stringify(meta);
-                    _allPRs[idx].status   = result.data?.status || (targetStep === 1 ? 'Trả lại bổ sung' : _allPRs[idx].status);
-                    localStorage.setItem(_PR_CACHE_KEY, JSON.stringify(_allPRs));
-                }
-                renderPRList();
-                _updatePRStats(_allPRs);
-                const updatedPr = _allPRs.find(p => p.prNo === prNo);
-                if (updatedPr) renderPRDrawer(updatedPr);
+                _patchLocalPR(
+                    prNo,
+                    result.data?.status || (targetStep === 1 ? 'Trả lại bổ sung' : ''),
+                    metaPatch
+                );
+                _redrawOpenPR(prNo);
             } else {
                 showToast(result.message || 'Lỗi khi trả lại.', 'error');
             }
@@ -5105,8 +5201,10 @@
      * all fields from the returned PR so the requester can amend and re-send.
      * submitForm() detects the resubmit-pr-no hidden field and changes action+prNo.
      */
-    function openResubmitForm(prNo) {
-        const pr = _allPRs.find(p => p.prNo === prNo);
+    async function openResubmitForm(prNo) {
+        let pr = (_prDetail && _prDetail.prNo === prNo && _prDetail.items) ? _prDetail : null;
+        if (!pr) pr = await _fetchPRDetail(prNo, _currentPRSubmittedAt);
+        if (!pr || !pr.items) pr = _allPRs.find(p => p.prNo === prNo && p.items) || null;
         if (!pr) { showToast('Không tìm thấy phiếu.', 'error'); return; }
 
         let meta = {};
@@ -5252,22 +5350,46 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function _patchLocalPR(prNo, newStatus, metaPatch) {
-        const idx = _allPRs.findIndex(p => p.prNo === prNo);
-        if (idx < 0) return;
-        if (newStatus) _allPRs[idx].status = newStatus;
+    function _applyPRPatch(target, newStatus, metaPatch) {
+        if (!target) return;
+        if (newStatus) target.status = newStatus;
         if (metaPatch) {
-            let meta = {};
-            try { meta = JSON.parse(_allPRs[idx].metadata || '{}'); } catch(e) {}
-            Object.assign(meta, metaPatch);
-            _allPRs[idx].metadata = JSON.stringify(meta);
+            Object.keys(metaPatch).forEach(function(key) { target[key] = metaPatch[key]; });
+            if (target.metadata) {
+                let meta = {};
+                try { meta = JSON.parse(target.metadata || '{}'); } catch (e) {}
+                Object.assign(meta, metaPatch);
+                target.metadata = JSON.stringify(meta);
+            }
         }
-        localStorage.setItem(_PR_CACHE_KEY, JSON.stringify(_allPRs));
+        const meta = _prStageMeta(target);
+        target.activeStage = _computePRStage(target, meta).stage;
+    }
+
+    async function _redrawOpenPR(prNo) {
+        renderPRList();
+        _updatePRStats(_allPRs);
+        if (!_prDetail || _prDetail.prNo !== prNo || _currentPRDrawer !== prNo) return;
+        const history = await _fetchPRHistory(prNo);
+        if (_currentPRDrawer !== prNo) return;
+        renderPRDrawer(_prDetail, history);
+    }
+
+    function _patchLocalPR(prNo, newStatus, metaPatch) {
+        const idx = _allPRs.findIndex(p => p.prNo === prNo && (!_currentPRSubmittedAt || String(p.submittedAt) === String(_currentPRSubmittedAt)));
+        if (idx >= 0) _applyPRPatch(_allPRs[idx], newStatus, metaPatch);
+        if (_prDetail && _prDetail.prNo === prNo) _applyPRPatch(_prDetail, newStatus, metaPatch);
+        try {
+            localStorage.setItem(_PR_CACHE_KEY, JSON.stringify(_allPRs));
+            localStorage.setItem(_PR_CACHE_TS_KEY, String(Date.now()));
+        } catch (e) {}
     }
 
     /* ── Print PR ───────────────────────────────────────────────── */
-    function printPR(prNo) {
-        const pr = _allPRs.find(p => p.prNo === prNo);
+    async function printPR(prNo) {
+        let pr = (_prDetail && _prDetail.prNo === prNo && _prDetail.items) ? _prDetail : null;
+        if (!pr) pr = await _fetchPRDetail(prNo, _currentPRSubmittedAt);
+        if (!pr || !pr.items) pr = _allPRs.find(p => p.prNo === prNo && p.items) || null;
         if (!pr) { showToast('Không tìm thấy phiếu.', 'error'); return; }
 
         let meta = {};

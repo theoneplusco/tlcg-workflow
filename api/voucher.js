@@ -285,7 +285,10 @@ export default async function handler(req, res) {
   const paymentRequestActions = [
     // ── Purchase Request (Đề nghị mua hàng) ──
     'purchaseRequest',             // Submit purchase request form
-    'getPurchaseRequestHistory',   // List purchase requests
+    'getPurchaseRequestHistory',   // Slim list of open and recent purchase requests
+    'getPurchaseRequest',          // One purchase, including items and metadata
+    'searchPurchaseRequests',      // Find a purchase on the working sheet or the archive
+    'getP2PHistory',               // Drawer history (PR reads PR_Audit_Log)
     // ── Payment Request (Đề nghị thanh toán) ──
     'sendPaymentRequest',
     'submitPaymentRequest',        // Alias for sendPaymentRequest

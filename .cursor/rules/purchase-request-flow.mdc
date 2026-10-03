@@ -1,12 +1,31 @@
 ---
-description: Purchase request flow (Đề Nghị Mua Hàng) — validation, catalog, numbering, payloads, Apps Script coupling
-globs: "**/purchase_request.html,**/TLCG_P2P_BACKEND.gs,**/TLCG_CORE_BACKEND.gs,**/tlcg_companies_embed.js"
+description: Live purchase request flow — branch, unit price, quantity, and the second submit
+globs: purchase_request.html,TLCG_P2P_BACKEND.gs,api/voucher.js,server.js
 alwaysApply: false
 ---
 
 # Purchase Request Flow (`purchase_request.html`)
 
-Single-page wizard (4 steps) posting to **`/api/voucher`** (Vercel proxy → `TLCG_P2P_BACKEND.gs`). All actions route through the proxy — no direct GAS URL in the frontend.
+Live site: `https://workflow.tl-c.us` → Cloudflare → Ubuntu `server.js` on port 3001. Vercel is not in this path. `git pull` updates the page and Node only. `TLCG_P2P_BACKEND.gs` goes live only when pasted into the **P2P** Apps Script project and the existing web app is redeployed (Execute as: Me). Never paste `TLCG_CORE_BACKEND.gs` or `TLCG_CASH_BACKEND.gs` into that project.
+
+The page posts to `/api/voucher`, which proxies to the P2P web app (`TLCG_P2P_BACKEND_URL`). No direct GAS URL in the frontend.
+
+## Current item and submit rules
+
+- **Số lượng** (`.item-qty`): the user can type a number and use the up/down arrows (`step="1"`). Global CSS hides number spinners; restore them only on `input.item-qty`.
+- **Đơn giá left blank** while the row has an item name: red class `price-missing-flag`, toast `Chưa nhập đơn giá…`, and **block** both Tiếp theo (step 2) and `submitForm()`. New rows start with an empty price (`placeholder="Nhập đơn giá"`), not `0`.
+- **Đơn giá typed as 0** (gift box, packaging): allowed. Orange class `price-zero-flag` and a warning toast. Do not block. Negative price still blocks.
+- Catalog autofill sets the price only when `g.price > 0`.
+- **Tạo đề nghị mới** calls `resetForm()`, which must set `#submit-btn` `disabled = false`, restore the label `Gửi đề nghị`, and set `isSubmitting = false`. The success path must also set `btn.disabled = false` before restoring the label. A disabled button stays disabled across a new request until reload.
+- After a successful send, keep the filled form editable and call `generateRequestNumber()` for the next request. Do not hide `.form-step` behind `#success-screen`. That lock is what made the next request look gray and refuse input.
+
+## Branch
+
+`getP2PBranch()`: services, or goods with grand total ≥ 2,000,000 VND → **full** (PR → contract module → acceptance → payment). Otherwise **simplified** (PR → payment → goods receipt).
+
+Goods or services under 2,000,000₫ can be a payment request with no purchase request. On `payment_request.html` that mode sends `noPurchaseRequest: true` and no AM or PR number. The amount must be VND and below 2,000,000. At 2,000,000₫ or more, the payment still needs a purchase request and an accepted biên bản nghiệm thu.
+
+Budget and supplier are required and approve in parallel. `computePRApprovalState_` sets `skipPRContract` for both branches, so contract review is `contract.html`, not an in-PR approve stage. The full branch still requires a contract reviewer on the form. Purchasing is optional. The browser suggests the PR number from a `localStorage` counter. The server keeps it only when that number is not already on the sheet; otherwise it assigns the next free number for that company and day.
 
 ---
 
@@ -14,11 +33,11 @@ Single-page wizard (4 steps) posting to **`/api/voucher`** (Vercel proxy → `TL
 
 - `getMasterData` → `TLCG_CORE_BACKEND` — employees, Goods-KTT, suppliers (shared with all workflows)
 - `purchaseRequest` → `TLCG_P2P_BACKEND` — writes to `Purchase_Request_History` sheet; sends emails to requester + budget + supplier approvers only
-- `getPurchaseRequestHistory` → `TLCG_P2P_BACKEND` — returns `requests[]` with `items` (JSON) and `metadata` (JSON)
-- `approvePurchaseRequest` → `TLCG_P2P_BACKEND` — updates `metadata.{role}Status`, computes next status via `computePRApprovalState_`, sends stage emails when contract/purchasing stage opens
+- `getPurchaseRequestHistory` → `TLCG_P2P_BACKEND` — returns slim `requests[]` (no line items, no metadata JSON). `getPurchaseRequest` loads one purchase when the drawer opens. `searchPurchaseRequests` looks up the archive.
+- `approvePurchaseRequest` → `TLCG_P2P_BACKEND` — updates `metadata.{role}Status`, computes next status via `computePRApprovalState_`, emails the purchasing approver only when that stage opens
 - `rejectPurchaseRequest` → `TLCG_P2P_BACKEND` — sets status=`Đã từ chối`, writes `metadata.rejectionNote`; gated so only the active stage's approver can reject
 
-**`BACKEND_URL = '/api/voucher'`** (Vercel proxy) — do NOT hardcode a direct GAS exec URL.
+**`BACKEND_URL = '/api/voucher'`** — do NOT hardcode a direct GAS exec URL. The proxy runs on Ubuntu (`api/voucher.js`), not Vercel.
 
 ## Drive folder (`PURCHASE_REQUEST_FOLDER_ID`)
 
@@ -39,6 +58,8 @@ Set Script Property after deploy: key=`PURCHASE_REQUEST_FOLDER_ID`, value=`1SJ-p
 
 - At least one row with non-empty `.item-desc` in **any** `SECTION`.
 - Purpose: `purpose` required (validated when leaving step 2).
+- **Unit price:** blank on a named row blocks (`price-missing-flag`). Typed `0` warns and continues (`price-zero-flag`). `price < 0` blocks.
+- **Qty:** typed number plus spinner arrows on `.item-qty` only.
 - **MOQ (`hang-hoa` only):** For rows where a catalog item was selected (`tr.dataset.moq`), `qty >= moq`; otherwise toast error and `#tbody-hang-hoa tr.moq-error`.
 - Sections: `SECTIONS = hang-hoa, thiet-bi, dich-vu, sua-chua`; labels: **Hàng Hóa**, **Thiết Bị (TSCĐ/CCDC)**, **Dịch Vụ**, **Sửa Chữa (TSCĐ)**; each seeded with default row counts; expandable via chevron.
 
@@ -46,8 +67,8 @@ Set Script Property after deploy: key=`PURCHASE_REQUEST_FOLDER_ID`, value=`1SJ-p
 
 - `budget_approver` email **required** (FE + BE validation).
 - `supplier_approver` **required** — both budget and supplier must be selected (FE + BE validation). Field is marked with `*` in UI.
-- `contract_approver` optional — if assigned, becomes active after parallel phase completes.
-- `purchasing_approver` optional — if assigned, becomes active after contract phase completes (or after parallel if contract not assigned).
+- `contract_approver` required on the **full** branch (the separate contract module). It is not an in-PR approve stage: `skipPRContract` is true for both branches.
+- `purchasing_approver` optional — if assigned, becomes active after the parallel phase.
 - Step 5 "Phê duyệt cuối" card has been **removed** and replaced with an info callout. Completion = after all assigned steps are approved.
 
 **Step 4 — Xác nhận**
@@ -59,7 +80,7 @@ Set Script Property after deploy: key=`PURCHASE_REQUEST_FOLDER_ID`, value=`1SJ-p
 ## PR number (`generateRequestNumber`)
 
 - Triggered on company change (`onCompanyChange` → `generateRequestNumber`).
-- Pattern: `{COMPANY_CODE_CLEAN}-PR{YYYYMMDD}{counter}` where counter is **`localStorage` key** `vc_{RAW}_PR_{YYYYMMDD}` incremented per browser (not authoritative server-side numbering).
+- Pattern: `{COMPANY_CODE_CLEAN}-PR{YYYYMMDD}{counter}` where the browser counter is **`localStorage` key** `vc_{RAW}_PR_{YYYYMMDD}`. The server is authoritative: a number already stored on `Purchase_Request_History` is replaced with the next free number, returned as `prNo`.
 - `company_code` option value mixes display (`Tên (Mã định danh)`); `opt.dataset.code` drives the alphanumeric prefix cleaned to uppercase.
 
 ---
@@ -95,7 +116,7 @@ Other sections (`thiet-bi`, `dich-vu`, `sua-chua`) use plain description inputs 
 
 Loaded from **`tlcg_companies_embed.js`** (`TLCG_COMPANIES_DATA.companies_data`), not `getMasterData`. Missing embed → “Không có dữ liệu”.
 
-Hidden fields **`company_name`**, **`company_key_or_taxid`** set from option `dataset`; **`submit` payload** sends **`companyCode`** (= select displayed value path) and **`companyName`** — **not** a separate stable `companyKey`/`taxId` field unless you extend the payload intentionally.
+Hidden fields **`company_name`**, **`company_key`** set from option `dataset`; **`submit` payload** sends **`companyCode`** (= select displayed value path) and **`companyName`** — **not** a separate stable `companyKey`/`taxId` field unless you extend the payload intentionally.
 
 ---
 
@@ -178,10 +199,10 @@ item.desc || item.name || item.itemName || '—'
 Implements the global P2P approval model:
 
 ```
-Submit → Phase A (Parallel): Budget + Supplier both active
-       → Phase B (Sequential): Contract (if assigned)
-       → Phase C (Sequential): Purchasing (if assigned)
+Submit → Parallel: Budget + Supplier
+       → Purchasing, only if assigned
        → Hoàn thành
+Full branch contract review happens in contract.html, not in this PR approve chain.
 ```
 
 ### `computePRApprovalState_(row, metadata)` in `TLCG_P2P_BACKEND.gs`
@@ -193,8 +214,8 @@ Central helper used by approve, reject, and submit to determine:
 
 **Stage advancement rules:**
 - `parallel` active while any of `{budget, supplier}` is assigned but not `Approved`
-- `contract` opens only when parallel complete AND contract email assigned AND not Approved
-- `purchasing` opens only when contract complete/skipped AND purchasing email assigned
+- In-PR `contract` stage does not open: `skipPRContract` is true for `full` and `simplified`
+- `purchasing` opens only when parallel is complete AND a purchasing email is assigned
 - Unassigned optional roles are auto-skipped (`N/A` initial status)
 
 ### Status labels in sheet (col O)
@@ -247,7 +268,7 @@ Central helper used by approve, reject, and submit to determine:
 
 ## GAS file → domain mapping
 
-| GAS file | Domain | Vercel env var |
+| GAS file | Domain | Ubuntu env var |
 |----------|--------|----------------|
 | `TLCG_CORE_BACKEND.gs` | Shared/Auth | `TLCG_CORE_BACKEND_URL` (fallback: `TLCGROUP_BACKEND_URL`) |
 | `TLCG_P2P_BACKEND.gs` | P2P — Mua hàng | `TLCG_P2P_BACKEND_URL` (fallback: `PAYMENT_REQUEST_BACKEND_URL`) |
@@ -271,9 +292,11 @@ Central helper used by approve, reject, and submit to determine:
 | Scenario | Expected |
 |----------|----------|
 | Submit without supplier | Blocked (FE toast + BE `400`) |
-| Budget + Supplier only | Parallel → **Hoàn thành** (skip contract & purchasing) |
-| All 4 assigned | Parallel → contract email → contract approve → purchasing email → purchasing approve → **Hoàn thành** |
-| Contract skipped, purchasing assigned | Parallel → purchasing email → **Hoàn thành** |
+| Named row, blank unit price | Blocked. Red price field. Toast `Chưa nhập đơn giá` |
+| Named row, unit price 0 | Allowed. Orange price field and a gift warning |
+| Budget + Supplier only | Parallel → **Hoàn thành** |
+| Purchasing assigned | Parallel → purchasing email → purchasing approve → **Hoàn thành** |
+| Full branch | Contract reviewer required on the form; contract approval is outside this PR |
 | Out-of-order approve | Rejected: "Chưa đến lượt duyệt của bạn" |
 | Reject at any stage | **Đã từ chối**, no further actions allowed |
 | My Task filter | Only shows PRs where user's role is in the currently active stage |
@@ -286,8 +309,10 @@ After GAS redeploy: submit PR, approve from drawer as each role, confirm sheet c
 ## When editing this flow
 
 - `BACKEND_URL` in `purchase_request.html` must stay as **`/api/voucher`** — never hardcode a direct GAS exec URL.
-- To rotate the P2P deployment URL, update `TLCG_P2P_BACKEND_URL` in Vercel Dashboard → Settings → Environment Variables.
+- To rotate the P2P deployment URL, update `TLCG_P2P_BACKEND_URL` in the Ubuntu app env, then restart `tlcg-workflow`.
+- After a successful send, `resetForm()` must re-enable `#submit-btn`. Leaving it disabled blocks the next request until a full reload.
 - Align **`Goods-KTT`** sheet headers with `seedGoods` column names (`Items`, `Min. Order`, `Status`, `Category`, `Unit`, `Specification`, `CUKCUK/QBO Code`).
 - `Purchase_Request_History` sheet is auto-created on first submit if missing.
-- PR numbers are **client-generated** (localStorage counter per day). GAS does not enforce uniqueness — do not rely on them as globally unique IDs.
+- If the browser number is already used, the server assigns the next free number and returns it as `prNo`. Show that returned number. Approval, rejection, and send-back send `submittedAt` with the number so a shared number still updates the submission that was opened. Splitting two different purchases that already share a number is `runPurchaseRequestMaintenance` in the Apps Script editor, once. It is not part of opening the list.
+- The list reads open purchases plus the latest 5,000 rows, and returns a short card. Line items and metadata load with `getPurchaseRequest` when the drawer opens. New purchase-request actions are written to `PR_Audit_Log` only. A finished purchase with no activity for 90 days moves to `Purchase_Request_Archive` at most once a day. Open approvals stay on `Purchase_Request_History`.
 - `computePRApprovalState_` is the single source of truth for active stage in GAS. `_computePRStage` in `purchase_request.html` mirrors it client-side. Keep them in sync if logic changes.

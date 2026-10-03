@@ -388,6 +388,10 @@ function doPost(e) {
         return handlePurchaseRequest(data);
       case 'getPurchaseRequestHistory':
         return handleGetPurchaseRequestHistory(data);
+      case 'getPurchaseRequest':
+        return handleGetPurchaseRequest(data);
+      case 'searchPurchaseRequests':
+        return handleSearchPurchaseRequests(data);
       case 'approvePurchaseRequest':
         return handleApprovePurchaseRequest(data);
       case 'rejectPurchaseRequest':
@@ -2033,6 +2037,709 @@ function _appendAuditLog_(opts) {
  */
 var PR_SHEET_NAME = 'Purchase_Request_History';
 
+function prTimeKey_(value) {
+  if (value instanceof Date) return value.toISOString();
+  var text = String(value || '').trim();
+  if (!text) return '';
+  var ms = Date.parse(text);
+  if (!isNaN(ms) && text.indexOf('T') !== -1) return new Date(ms).toISOString();
+  return text;
+}
+
+function prTimesClose_(a, b, windowMs) {
+  var ta = Date.parse(prTimeKey_(a));
+  var tb = Date.parse(prTimeKey_(b));
+  if (isNaN(ta) || isNaN(tb)) return false;
+  return Math.abs(ta - tb) <= windowMs;
+}
+
+function prSubmitIdentity_(row) {
+  var meta = {};
+  try { meta = JSON.parse(row[16] || '{}'); } catch (e) { meta = {}; }
+  return {
+    email: String(meta.requesterEmail || '').toLowerCase().trim(),
+    purpose: String(row[7] || '').trim(),
+    total: String(parseFloat(row[13]) || 0)
+  };
+}
+
+function samePRTask_(a, b) {
+  var ia = prSubmitIdentity_(a);
+  var ib = prSubmitIdentity_(b);
+  return ia.email === ib.email && ia.purpose === ib.purpose && ia.total === ib.total;
+}
+
+/** First submit row for this number. When submittedAt is sent, only that submission matches. */
+function findPRSubmitRowIndex_(values, prNo, submittedAt) {
+  prNo = String(prNo || '').trim();
+  var wantAt = prTimeKey_(submittedAt);
+  var matches = [];
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() !== prNo) continue;
+    if (String(values[i][20] || '').trim() === 'event') continue;
+    matches.push(i);
+  }
+  if (wantAt) {
+    for (var j = 0; j < matches.length; j++) {
+      if (prTimeKey_(values[matches[j]][15]) === wantAt) return matches[j];
+    }
+    return -1;
+  }
+  return matches.length ? matches[0] : -1;
+}
+
+var PR_ARCHIVE_SHEET_NAME = 'Purchase_Request_Archive';
+var PR_LIST_WINDOW = 5000;
+var PR_ARCHIVE_AFTER_DAYS = 90;
+var PR_ROW_WIDTH = 21;
+
+function prIsEventRow_(row) {
+  return String(row[20] || '').trim() === 'event';
+}
+
+function prTypeColumn_(sheet, startRow, numRows) {
+  if (!sheet || numRows < 1 || sheet.getLastColumn() < 21) {
+    var blank = [];
+    for (var i = 0; i < numRows; i++) blank.push(['']);
+    return blank;
+  }
+  return sheet.getRange(startRow, 21, numRows, 1).getValues();
+}
+
+function prIsTerminalStatus_(status) {
+  var s = String(status || '').trim();
+  return s === 'Hoàn thành' || s === 'Approved' || s === 'Đã từ chối' || s === 'Rejected';
+}
+
+/** Latest submit or approval time. A finished purchase stays visible until this is 90 days old. */
+function prLastTouchMs_(submitted, metadataText) {
+  var best = Date.parse(prTimeKey_(submitted));
+  if (isNaN(best)) best = 0;
+  var meta = {};
+  try { meta = JSON.parse(metadataText || '{}'); } catch (e) { meta = {}; }
+  var keys = ['rejectedAt', 'budgetApprovedAt', 'supplierApprovedAt', 'contractApprovedAt', 'purchasingApprovedAt', 'resubmittedAt'];
+  for (var i = 0; i < keys.length; i++) {
+    var ms = Date.parse(prTimeKey_(meta[keys[i]]));
+    if (!isNaN(ms) && ms > best) best = ms;
+  }
+  if (Array.isArray(meta.sentBackHistory)) {
+    for (var j = 0; j < meta.sentBackHistory.length; j++) {
+      var at = Date.parse(prTimeKey_(meta.sentBackHistory[j] && meta.sentBackHistory[j].at));
+      if (!isNaN(at) && at > best) best = at;
+    }
+  }
+  return best;
+}
+
+function prPadRow_(row) {
+  var copy = row.slice();
+  while (copy.length < PR_ROW_WIDTH) copy.push('');
+  return copy;
+}
+
+function prReadRows_(sheet, startRow, numRows) {
+  if (!sheet || numRows < 1) return [];
+  var width = Math.max(sheet.getLastColumn(), 1);
+  var values = sheet.getRange(startRow, 1, numRows, width).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) out.push(prPadRow_(values[i]));
+  return out;
+}
+
+/** Column A matches for this number. Does not load the rest of the sheet. */
+function prFindRowsByNo_(sheet, prNo) {
+  prNo = String(prNo || '').trim();
+  if (!sheet || !prNo || sheet.getLastRow() < 2) return [];
+  var finder = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1)
+    .createTextFinder(prNo)
+    .matchEntireCell(true)
+    .matchCase(true);
+  var rows = [];
+  var cell = finder.findNext();
+  var guard = 0;
+  while (cell && guard < 40) {
+    rows.push(cell.getRow());
+    cell = finder.findNext();
+    guard++;
+  }
+  return rows;
+}
+
+function prNumberTaken_(ss, prNo) {
+  var names = [PR_SHEET_NAME, PR_ARCHIVE_SHEET_NAME];
+  for (var i = 0; i < names.length; i++) {
+    var sheet = ss.getSheetByName(names[i]);
+    if (prFindRowsByNo_(sheet, prNo).length) return true;
+  }
+  return false;
+}
+
+/** Next free number, checked on the hot sheet and the archive. No full-sheet read. */
+function allocateUniquePRNoOnServer_(ss, requested) {
+  requested = String(requested || '').trim();
+  if (requested && !prNumberTaken_(ss, requested)) return requested;
+  var match = String(requested || '').match(/^(.*-PR\d{8})(\d+)$/);
+  if (!match) {
+    var suffix = 2;
+    var base = requested || ('PR-' + Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'yyyyMMdd'));
+    var guard = 0;
+    while (prNumberTaken_(ss, base + '-' + suffix) && guard < 1000) { suffix++; guard++; }
+    return base + '-' + suffix;
+  }
+  var width = match[2].length;
+  var n = parseInt(match[2], 10) + 1;
+  var candidate = match[1] + String(n).padStart(width, '0');
+  var steps = 0;
+  while (prNumberTaken_(ss, candidate) && steps < 1000) {
+    n++;
+    candidate = match[1] + String(n).padStart(width, '0');
+    steps++;
+  }
+  return candidate;
+}
+
+function prSubmitMatches_(sheet, prNo) {
+  var rowNumbers = prFindRowsByNo_(sheet, prNo);
+  var matches = [];
+  for (var i = 0; i < rowNumbers.length; i++) {
+    var row = prReadRows_(sheet, rowNumbers[i], 1)[0];
+    if (!row || prIsEventRow_(row)) continue;
+    if (String(row[0] || '').trim() !== String(prNo || '').trim()) continue;
+    matches.push({ sheet: sheet, rowNumber: rowNumbers[i], row: row });
+  }
+  return matches;
+}
+
+/** The submit row for this number, on the working sheet or the archive. */
+function findPRSubmitLocation_(ss, prNo, submittedAt) {
+  var wantAt = prTimeKey_(submittedAt);
+  var names = [PR_SHEET_NAME, PR_ARCHIVE_SHEET_NAME];
+  var found = [];
+  for (var i = 0; i < names.length; i++) {
+    var sheet = ss.getSheetByName(names[i]);
+    if (sheet) found = found.concat(prSubmitMatches_(sheet, prNo));
+  }
+  if (wantAt) {
+    for (var j = 0; j < found.length; j++) {
+      if (prTimeKey_(found[j].row[15]) === wantAt) return found[j];
+    }
+    return null;
+  }
+  return found.length ? found[0] : null;
+}
+
+function prListCardFromRow_(row) {
+  row = prPadRow_(row);
+  var status = String(row[14] || '');
+  var terminal = prIsTerminalStatus_(status);
+  var meta = {};
+  if (!terminal) {
+    try { meta = JSON.parse(row[16] || '{}'); } catch (e) { meta = {}; }
+  }
+  var hasAttachments = false;
+  if (!terminal && Array.isArray(meta.attachments)) {
+    hasAttachments = meta.attachments.some(function(a) { return a && a.fileUrl; });
+  }
+  if (!hasAttachments && String(row[19] || '').trim()) hasAttachments = true;
+  var stage = terminal ? (status === 'Đã từ chối' || status === 'Rejected' ? 'rejected' : 'complete') : '';
+  if (!terminal) stage = computePRApprovalState_(row, meta).stage;
+  var requesterEmail = meta.requesterEmail || '';
+  return {
+    prNo: row[0] || '',
+    company: row[1] || '',
+    department: row[3] || '',
+    requesterName: row[4] || '',
+    requesterEmail: requesterEmail,
+    requestorEmail: requesterEmail,
+    requiredDate: row[5] || '',
+    priority: row[6] || '',
+    purpose: row[7] || '',
+    suggestedVendor: row[8] || '',
+    grandTotal: row[13] || 0,
+    status: status,
+    submittedAt: prTimeKey_(row[15]) || '',
+    budgetApprover: row[10] || '',
+    supplierApprover: row[11] || '',
+    contractApprover: row[17] || '',
+    purchasingApprover: row[18] || '',
+    budgetApproverEmail: row[10] || '',
+    supplierApproverEmail: row[11] || '',
+    contractApproverEmail: row[17] || '',
+    purchasingApproverEmail: row[18] || '',
+    budgetStatus: meta.budgetStatus || '',
+    supplierStatus: meta.supplierStatus || '',
+    contractStatus: meta.contractStatus || '',
+    purchasingStatus: meta.purchasingStatus || '',
+    activeStage: stage,
+    purchaseType: meta.purchaseType || 'goods',
+    p2pBranch: meta.p2pBranch || 'full',
+    hasAttachments: hasAttachments
+  };
+}
+
+function prFullFromRow_(row) {
+  var card = prListCardFromRow_(row);
+  var meta = {};
+  try { meta = JSON.parse(row[16] || '{}'); } catch (e) { meta = {}; }
+  card.requesterEmail = card.requesterEmail || meta.requesterEmail || '';
+  card.requestorEmail = card.requesterEmail;
+  card.items = row[12] || '[]';
+  card.metadata = row[16] || '{}';
+  card.attachmentUrls = row[19] || '';
+  card.budgetCode = row[9] || '';
+  if (!card.purchaseType) card.purchaseType = meta.purchaseType || 'goods';
+  if (!card.p2pBranch) card.p2pBranch = meta.p2pBranch || 'full';
+  return card;
+}
+
+/**
+ * Open tasks anywhere on the sheet, plus the latest rows (completed ones
+ * included). Event rows are skipped. The 5,000-row window is the recent
+ * block; older open tasks are picked out by status without loading items.
+ */
+function prCollectWorkingRows_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return [];
+  var start = Math.max(2, last - PR_LIST_WINDOW + 1);
+  var recent = prReadRows_(sheet, start, last - start + 1);
+  var rows = [];
+  for (var i = 0; i < recent.length; i++) {
+    if (!recent[i][0] || prIsEventRow_(recent[i])) continue;
+    rows.push(recent[i]);
+  }
+  if (start <= 2) return rows;
+  var oldCount = start - 2;
+  var nos = sheet.getRange(2, 1, oldCount, 1).getValues();
+  var statuses = sheet.getRange(2, 15, oldCount, 1).getValues();
+  var types = prTypeColumn_(sheet, 2, oldCount);
+  for (var j = 0; j < oldCount; j++) {
+    if (!nos[j][0]) continue;
+    if (String(types[j][0] || '').trim() === 'event') continue;
+    if (prIsTerminalStatus_(statuses[j][0])) continue;
+    var full = prReadRows_(sheet, j + 2, 1)[0];
+    if (full) rows.push(full);
+  }
+  return rows;
+}
+
+function getOrCreatePRArchive_(ss, source) {
+  var sheet = ss.getSheetByName(PR_ARCHIVE_SHEET_NAME);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(PR_ARCHIVE_SHEET_NAME);
+  var width = Math.max(source.getLastColumn(), 1);
+  sheet.getRange(1, 1, 1, width).setValues(source.getRange(1, 1, 1, width).getValues());
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+function prContiguousBlocks_(rowNumbers) {
+  if (!rowNumbers.length) return [];
+  var sorted = rowNumbers.slice().sort(function(a, b) { return a - b; });
+  var blocks = [];
+  var start = sorted[0];
+  var prev = sorted[0];
+  for (var i = 1; i <= sorted.length; i++) {
+    if (i < sorted.length && sorted[i] === prev + 1) { prev = sorted[i]; continue; }
+    blocks.push([start, prev]);
+    if (i < sorted.length) { start = sorted[i]; prev = sorted[i]; }
+  }
+  return blocks;
+}
+
+/**
+ * Moves finished purchases whose submit date is older than 90 days to
+ * Purchase_Request_Archive, including their old event rows when no other
+ * live purchase still uses that number. Open approvals stay on the working sheet.
+ */
+function archiveOldPurchaseRequestsNow_(ss) {
+  var sheet = ss.getSheetByName(PR_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var last = sheet.getLastRow();
+  var count = last - 1;
+  var nos = sheet.getRange(2, 1, count, 1).getValues();
+  var statuses = sheet.getRange(2, 15, count, 1).getValues();
+  var submitted = sheet.getRange(2, 16, count, 1).getValues();
+  var metas = sheet.getRange(2, 17, count, 1).getValues();
+  var types = prTypeColumn_(sheet, 2, count);
+  var cutoff = Date.now() - PR_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  var moveNo = {};
+  var stayNo = {};
+  var moveRows = [];
+  for (var i = 0; i < count; i++) {
+    var no = String(nos[i][0] || '').trim();
+    if (!no || String(types[i][0] || '').trim() === 'event') continue;
+    var touch = prLastTouchMs_(submitted[i][0], metas[i][0]);
+    var oldTerminal = prIsTerminalStatus_(statuses[i][0]) && touch > 0 && touch < cutoff;
+    if (oldTerminal) {
+      moveNo[no] = true;
+      moveRows.push(i + 2);
+    } else {
+      stayNo[no] = true;
+    }
+  }
+  for (var noKey in moveNo) {
+    if (stayNo[noKey]) delete moveNo[noKey];
+  }
+  moveRows = moveRows.filter(function(rowNum) {
+    return moveNo[String(nos[rowNum - 2][0] || '').trim()];
+  });
+  if (!moveRows.length) return 0;
+  for (var j = 0; j < count; j++) {
+    if (String(types[j][0] || '').trim() !== 'event') continue;
+    var eventNo = String(nos[j][0] || '').trim();
+    if (moveNo[eventNo]) moveRows.push(j + 2);
+  }
+  var archive = getOrCreatePRArchive_(ss, sheet);
+  var width = Math.max(sheet.getLastColumn(), 1);
+  var blocks = prContiguousBlocks_(moveRows);
+  for (var b = 0; b < blocks.length; b++) {
+    var numRows = blocks[b][1] - blocks[b][0] + 1;
+    var values = sheet.getRange(blocks[b][0], 1, numRows, width).getValues();
+    archive.getRange(archive.getLastRow() + 1, 1, values.length, width).setValues(values);
+  }
+  for (var d = blocks.length - 1; d >= 0; d--) {
+    sheet.deleteRows(blocks[d][0], blocks[d][1] - blocks[d][0] + 1);
+  }
+  SpreadsheetApp.flush();
+  Logger.log('[P2P] Archived ' + moveRows.length + ' purchase-request rows');
+  return moveRows.length;
+}
+
+/** At most once a day, from the list request. Skips when another request holds the lock. */
+function archiveOldPurchaseRequests_(ss) {
+  var props = PropertiesService.getScriptProperties();
+  var lastRun = parseInt(props.getProperty('PR_ARCHIVE_RAN_AT') || '0', 10);
+  if (!isNaN(lastRun) && Date.now() - lastRun < 24 * 60 * 60 * 1000) return 0;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1500)) return 0;
+  try {
+    var moved = archiveOldPurchaseRequestsNow_(ss);
+    props.setProperty('PR_ARCHIVE_RAN_AT', String(Date.now()));
+    return moved;
+  } catch (e) {
+    Logger.log('[P2P] Archive sweep failed: ' + e.message);
+    return 0;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function prHistoryFromAuditLog_(docNo) {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('PR_Audit_Log');
+  var history = [];
+  if (sheet && sheet.getLastRow() >= 2) {
+    var finder = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1)
+      .createTextFinder(docNo)
+      .matchEntireCell(true)
+      .matchCase(true);
+    var cell = finder.findNext();
+    var guard = 0;
+    while (cell && guard < 200) {
+      var r = prPadRow_(sheet.getRange(cell.getRow(), 1, 1, 12).getValues()[0]);
+      history.push({
+        action: String(r[3] || ''),
+        role: String(r[4] || ''),
+        actorEmail: String(r[5] || ''),
+        actorName: String(r[6] || ''),
+        prevStatus: String(r[7] || ''),
+        newStatus: String(r[8] || ''),
+        timestamp: prTimeKey_(r[9]) || String(r[9] || ''),
+        note: String(r[10] || ''),
+        metaJson: String(r[11] || '')
+      });
+      cell = finder.findNext();
+      guard++;
+    }
+  }
+  if (history.length) return history;
+  var names = [PR_SHEET_NAME, PR_ARCHIVE_SHEET_NAME];
+  for (var s = 0; s < names.length; s++) {
+    var docSheet = ss.getSheetByName(names[s]);
+    var eventRows = prFindRowsByNo_(docSheet, docNo);
+    for (var i = 0; i < eventRows.length; i++) {
+      var row = prReadRows_(docSheet, eventRows[i], 1)[0];
+      if (!row || !prIsEventRow_(row)) continue;
+      history.push({
+        action: String(row[21] || ''),
+        role: String(row[22] || ''),
+        actorEmail: String(row[23] || ''),
+        actorName: String(row[24] || ''),
+        prevStatus: String(row[25] || ''),
+        newStatus: String(row[26] || ''),
+        timestamp: prTimeKey_(row[27]) || String(row[27] || ''),
+        note: String(row[28] || ''),
+        metaJson: String(row[29] || '')
+      });
+    }
+  }
+  return history;
+}
+
+function handleGetPurchaseRequest(data) {
+  var prNo = String(data.prNo || '').trim();
+  if (!prNo) return createResponse(false, msg_('missingPurchaseDocNo'));
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var loc = findPRSubmitLocation_(ss, prNo, data.submittedAt);
+  if (!loc) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
+  return createResponse(true, 'Thành công', { request: prFullFromRow_(loc.row) });
+}
+
+function searchPurchaseRequestRows_(sheet, query, limit) {
+  var hits = [];
+  if (!sheet || sheet.getLastRow() < 2 || !query) return hits;
+  var q = String(query).trim();
+  var columns = [1, 2, 5, 8];
+  var seen = {};
+  for (var c = 0; c < columns.length && hits.length < limit; c++) {
+    var finder = sheet.getRange(2, columns[c], sheet.getLastRow() - 1, 1)
+      .createTextFinder(q)
+      .matchCase(false);
+    var cell = finder.findNext();
+    var guard = 0;
+    while (cell && hits.length < limit && guard < 40) {
+      var rowNum = cell.getRow();
+      if (!seen[rowNum]) {
+        seen[rowNum] = true;
+        var row = prReadRows_(sheet, rowNum, 1)[0];
+        if (row && row[0] && !prIsEventRow_(row)) hits.push(row);
+      }
+      cell = finder.findNext();
+      guard++;
+    }
+  }
+  return hits;
+}
+
+function handleSearchPurchaseRequests(data) {
+  var q = String(data.q || data.query || '').trim();
+  if (q.length < 2) return createResponse(true, 'Thành công', { requests: [] });
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var rows = [];
+  var hot = ss.getSheetByName(PR_SHEET_NAME);
+  var archive = ss.getSheetByName(PR_ARCHIVE_SHEET_NAME);
+  rows = rows.concat(searchPurchaseRequestRows_(archive, q, 30));
+  rows = rows.concat(searchPurchaseRequestRows_(hot, q, 30));
+  var cards = [];
+  var seen = {};
+  for (var i = 0; i < rows.length && cards.length < 30; i++) {
+    var card = prListCardFromRow_(rows[i]);
+    var key = card.prNo + '|' + card.submittedAt;
+    if (seen[key]) continue;
+    seen[key] = true;
+    cards.push(card);
+  }
+  return createResponse(true, 'Thành công', { requests: cards });
+}
+
+/**
+ * One-shot from the Apps Script editor. Gives every repeated purchase-request
+ * number its own id, then archives finished purchases with no activity for 90 days.
+ * The list does not do the split on every open.
+ */
+function runPurchaseRequestMaintenance() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(PR_SHEET_NAME);
+  var renamed = 0;
+  if (sheet && sheet.getLastRow() > 1) renamed = repairDistinctDuplicatePRs_(ss, sheet) || 0;
+  var archived = archiveOldPurchaseRequestsNow_(ss);
+  PropertiesService.getScriptProperties().setProperty('PR_ARCHIVE_RAN_AT', String(Date.now()));
+  Logger.log('[P2P] Maintenance renamed=' + renamed + ' archivedRows=' + archived);
+}
+
+function allocateUniquePRNo_(values, requested) {
+  requested = String(requested || '').trim();
+  var used = {};
+  for (var i = 1; i < values.length; i++) {
+    var no = String(values[i][0] || '').trim();
+    if (no) used[no] = true;
+  }
+  if (requested && !used[requested]) return requested;
+  return nextFreePRNo_(requested, used);
+}
+
+function nextFreePRNo_(sample, used) {
+  var match = String(sample || '').match(/^(.*-PR\d{8})(\d+)$/);
+  if (!match) {
+    var suffix = 2;
+    var base = sample || ('PR-' + Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'yyyyMMdd'));
+    while (used[base + '-' + suffix]) suffix++;
+    return base + '-' + suffix;
+  }
+  var width = match[2].length;
+  var n = parseInt(match[2], 10) + 1;
+  var candidate = match[1] + String(n).padStart(width, '0');
+  while (used[candidate]) {
+    n++;
+    candidate = match[1] + String(n).padStart(width, '0');
+  }
+  return candidate;
+}
+
+function eventBelongsToSubmit_(submitRow, eventRow) {
+  var meta = {};
+  try { meta = JSON.parse(submitRow[16] || '{}'); } catch (e) { meta = {}; }
+  var action = String(eventRow[21] || '').trim();
+  var actor = String(eventRow[23] || '').toLowerCase().trim();
+  var at = eventRow[27];
+  if (action === 'Submit') {
+    var requester = String(meta.requesterEmail || '').toLowerCase().trim();
+    return !!requester && actor === requester && prTimesClose_(submitRow[15], at, 120000);
+  }
+  var stamps = ['budgetApprovedAt', 'supplierApprovedAt', 'contractApprovedAt', 'purchasingApprovedAt'];
+  for (var i = 0; i < stamps.length; i++) {
+    if (meta[stamps[i]] && prTimesClose_(meta[stamps[i]], at, 20000)) return true;
+  }
+  return false;
+}
+
+function auditBelongsToSubmit_(submitRow, auditRow) {
+  var meta = {};
+  try { meta = JSON.parse(submitRow[16] || '{}'); } catch (e) { meta = {}; }
+  var action = String(auditRow[3] || '').trim();
+  var actor = String(auditRow[5] || '').toLowerCase().trim();
+  var at = auditRow[9];
+  if (action === 'Submit') {
+    var requester = String(meta.requesterEmail || '').toLowerCase().trim();
+    return !!requester && actor === requester && prTimesClose_(submitRow[15], at, 120000);
+  }
+  var stamps = ['budgetApprovedAt', 'supplierApprovedAt', 'contractApprovedAt', 'purchasingApprovedAt'];
+  for (var i = 0; i < stamps.length; i++) {
+    if (meta[stamps[i]] && prTimesClose_(meta[stamps[i]], at, 20000)) return true;
+  }
+  return false;
+}
+
+/** How far this copy has moved. The furthest copy keeps the shared number. */
+function prProgressScore_(row) {
+  var status = String(row[14] || '');
+  if (status === 'Hoàn thành' || status === 'Approved') return 100;
+  if (status.indexOf('Mua hàng') === 0) return 80;
+  if (status.indexOf('Thẩm định') === 0) return 70;
+  var meta = {};
+  try { meta = JSON.parse(row[16] || '{}'); } catch (e) { meta = {}; }
+  var approved = 0;
+  if (meta.budgetStatus === 'Approved') approved++;
+  if (meta.supplierStatus === 'Approved') approved++;
+  if (meta.purchasingStatus === 'Approved') approved++;
+  if (approved) return 40 + approved * 10;
+  if (status === 'Đã từ chối' || status === 'Rejected') return 5;
+  return 10;
+}
+
+/**
+ * Every repeated purchase-request number is split. The copy that has moved
+ * furthest keeps the number. Each other copy, including an identical resend,
+ * gets the next free number, with the submit event and audit row closest to it.
+ */
+function repairDistinctDuplicatePRs_(ss, sheet) {
+  var values = sheet.getDataRange().getValues();
+  if (values.length < 3) return 0;
+  var byNo = {};
+  var used = {};
+  for (var i = 1; i < values.length; i++) {
+    var no = String(values[i][0] || '').trim();
+    if (!no) continue;
+    used[no] = true;
+    if (String(values[i][20] || '').trim() === 'event') continue;
+    if (!byNo[no]) byNo[no] = [];
+    byNo[no].push(i);
+  }
+
+  var renamed = 0;
+  for (var prNo in byNo) {
+    var idxs = byNo[prNo];
+    if (idxs.length < 2) continue;
+
+    idxs.sort(function(i, j) {
+      var sa = prProgressScore_(values[i]);
+      var sb = prProgressScore_(values[j]);
+      if (sa !== sb) return sa - sb;
+      var ta = prTimeKey_(values[i][15]);
+      var tb = prTimeKey_(values[j][15]);
+      if (ta > tb) return -1;
+      if (ta < tb) return 1;
+      return i - j;
+    });
+
+    for (var k = 0; k < idxs.length - 1; k++) {
+      var rowIndex = idxs[k];
+      var fresh = nextFreePRNo_(prNo, used);
+      used[fresh] = true;
+      var meta = null;
+      try { meta = JSON.parse(values[rowIndex][16] || '{}'); } catch (e2) { meta = null; }
+      sheet.getRange(rowIndex + 1, 1).setValue(fresh);
+      values[rowIndex][0] = fresh;
+      if (meta && typeof meta === 'object') {
+        meta.previousPrNo = prNo;
+        var serialized = JSON.stringify(meta);
+        sheet.getRange(rowIndex + 1, 17).setValue(serialized);
+        values[rowIndex][16] = serialized;
+      }
+
+      var submitEvent = closestPREventIndex_(values, rowIndex, prNo, 'Submit');
+      if (submitEvent !== -1) {
+        sheet.getRange(submitEvent + 1, 1).setValue(fresh);
+        values[submitEvent][0] = fresh;
+      }
+      for (var e = 1; e < values.length; e++) {
+        if (String(values[e][0] || '').trim() !== prNo) continue;
+        if (String(values[e][20] || '').trim() !== 'event') continue;
+        if (String(values[e][21] || '').trim() === 'Submit') continue;
+        if (!eventBelongsToSubmit_(values[rowIndex], values[e])) continue;
+        sheet.getRange(e + 1, 1).setValue(fresh);
+        values[e][0] = fresh;
+      }
+      renamePRAuditRows_(ss, values[rowIndex], prNo, fresh);
+      Logger.log('[P2P] Split duplicate PR ' + prNo + ' → ' + fresh);
+      renamed++;
+    }
+  }
+  if (renamed) SpreadsheetApp.flush();
+  return renamed;
+}
+
+/** The Submit event whose timestamp is closest to this submission, within 2 minutes. */
+function closestPREventIndex_(values, submitIdx, prNo, action) {
+  var submitAt = Date.parse(prTimeKey_(values[submitIdx][15]));
+  var best = -1;
+  var bestDelta = 120001;
+  for (var e = 1; e < values.length; e++) {
+    if (String(values[e][0] || '').trim() !== prNo) continue;
+    if (String(values[e][20] || '').trim() !== 'event') continue;
+    if (String(values[e][21] || '').trim() !== action) continue;
+    var at = Date.parse(prTimeKey_(values[e][27]));
+    if (isNaN(at) || isNaN(submitAt)) continue;
+    var delta = Math.abs(at - submitAt);
+    if (delta < bestDelta) { bestDelta = delta; best = e; }
+  }
+  return best;
+}
+
+function renamePRAuditRows_(ss, submitRow, oldNo, newNo) {
+  var audit = ss.getSheetByName('PR_Audit_Log');
+  if (!audit || audit.getLastRow() < 2) return;
+  var rows = audit.getDataRange().getValues();
+  var submitAt = Date.parse(prTimeKey_(submitRow[15]));
+  var best = -1;
+  var bestDelta = 120001;
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() !== oldNo) continue;
+    if (String(rows[i][3] || '').trim() !== 'Submit') continue;
+    var at = Date.parse(prTimeKey_(rows[i][9]));
+    if (isNaN(at) || isNaN(submitAt)) continue;
+    var delta = Math.abs(at - submitAt);
+    if (delta < bestDelta) { bestDelta = delta; best = i; }
+  }
+  if (best !== -1) audit.getRange(best + 1, 1).setValue(newNo);
+  for (var j = 1; j < rows.length; j++) {
+    if (String(rows[j][0] || '').trim() !== oldNo) continue;
+    if (String(rows[j][3] || '').trim() === 'Submit') continue;
+    if (!auditBelongsToSubmit_(submitRow, rows[j])) continue;
+    audit.getRange(j + 1, 1).setValue(newNo);
+  }
+}
+
 function handlePurchaseRequest(data) {
   try {
     Logger.log('[P2P] handlePurchaseRequest called');
@@ -2077,6 +2784,15 @@ function handlePurchaseRequest(data) {
       var now = new Date();
       var dateStr = Utilities.formatDate(now, 'Asia/Ho_Chi_Minh', 'yyyyMMdd');
       prNo = 'PR-' + dateStr + '-' + Math.floor(Math.random() * 100000).toString().padStart(6, '0');
+    }
+
+    // The browser counter is per device. If that number is already a row, issue the next free one
+    // before the Drive folder is created, so this purchase does not land in another request's folder.
+    var prSsForNo = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var assignedNo = allocateUniquePRNoOnServer_(prSsForNo, prNo);
+    if (assignedNo !== prNo) {
+      Logger.log('[P2P] PR number ' + prNo + ' already exists, assigned ' + assignedNo);
+      prNo = assignedNo;
     }
 
     var submittedAt = data.submittedAt || new Date().toISOString();
@@ -2178,7 +2894,17 @@ function handlePurchaseRequest(data) {
       standardizeWorkflowSheet_(sheet, PR_HEADERS_);
     }
 
-    sheet.appendRow([
+    var numberLock = LockService.getScriptLock();
+    try { numberLock.waitLock(8000); } catch (lockErr) {
+      return createResponse(false, 'Hệ thống đang bận. Vui lòng gửi lại.');
+    }
+    try {
+      var lockedNo = allocateUniquePRNoOnServer_(ss, prNo);
+      if (lockedNo !== prNo) {
+        Logger.log('[P2P] PR number ' + prNo + ' was taken before save, assigned ' + lockedNo);
+        prNo = lockedNo;
+      }
+      sheet.appendRow([
       prNo,
       companyName,
       data.companyKey        || '',
@@ -2223,15 +2949,9 @@ function handlePurchaseRequest(data) {
       note:       data.purpose || '',
       extra:      { purchaseType: purchaseType, p2pBranch: p2pBranch }
     });
-    appendP2PHistoryRow_(sheet, 20, prNo, {
-      action:     'Submit',
-      role:       'requester',
-      actorEmail: data.requesterEmail || '',
-      actorName:  requesterName,
-      prevStatus: '',
-      newStatus:  'Đang duyệt ngân sách & NCC (2/5)',
-      note:       data.purpose || ''
-    });
+    } finally {
+      numberLock.releaseLock();
+    }
 
     // Send email notifications (non-blocking — failures must not break submission)
     try {
@@ -2382,57 +3102,26 @@ function handleGetPurchaseRequestHistory(data) {
     var ss    = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
     if (sheet) standardizeWorkflowSheet_(sheet, PR_HEADERS_);
+    try { archiveOldPurchaseRequests_(ss); }
+    catch (archiveErr) { Logger.log('[P2P] Archive skipped: ' + archiveErr.message); }
     if (!sheet || sheet.getLastRow() <= 1) {
       return createResponse(true, 'Thành công', { requests: [] });
     }
 
-    var values  = sheet.getDataRange().getValues();
-    var headers = values[0];
-    var rows    = values.slice(1);
-
-    // Optional filter: requester name
     var filterRequester = (data.requesterName || '').toString().trim().toLowerCase();
-
-    var requests = rows
+    var requests = prCollectWorkingRows_(sheet)
       .filter(function(row) {
-        if (!row[0]) return false; // skip empty PR No
-        // Skip event/history rows — only show submit rows in the list view
-        var rowType = (row[20] || '').toString();
-        if (rowType === 'event') return false;
-        if (filterRequester && (row[4] || '').toString().toLowerCase() !== filterRequester) return false;
+        if (filterRequester && String(row[4] || '').toLowerCase() !== filterRequester) return false;
         return true;
       })
-      .map(function(row) {
-        var meta = {};
-        try { meta = JSON.parse(row[16] || '{}'); } catch (_) {}
-        var p2pBranch = meta.p2pBranch || 'full';
-        return {
-          prNo:               row[0]  || '',
-          company:            row[1]  || '',
-          department:         row[3]  || '',
-          requesterName:      row[4]  || '',
-          requiredDate:       row[5]  || '',
-          priority:           row[6]  || '',
-          purpose:            row[7]  || '',
-          suggestedVendor:    row[8]  || '',
-          budgetCode:         row[9]  || '',
-          budgetApprover:     row[10] || '',
-          supplierApprover:   row[11] || '',
-          items:              row[12] || '[]',
-          grandTotal:         row[13] || 0,
-          status:             row[14] || '',
-          submittedAt:        row[15] || '',
-          metadata:           row[16] || '{}',
-          contractApprover:   row[17] || '',
-          purchasingApprover: row[18] || '',
-          attachmentUrls:     row[19] || '',
-          purchaseType:       meta.purchaseType || 'goods',
-          p2pBranch:          p2pBranch
-        };
-      })
-      .reverse(); // newest first
+      .map(prListCardFromRow_)
+      .sort(function(a, b) {
+        if (a.submittedAt < b.submittedAt) return 1;
+        if (a.submittedAt > b.submittedAt) return -1;
+        return 0;
+      });
 
-    Logger.log('[P2P] ✅ Returning ' + requests.length + ' purchase requests');
+    Logger.log('[P2P] ✅ Returning ' + requests.length + ' purchase request cards');
     return createResponse(true, 'Thành công', { requests: requests });
 
   } catch (error) {
@@ -2588,14 +3277,11 @@ function handleApprovePurchaseRequest(data) {
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
     if (!sheet) return createResponse(false, msg_('sheetPrHistoryNotFound'));
 
-    var values   = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    for (var i = 1; i < values.length; i++) {
-      if ((values[i][0] || '').toString().trim() === prNo) { rowIndex = i; break; }
-    }
-    if (rowIndex === -1) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
-
-    var row           = values[rowIndex];
+    var loc = findPRSubmitLocation_(ss, prNo, data.submittedAt);
+    if (!loc) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
+    sheet = loc.sheet;
+    var rowIndex = loc.rowNumber - 1;
+    var row = loc.row;
     var currentStatus = (row[14] || '').toString();
 
     if (currentStatus === 'Đã từ chối' || currentStatus === 'Rejected') {
@@ -2684,16 +3370,6 @@ function handleApprovePurchaseRequest(data) {
         ? { signatureUploaded: true, verification: data.signatureVerification || null }
         : null
     });
-    appendP2PHistoryRow_(sheet, 20, prNo, {
-      action:     'Approve',
-      role:       approverRole,
-      actorEmail: approverEmail,
-      actorName:  (metadata[approverRole + 'Name'] || ''),
-      prevStatus: currentStatus,
-      newStatus:  newStatus,
-      note:       note
-    });
-
     // Stage transition emails: notify the next stage approver when their stage opens
     if (stateAfter.stage === 'contract' && stateBeforeApprove.stage === 'parallel') {
       // Legacy PR contract stage (simplified branch only)
@@ -2743,14 +3419,11 @@ function handleRejectPurchaseRequest(data) {
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
     if (!sheet) return createResponse(false, msg_('sheetPrHistoryNotFound'));
 
-    var values   = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    for (var i = 1; i < values.length; i++) {
-      if ((values[i][0] || '').toString().trim() === prNo) { rowIndex = i; break; }
-    }
-    if (rowIndex === -1) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
-
-    var row           = values[rowIndex];
+    var loc = findPRSubmitLocation_(ss, prNo, data.submittedAt);
+    if (!loc) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
+    sheet = loc.sheet;
+    var rowIndex = loc.rowNumber - 1;
+    var row = loc.row;
     var currentStatus = (row[14] || '').toString();
 
     var metadata0;
@@ -2808,15 +3481,6 @@ function handleRejectPurchaseRequest(data) {
       newStatus:  'Đã từ chối',
       note:       note
     });
-    appendP2PHistoryRow_(sheet, 20, prNo, {
-      action:     'Reject',
-      role:       rejectRole,
-      actorEmail: approverEmail,
-      prevStatus: currentStatus,
-      newStatus:  'Đã từ chối',
-      note:       note
-    });
-
     return createResponse(true, 'Đã từ chối thành công.', { prNo: prNo, status: 'Đã từ chối' });
 
   } catch (error) {
@@ -2857,14 +3521,11 @@ function handleSendBackPurchaseRequest(data) {
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
     if (!sheet) return createResponse(false, msg_('sheetPrHistoryNotFound'));
 
-    var values   = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    for (var i = 1; i < values.length; i++) {
-      if ((values[i][0] || '').toString().trim() === prNo) { rowIndex = i; break; }
-    }
-    if (rowIndex === -1) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
-
-    var row           = values[rowIndex];
+    var loc = findPRSubmitLocation_(ss, prNo, data.submittedAt);
+    if (!loc) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
+    sheet = loc.sheet;
+    var rowIndex = loc.rowNumber - 1;
+    var row = loc.row;
     var currentStatus = (row[14] || '').toString();
 
     // Block on terminal/already-returned statuses
@@ -2954,15 +3615,6 @@ function handleSendBackPurchaseRequest(data) {
       note:       note,
       extra:      { targetStep: targetStep }
     });
-    appendP2PHistoryRow_(sheet, 20, prNo, {
-      action:     'Return',
-      role:       approverRole,
-      actorEmail: approverEmail,
-      prevStatus: currentStatus,
-      newStatus:  newStatus,
-      note:       'Bước ' + targetStep + ' — ' + note
-    });
-
     try {
       sendPurchaseRequestSendBackEmail_(row, prNo, targetStep, note, approverRole, metadata);
     } catch (emailErr) {
@@ -3025,14 +3677,11 @@ function handleResubmitPurchaseRequest(data) {
     var sheet = ss.getSheetByName(PR_SHEET_NAME);
     if (!sheet) return createResponse(false, msg_('sheetPrHistoryNotFound'));
 
-    var values   = sheet.getDataRange().getValues();
-    var rowIndex = -1;
-    for (var i = 1; i < values.length; i++) {
-      if ((values[i][0] || '').toString().trim() === prNo) { rowIndex = i; break; }
-    }
-    if (rowIndex === -1) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
-
-    var row           = values[rowIndex];
+    var loc = findPRSubmitLocation_(ss, prNo, data.submittedAt);
+    if (!loc) return createResponse(false, msg_('prNotFoundPrefix') + prNo);
+    sheet = loc.sheet;
+    var rowIndex = loc.rowNumber - 1;
+    var row = loc.row;
     var currentStatus = (row[14] || '').toString();
 
     if (currentStatus !== 'Trả lại bổ sung') {
@@ -3167,16 +3816,6 @@ function handleResubmitPurchaseRequest(data) {
       newStatus:  'Đang duyệt ngân sách & NCC (2/5)',
       note:       'Gửi lại lần ' + newMetadata.resubmitCount
     });
-    appendP2PHistoryRow_(sheet, 20, prNo, {
-      action:     'Resubmit',
-      role:       'requester',
-      actorEmail: requesterEmail,
-      actorName:  requesterName,
-      prevStatus: currentStatus,
-      newStatus:  'Đang duyệt ngân sách & NCC (2/5)',
-      note:       'Gửi lại lần ' + newMetadata.resubmitCount
-    });
-
     try {
       sendPurchaseRequestResubmitEmails_(prNo, data, newAttachmentRecords);
     } catch (emailErr) {
@@ -3840,18 +4479,12 @@ function findPRByNo_(prNo) {
   prNo = (prNo || '').toString().trim();
   if (!prNo) return null;
   var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(PR_SHEET_NAME);
-  if (!sheet) return null;
-  var values = sheet.getDataRange().getValues();
-  for (var i = 1; i < values.length; i++) {
-    if ((values[i][0] || '').toString().trim() === prNo) {
-      var meta = {};
-      try { meta = JSON.parse(values[i][16] || '{}'); } catch (_) {}
-      if (!meta.p2pBranch) meta.p2pBranch = 'full';
-      return { row: values[i], rowIndex: i, metadata: meta };
-    }
-  }
-  return null;
+  var loc = findPRSubmitLocation_(ss, prNo, '');
+  if (!loc) return null;
+  var meta = {};
+  try { meta = JSON.parse(loc.row[16] || '{}'); } catch (_) {}
+  if (!meta.p2pBranch) meta.p2pBranch = 'full';
+  return { row: loc.row, rowIndex: loc.rowNumber - 1, metadata: meta, sheet: loc.sheet };
 }
 
 function getPMTsByPR_(prNo) {
@@ -4133,6 +4766,10 @@ function handleGetP2PHistory(data) {
   try {
     var docNo = (data.docNo || '').toString().trim();
     var flow  = (data.flow  || '').toString().trim();
+    if (flow === 'PR') {
+      if (!docNo) return createResponse(false, msg_('invalidDocNoFlow'));
+      return createResponse(true, 'OK', { history: prHistoryFromAuditLog_(docNo) });
+    }
     var cfgMap = {
       PR:  { sheetName: PR_SHEET_NAME,       baseWidth: 20 },
       PMT: { sheetName: CONFIG.SHEET_NAME,   baseWidth: 36 },
@@ -4280,8 +4917,11 @@ function getContractsByPR_(prNo) {
 function syncPRGrandTotalFromContract_(prNo, contractValue, contractNo, actorEmail) {
   var prInfo = findPRByNo_(prNo);
   if (!prInfo) return;
-  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(PR_SHEET_NAME);
+  var sheet = prInfo.sheet;
+  if (!sheet) {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    sheet = ss.getSheetByName(PR_SHEET_NAME);
+  }
   var oldTotal = parseFloat(prInfo.row[13]) || 0;
   var newTotal = parseFloat(contractValue) || 0;
   prInfo.metadata.contractNo = contractNo;
