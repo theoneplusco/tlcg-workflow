@@ -1,0 +1,39 @@
+---
+description: Live voucher submit, approval, and attachment flow. Production is Ubuntu, not Vercel.
+globs: voucher.html,TLCG_CASH_BACKEND.gs,api/voucher.js,api/voucher-file.js,server.js
+alwaysApply: false
+---
+
+# Voucher flow
+
+Live site: `https://workflow.tl-c.us` → Cloudflare → Ubuntu `server.js` on port 3001. Vercel is not in this path. `git pull` updates the page and Node only. `TLCG_CASH_BACKEND.gs` goes live only when pasted into the **Cash** Apps Script project and the existing web app is redeployed (Execute as: Me). Never paste `TLCG_CORE_BACKEND.gs` into that project.
+
+Page `voucher.html` posts to `/api/voucher`, which proxies to the Cash web app (`TLCG_CASH_BACKEND_URL`).
+
+## Submit
+
+1. Company, phiếu Thu or Chi, employee.
+2. Payee and reason. Next-button checks the requester signature. Clicking the stepper does not.
+3. At least one expense line with content and amount.
+4. Review, then `sendForApproval()` → action `sendApprovalEmail`.
+
+Sheets hold the voucher. Drive holds attachments. The requester signature is compressed in the browser and stored in Voucher_History column R (MetaJSON), not as a Drive file.
+
+## Approval
+
+Order is fixed: accountant (1/3) → legal representative (2/3) → treasurer (3/3) → requester acknowledges receipt.
+
+`_approveVoucherCore_` allows only the role in `currentApprover`. A repeat approve is rejected. A rejected voucher cannot be approved. Approver emails come from Master Company, not from hardcoded addresses. Each status change appends one history row.
+
+The list uses `getVoucherSummary` (last 5000 data rows, no MetaJSON). Do not call `getApprovalStatus` once per card.
+
+## Attachments
+
+| Size | Path |
+|---|---|
+| ≤ 700 KB | Base64 inside the `sendApprovalEmail` JSON. Apps Script truncates one form field near 1 MB. |
+| 700 KB–10 MB | Raw file to `POST /api/voucher-file`. Cash opens a Drive resumable session (`createVoucherUploadSession`). Node PUTs the bytes to that URL. Cash then `finalizeVoucherUpload` (link sharing). The voucher stores only the Drive URL. |
+
+Folder: script property `DRIVE_VOUCHER_FOLDER_ID` (fallback `1RBBUUAQIrYTWeBONIgkMtELL0hxZhtqG`), subfolder named with the voucher number. `setSharing` is non-fatal.
+
+Do not send large files through Apps Script as base64. Do not use `/api/drive-upload` for this folder: the service account has no quota on that personal Drive.

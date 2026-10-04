@@ -4663,12 +4663,28 @@
             if (toast) toast.remove();
         }
 
-        // Files over INLINE_FILE_SIZE go to Drive as raw bytes through the
-        // Node server. Apps Script only opens the upload session and sets
-        // sharing — it never receives the file body.
-        async function uploadLargeAttachment(file, voucherNumber) {
-            const sizeLabel = (file.size / (1024 * 1024)).toFixed(1);
-            showUploadToast(`Đang tải "${file.name}" (${sizeLabel} MB)...`, 'info');
+        // The browser sends the file straight to Drive. Apps Script only opens
+        // the session and sets sharing. If that direct PUT is blocked, files
+        // over 700 KB still go through the server.
+        async function voucherApi(payload) {
+            const response = await fetch('/api/voucher', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ data: JSON.stringify(payload) }),
+                signal: httpTimeoutSignal(VOUCHER_SUBMIT_FETCH_TIMEOUT_MS)
+            });
+            const text = await response.text();
+            let result;
+            try { result = JSON.parse(text); } catch (e) {
+                throw new Error('Phản hồi không hợp lệ khi tải file');
+            }
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Không tải được file');
+            }
+            return result.data || {};
+        }
+
+        async function uploadViaServer(file, voucherNumber) {
             const formData = new FormData();
             formData.append('voucherNumber', voucherNumber || '');
             formData.append('file', file, file.name);
@@ -4680,14 +4696,45 @@
             const text = await response.text();
             let result;
             try { result = JSON.parse(text); } catch (e) {
-                clearUploadToast();
                 throw new Error('Phản hồi không hợp lệ khi tải file');
             }
             if (!response.ok || !result.success) {
-                clearUploadToast();
                 throw new Error(result.message || 'Không tải được file');
             }
-            const uploaded = result.data || {};
+            return result.data || {};
+        }
+
+        async function uploadLargeAttachment(file, voucherNumber) {
+            const sizeLabel = (file.size / (1024 * 1024)).toFixed(1);
+            showUploadToast(`Đang tải "${file.name}" (${sizeLabel} MB)...`, 'info');
+            let uploaded;
+            try {
+                const session = await voucherApi({
+                    action: 'createVoucherUploadSession',
+                    fileName: file.name || 'attachment',
+                    mimeType: file.type || 'application/octet-stream',
+                    fileSize: file.size,
+                    voucherNumber: voucherNumber || ''
+                });
+                if (!session.uploadUrl) throw new Error('Không tạo được phiên tải lên Drive');
+                const put = await fetch(session.uploadUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                    body: file,
+                    signal: httpTimeoutSignal(VOUCHER_SUBMIT_FETCH_TIMEOUT_MS)
+                });
+                const putText = await put.text();
+                let created = {};
+                try { created = JSON.parse(putText); } catch (e) { created = {}; }
+                if (!put.ok || !created.id) throw new Error('Drive từ chối file');
+                uploaded = await voucherApi({
+                    action: 'finalizeVoucherUpload',
+                    fileId: created.id
+                });
+            } catch (directError) {
+                console.warn('Direct Drive upload failed, using the server:', directError);
+                uploaded = await uploadViaServer(file, voucherNumber);
+            }
             if (!uploaded.fileUrl) {
                 clearUploadToast();
                 throw new Error('Không lấy được link Drive cho "' + file.name + '"');
@@ -9249,9 +9296,9 @@
             // "Unterminated string in JSON" — the submission is lost and the user
             // sees a confusing error plus the mailto: fallback.
             //
-            // Files at or under INLINE_FILE_SIZE stay in this JSON. Larger files
-            // are already on Drive (uploadLargeAttachment) and only their URL
-            // is sent here, so they do not count toward the payload ceiling.
+            // Every attachment is uploaded to Drive first. The voucher JSON
+            // stores only the link, so the file bytes never pass through the
+            // server in California.
             const MAX_TOTAL_PAYLOAD_SIZE = 900 * 1024; // 900 KB encoded, total
 
             // Start signature compression in parallel with Drive uploads (independent operations)
@@ -9328,7 +9375,7 @@
                     return;
                 }
             } else {
-                console.log('📦 Small files inline (≤700 KB). Larger files upload in chunks first.');
+                console.log('📦 Files upload straight to Drive. The server path is only a fallback.');
 
                 const skippedFiles = [];
 
@@ -9342,50 +9389,23 @@
                                     continue;
                                 }
 
-                                if (file.size > INLINE_FILE_SIZE) {
-                                    try {
-                                        const uploaded = await uploadLargeAttachment(file, voucherNumber);
-                                        filesToUpload.push({
-                                            fileName: uploaded.fileName,
-                                            fileUrl: uploaded.fileUrl,
-                                            mimeType: uploaded.mimeType,
-                                            fileSize: uploaded.fileSize,
-                                            rowIndex: i
-                                        });
-                                    } catch (err) {
-                                        console.error('Chunked upload failed:', file.name, err);
-                                        showToast(`Không tải được "${file.name}": ${err.message}`, 'error');
-                                        loadingIndicator.classList.remove('show');
-                                        isSubmitting = false;
-                                        submitBtn.disabled = false;
-                                        submitBtn.innerHTML = originalButtonText;
-                                        return;
-                                    }
-                                    continue;
-                                }
-
                                 try {
-                                    const base64Data = await fileToBase64(file);
-
-                                    let estimatedSize = filesToUpload.reduce((sum, f) => sum + (f.fileData ? f.fileData.length : 0), 0);
-                                    estimatedSize += base64Data.length;
-                                    if (currentSignatureData) estimatedSize += currentSignatureData.length;
-
-                                    if (estimatedSize > MAX_TOTAL_PAYLOAD_SIZE) {
-                                        skippedFiles.push(`${file.name} (tổng dung lượng vượt ${Math.round(MAX_TOTAL_PAYLOAD_SIZE / 1024)} KB — vui lòng bớt file nhỏ hoặc nén ảnh)`);
-                                        continue;
-                                    }
-
+                                    const uploaded = await uploadLargeAttachment(file, voucherNumber);
                                     filesToUpload.push({
-                                        fileName: file.name,
-                                        fileData: base64Data,
-                                        mimeType: file.type || 'application/octet-stream',
-                                        fileSize: file.size,
+                                        fileName: uploaded.fileName,
+                                        fileUrl: uploaded.fileUrl,
+                                        mimeType: uploaded.mimeType,
+                                        fileSize: uploaded.fileSize,
                                         rowIndex: i
                                     });
                                 } catch (err) {
-                                    console.error('Error converting file to base64:', file.name, err);
-                                    skippedFiles.push(`${file.name} (lỗi đọc file)`);
+                                    console.error('Upload failed:', file.name, err);
+                                    showToast(`Không tải được "${file.name}": ${err.message}`, 'error');
+                                    loadingIndicator.classList.remove('show');
+                                    isSubmitting = false;
+                                    submitBtn.disabled = false;
+                                    submitBtn.innerHTML = originalButtonText;
+                                    return;
                                 }
                             }
                         }
@@ -9404,7 +9424,7 @@
 
             // Log file information for verification
             console.log('=== FILE UPLOAD INFO ===');
-            console.log('Upload method:', useDriveAPI ? 'Google Drive API' : 'Legacy Base64');
+            console.log('Upload method:', 'Drive');
             console.log('Total expense items:', expenseItems.length);
             console.log('Files uploaded:', filesToUpload.length);
             if (filesToUpload.length > 0) {

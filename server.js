@@ -1,15 +1,12 @@
 /**
- * TLCG Workflow — self-hosted server.
+ * TLCG Workflow — self-hosted server (Mac Mini edition).
  *
- * Runs the same code Vercel served, as a single long-lived Node process:
- *   - static files from the repo root (11 HTML pages, i18n.js, assets)
- *   - the existing api/ handlers, unmodified
+ * PM2 cluster mode (8 workers, one per M1 Pro core).
+ * Routes new actions to Postgres handlers; unmigrated actions
+ * still proxy to the old GAS backends.
  *
- * The api/ handlers are plain (req, res) functions with no Vercel-specific
- * imports, so they mount directly on Express.
- *
- * Start:  node server.js         (or via the systemd unit / PM2)
- * Env:    see .env.example
+ * Start:  pm2 start ecosystem.config.js
+ * Env:    see .env (DATABASE_URL, REDIS_URL, R2_*, RESEND_API_KEY, etc.)
  */
 
 import express from 'express';
@@ -22,55 +19,100 @@ import driveUploadHandler from './api/drive-upload.js';
 import voucherFileHandler from './api/voucher-file.js';
 import configHandler from './api/config.js';
 
+// New handlers (Postgres)
+import { routeNewAction, migratedActions } from './api/router.js';
+import { handleSSE } from './api/handlers/sse.js';
+import { handlePresign } from './api/handlers/presign.js';
+import { handleHealth } from './api/handlers/health.js';
+import { startEmailWorker } from './api/handlers/email-queue.js';
+import { rateLimit } from './api/middleware/rate-limiter.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '127.0.0.1'; // behind a reverse proxy by default
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '127.0.0.1';
 
 const app = express();
 
-// Behind nginx/Caddy/Traefik: trust X-Forwarded-* so req.ip is the real client
-// IP. api/voucher.js rate-limits per IP, so without this every request would
-// look like it came from the proxy and share one bucket.
 app.set('trust proxy', true);
 app.disable('x-powered-by');
 
 /* ─────────────────────────────────────────────────────────────
-   1. Multipart upload — MUST be mounted before any body parser.
-      api/drive-upload.js sets `bodyParser: false` on Vercel and
-      parses the stream itself with busboy. A JSON/urlencoded
-      parser running first would consume the stream and uploads
-      would hang or fail.
+   1. Multipart upload — MUST be before body parser.
    ───────────────────────────────────────────────────────────── */
 app.post('/api/drive-upload', driveUploadHandler);
 app.post('/api/voucher-file', voucherFileHandler);
 
 /* ─────────────────────────────────────────────────────────────
-   2. Body parsing for everything else.
-      48mb fits the 30 MB attachment total after base64 (~40 MB)
-      plus the rest of the form. A 10 MB file alone is ~13 MB encoded.
+   2. Body parsing.
    ───────────────────────────────────────────────────────────── */
 app.use(express.json({ limit: '48mb' }));
 app.use(express.urlencoded({ extended: true, limit: '48mb' }));
 
 /* ─────────────────────────────────────────────────────────────
-   3. API routes.
+   3. New API routes (Postgres + Redis + R2).
    ───────────────────────────────────────────────────────────── */
 
-// api/voucher/[action].js reads req.query.action (Vercel puts dynamic segments
-// there). Express exposes it as req.params, so bridge it before delegating.
-app.all('/api/voucher/:action', (req, res) => {
-  req.query = Object.assign({}, req.query, { action: req.params.action });
+// SSE — real-time updates (Redis pub/sub)
+app.get('/api/events', handleSSE);
+
+// R2 presigned URL — direct file upload
+app.post('/api/presign', handlePresign);
+
+// Health check
+app.get('/api/health', handleHealth);
+
+/* ─────────────────────────────────────────────────────────────
+   4. /api/voucher — the main action router.
+      New actions go to Postgres handlers; old actions proxy to GAS.
+      Rate limiter applies to all.
+   ───────────────────────────────────────────────────────────── */
+app.all('/api/voucher/:action', async (req, res) => {
+  const action = req.params.action;
+
+  // Check if this action is migrated to the new backend
+  if (migratedActions.includes(action)) {
+    // Apply rate limiting for new actions
+    await new Promise((resolve) => {
+      rateLimit(req, res, () => resolve());
+    });
+    if (res.headersSent) return; // rate limiter responded
+    try {
+      await routeNewAction(action, req, res);
+    } catch (err) {
+      console.error(`[router] New handler error (${action}):`, err.message);
+      if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+    }
+    return;
+  }
+
+  // Fall through to old GAS proxy
+  req.query = Object.assign({}, req.query, { action });
   return actionHandler(req, res);
 });
 
-app.all('/api/voucher', voucherHandler);
+app.all('/api/voucher', async (req, res) => {
+  const action = req.body?.action || req.query?.action;
+  if (action && migratedActions.includes(action)) {
+    await new Promise((resolve) => {
+      rateLimit(req, res, () => resolve());
+    });
+    if (res.headersSent) return;
+    try {
+      await routeNewAction(action, req, res);
+    } catch (err) {
+      console.error(`[router] New handler error (${action}):`, err.message);
+      if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+    }
+    return;
+  }
+  return voucherHandler(req, res);
+});
+
 app.all('/api/config', configHandler);
 
 /* ─────────────────────────────────────────────────────────────
-   4. Static site.
-      vercel.json used cleanUrls:true, so /contract must resolve to
-      contract.html. `extensions` reproduces that.
+   5. Static site (same as before).
    ───────────────────────────────────────────────────────────── */
 app.use(
   express.static(__dirname, {
@@ -78,18 +120,15 @@ app.use(
     index: 'index.html',
     dotfiles: 'ignore',
     setHeaders(res, filePath) {
-      // HTML must revalidate so a deploy is picked up immediately;
-      // fingerprint-free assets get a short cache.
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache');
       } else {
         res.setHeader('Cache-Control', 'public, max-age=3600');
       }
-    }
+    },
   })
 );
 
-// vercel.json rewrote / to index.html; anything unmatched falls back there.
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ success: false, message: 'Not found' });
@@ -98,7 +137,7 @@ app.get('*', (req, res) => {
 });
 
 /* ─────────────────────────────────────────────────────────────
-   5. Error handling — never leak a stack trace to the client.
+   6. Error handling.
    ───────────────────────────────────────────────────────────── */
 app.use((err, req, res, _next) => {
   console.error('[server] Unhandled error:', err);
@@ -106,19 +145,28 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
+/* ─────────────────────────────────────────────────────────────
+   7. Start.
+   ───────────────────────────────────────────────────────────── */
 const server = app.listen(PORT, HOST, () => {
-  console.log(`[server] TLCG Workflow listening on http://${HOST}:${PORT}`);
-  const missing = ['GOOGLE_SERVICE_ACCOUNT_KEY', 'MASTER_SPREADSHEET_ID']
-    .filter((k) => !process.env[k]);
+  console.log(`[server] TLCG Workflow on http://${HOST}:${PORT} (worker ${process.pid})`);
+  console.log(`[server] Migrated actions (${migratedActions.length}): ${migratedActions.join(', ')}`);
+  console.log(`[server] Unmigrated actions → GAS proxy`);
+
+  // Start the background email worker
+  startEmailWorker();
+
+  // Warn about missing env vars
+  const required = ['DATABASE_URL', 'REDIS_URL'];
+  const missing = required.filter((k) => !process.env[k]);
   if (missing.length) {
-    console.warn('[server] Missing env vars (uploads/master data may fail): ' + missing.join(', '));
+    console.warn('[server] Missing env vars:', missing.join(', '));
   }
 });
 
-// Let systemd restart us cleanly instead of dropping in-flight requests.
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
-    console.log(`[server] ${sig} received, closing...`);
+    console.log(`[server] ${sig} received, closing... (worker ${process.pid})`);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 10000).unref();
   });

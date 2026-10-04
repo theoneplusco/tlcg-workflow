@@ -9,11 +9,10 @@ alwaysApply: false
 ## Expense Attachment Uploads (front-end)
 
 - Accepted types: any (`*`) — no restriction on the hidden file input
-- Max per file (client validation): **10 MB** (`MAX_FILE_SIZE = 10 * 1024 * 1024`)
-- Max per file (GAS payload path): **5 MB** — files over this are skipped at submit time
-- Max total payload (GAS path): **30 MB**
+- Max per file: **10 MB**
+- Files ≤ **700 KB** travel as base64 inside `sendApprovalEmail` (`useDriveAPI = false`). Apps Script truncates one form field near 1 MB, so this raw ceiling stays at 700 KB. Total encoded payload ceiling is 900 KB.
+- Files **over 700 KB** go as raw bytes to `POST /api/voucher-file`. See `voucher-flow.mdc`. Do not base64 them into the voucher JSON.
 - Multiple files per row allowed (`multiple` attribute)
-- Upload path: `useDriveAPI = false` — always use GAS base64 path (Service Accounts have no Drive storage quota on personal folders)
 
 ## GAS Drive Upload (`uploadFilesToDrive_` in TLCG_CASH_BACKEND.gs)
 
