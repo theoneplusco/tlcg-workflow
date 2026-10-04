@@ -50,6 +50,9 @@ async function migrateEmployees(employees) {
   let count = 0;
   for (const emp of employees) {
     try {
+      const email = emp.email || '';
+      // Use a unique placeholder if email is empty (UNIQUE constraint)
+      const uniqueEmail = email || `noemail-${count + 1}@local`;
       await pool.query(
         `INSERT INTO employees (full_name, position, department, company, email, phone, status, role, is_admin)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -64,7 +67,7 @@ async function migrateEmployees(employees) {
            is_admin = EXCLUDED.is_admin,
            updated_at = NOW()`,
         [emp.name || emp.full_name || '', emp.position || '', emp.department || '',
-         emp.company || '', emp.email || '', emp.phone || '',
+         emp.company || '', uniqueEmail, emp.phone || '',
          emp.status || 'active', emp.role || '', emp.isAdmin || false]
       );
       count++;
