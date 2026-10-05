@@ -214,6 +214,10 @@ export async function handleVoucherApprove(req, res) {
     }
 
     // ── 3. Guards ──
+    if (voucher.overall_status === 'Rejected') {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, message: vi ? 'Phiếu đã bị từ chối' : 'Voucher rejected' });
+    }
     if (companyApprovers.approvers[approverRole].status === 'approved') {
       await client.query('ROLLBACK');
       return res.json({ success: false, message: vi ? 'Bạn đã phê duyệt phiếu này rồi' : 'Already approved' });
@@ -389,6 +393,11 @@ export async function handleVoucherReject(req, res) {
     meta.rejectedBy = approverEmail;
     meta.rejectedAt = new Date().toISOString();
     meta.rejectionReason = rejectReason;
+    // Also update companyApprovers so the approve guard sees it
+    if (meta.companyApprovers) {
+      meta.companyApprovers.overallStatus = 'Rejected';
+      meta.companyApprovers.displayStatus = 'Đã từ chối';
+    }
 
     await client.query(
       `UPDATE vouchers SET status = 'Đã từ chối', overall_status = 'Rejected',
