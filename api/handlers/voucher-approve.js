@@ -546,21 +546,16 @@ export async function handleVoucherSummary(req, res) {
 // ── Helpers ──────────────────────────────────────────────────
 
 async function allocateVoucherNumber(client, prefix, dateStr) {
-  // Simple sequence — check existing and increment
-  const base = `${prefix}-PT${dateStr}`;
-  const { rows } = await client.query(
-    `SELECT voucher_number FROM vouchers WHERE voucher_number LIKE $1 ORDER BY voucher_number DESC LIMIT 1`,
-    [`${base}%`]
-  );
-  if (rows.length === 0) return `${base}000001`;
-  // Extract counter and increment
-  const last = rows[0].voucher_number;
-  const match = last.match(/(\d+)$/);
-  if (match) {
-    const next = parseInt(match[1], 10) + 1;
-    return base + String(next).padStart(6, '0');
-  }
-  return `${base}000001`;
+  // Use a Postgres sequence for atomic, race-free allocation.
+  // One sequence per (prefix, date) — created on demand.
+  const seqName = `voucher_seq_${prefix.toLowerCase()}_${dateStr}`;
+  // Sanitize sequence name (alphanumeric + underscore only)
+  const safeSeq = seqName.replace(/[^a-z0-9_]/g, '_');
+  // Create the sequence if it doesn't exist, then get next value
+  await client.query(`CREATE SEQUENCE IF NOT EXISTS ${safeSeq} START 1`); 
+  const { rows } = await client.query(`SELECT nextval('${safeSeq}')::int as next_val`);
+  const counter = String(rows[0].next_val).padStart(6, '0');
+  return `${prefix}-PT${dateStr}${counter}`;
 }
 
 async function appendAuditLog(client, opts) {
