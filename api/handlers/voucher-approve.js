@@ -548,14 +548,30 @@ export async function handleVoucherSummary(req, res) {
 async function allocateVoucherNumber(client, prefix, dateStr) {
   // Use a Postgres sequence for atomic, race-free allocation.
   // One sequence per (prefix, date) — created on demand.
-  const seqName = `voucher_seq_${prefix.toLowerCase()}_${dateStr}`;
-  // Sanitize sequence name (alphanumeric + underscore only)
-  const safeSeq = seqName.replace(/[^a-z0-9_]/g, '_');
-  // Create the sequence if it doesn't exist, then get next value
-  await client.query(`CREATE SEQUENCE IF NOT EXISTS ${safeSeq} START 1`); 
+  const safeSeq = `voucher_seq_${prefix.toLowerCase()}_${dateStr}`.replace(/[^a-z0-9_]/g, '_');
+
+  // Find the highest existing counter for this prefix+date
+  const base = `${prefix}-PT${dateStr}`;
+  const { rows: existing } = await client.query(
+    `SELECT voucher_number FROM vouchers WHERE voucher_number LIKE $1 ORDER BY voucher_number DESC LIMIT 1`,
+    [`${base}%`]
+  );
+  let startVal = 1;
+  if (existing.length > 0) {
+    const match = existing[0].voucher_number.match(/(\d{6})$/);
+    if (match) startVal = parseInt(match[1], 10) + 1;
+  }
+
+  // Create the sequence with the right start value, or get next
+  await client.query(`CREATE SEQUENCE IF NOT EXISTS ${safeSeq} START ${startVal}`);
+  // If sequence already exists and is behind, set it to max(start, current)
+  const { rows: seqRows } = await client.query(`SELECT last_value::int FROM ${safeSeq}`);
+  if (seqRows[0]?.last_value > 0 && seqRows[0].last_value < startVal - 1) {
+    await client.query(`SELECT setval('${safeSeq}', ${startVal - 1})`);
+  }
   const { rows } = await client.query(`SELECT nextval('${safeSeq}')::int as next_val`);
   const counter = String(rows[0].next_val).padStart(6, '0');
-  return `${prefix}-PT${dateStr}${counter}`;
+  return `${base}${counter}`;
 }
 
 async function appendAuditLog(client, opts) {
