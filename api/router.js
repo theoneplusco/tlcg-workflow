@@ -2,7 +2,7 @@
 // Routes action params to either new Express handlers (Postgres) or
 // the old GAS proxy (for actions not yet migrated).
 import { handleGetMasterData, handleGetCompanyApprovers, handleGetEmployees } from './handlers/master-data.js';
-import { handleLogin, handleChangePassword } from './handlers/auth.js';
+import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherSummary } from './handlers/voucher-approve.js';
 import { handlePRSubmit, handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
@@ -15,6 +15,9 @@ const NEW_HANDLERS = {
   getEmployees:          handleGetEmployees,
   login:                 handleLogin,
   changePassword:        handleChangePassword,
+  requestPasswordReset:  handleRequestPasswordReset,
+  verifyOTP:             handleVerifyOTP,
+  resetPassword:         handleResetPassword,
 
   // Cash book (Phase 2)
   getCashBook:           handleGetCashBook,

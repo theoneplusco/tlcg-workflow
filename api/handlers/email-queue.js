@@ -73,6 +73,19 @@ export async function processEmailQueue() {
   }
 }
 
+/** Send immediately (OTP / time-sensitive). Falls back to the queue on failure. */
+export async function sendEmailNow(toEmail, subject, bodyHtml = '', bodyText = '') {
+  if (!toEmail || !subject) return false;
+  try {
+    await sendViaResend({ to_email: toEmail, subject, body_html: bodyHtml, body_text: bodyText });
+    return true;
+  } catch (err) {
+    console.error('[EmailQueue] Immediate send failed, queueing:', err.message);
+    await queueEmail(toEmail, subject, bodyHtml, bodyText);
+    return false;
+  }
+}
+
 async function sendViaResend(email) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error('RESEND_API_KEY not set');
