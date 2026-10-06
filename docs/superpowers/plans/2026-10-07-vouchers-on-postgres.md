@@ -80,5 +80,12 @@
 ### Task 6: Shadow verification (no cutover)
 - With `PG_WORKFLOWS=vouchers` on a local server, compare `getVoucherSummary` / `getVoucherHistory` / `getApprovalStatus` responses against GAS for all 450 vouchers and the three caller types; list every difference. Cutover itself is Plan 3.
 
-## Open decision (needs the user)
-- After cutover, should Postgres keep writing vouchers back to the Google Sheet (for the pivot tables / reports that read Voucher_History), or is the sheet frozen as an archive?
+### Task 7: One-way Google Sheet mirror (decided 2026-10-07)
+Postgres is the source of truth; the sheet is a read-only copy so the existing pivot tables / reports keep working.
+- `api/jobs/voucher-sheet-mirror.js`: after each committed voucher change, enqueue the new `voucher_history` row + the voucher's current row; a background worker (Redis lock, one of 12 workers) appends to `Voucher_History` and upserts `Voucher_Current` via the Sheets API (service account `tlcg-drive-uploader@vast-torus-408523.iam.gserviceaccount.com`), same columns as today.
+- Never blocks approvals: failures retry with backoff; queue depth shown in `/api/health`.
+- Nightly reconcile: compare sheet vs Postgres, append missing history rows, fix Voucher_Current.
+- Tabs get a header note "Mirror — do not edit" (optionally protected).
+- Prerequisites (user): enable Google Sheets API in GCP project `vast-torus-408523`; share the master spreadsheet with the service account as **Editor**.
+- Cutover checklist (Plan 3): disable the GAS `sendReminderEmails` time trigger so approvers don't get double reminders.
+- Retire the mirror once the reports exist in the app; the sheet then stays as an archive.
