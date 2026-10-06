@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migration Admin</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { font-family: Inter, system-ui, sans-serif; background: #f5f5f5; color: #1f2937; margin: 0; padding-top: 64px; }
+  .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 24px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 18px; margin-top: 0; }
+  .btn { display: inline-block; padding: 8px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-right: 8px; margin-bottom: 8px; }
+  .btn:hover { background: #1d4ed8; }
+  .btn-success { background: #16a34a; }
+  .btn-success:hover { background: #15803d; }
+  .btn-danger { background: #dc2626; }
+  .btn-danger:hover { background: #b91c1c; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th, td { padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f9fafb; font-weight: 600; }
+  tr:hover { background: #f9fafb; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+  .status-success { background: #dcfce7; color: #166534; }
+  .status-pending { background: #fef3c7; color: #92400e; }
+  #loading { display: flex; align-items: center; justify-content: center; padding: 48px; color: #6b7280; }
+</style>
+<script src="i18n.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="loading">Loading migration admin...</div>
+</div>
+<script>
+const API_BASE = '/';
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const app = document.getElementById('app');
+
+  async function fetchMasterData() {
+    const data = new URLSearchParams();
+    data.set('data', JSON.stringify({ action: 'getMasterData' }));
+    const res = await fetch(API_BASE + '/api/voucher', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: data.toString()
+    });
+    const json = await res.json();
+    return json.data || {};
+  }
+
+  async function render() {
+    const loading = document.getElementById('loading');
+    loading.style.display = 'none';
+    app.innerHTML = '';
+
+    try {
+      const { companies, employees, goods } = await fetchMasterData();
+      if (!companies || !employees) {
+        loading.style.display = 'flex';
+        loading.textContent = 'No master data available.';
+        return;
+      }
+
+      const statusEl = document.createElement('div');
+      statusEl.className = 'card';
+      statusEl.innerHTML = '<h2>Migration Status</h2><div><strong>Companies:</strong> ' + companies.length + '<br><strong>Employees:</strong> ' + employees.length + '<br><strong>Goods:</strong> ' + (goods ? goods.length : 0) + '</div><div style="margin-top: 12px;"><button class="btn" onclick="location.reload()">Refresh</button><button class="btn btn-success" onclick="migrateAll()">Re-run Migration</button><button class="btn btn-danger" onclick="resetEmployees()">Reset Employees (placeholder emails)</button></div>';
+      app.appendChild(statusEl);
+
+      const coCard = document.createElement('div');
+      coCard.className = 'card';
+      coCard.innerHTML = '<h2>Master Companies</h2><table><thead><tr><th>Full Name</th><th>Accountant</th><th>Legal Rep</th><th>Treasurer</th></tr></thead><tbody></tbody></table>';
+      const coBody = coCard.querySelector('tbody');
+      companies.forEach(function(c) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + c.full_name + '</td><td>' + (c.accountant_name || '-') + '</td><td>' + (c.legal_rep_name || '-') + '</td><td>' + (c.treasurer_name || '-') + '</td>';
+        coBody.appendChild(tr);
+      });
+      app.appendChild(coCard);
+
+      const empCard = document.createElement('div');
+      empCard.className = 'card';
+      empCard.innerHTML = '<h2>Master Employees</h2><table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>';
+      const empBody = empCard.querySelector('tbody');
+      employees.forEach(function(e) {
+        const tr = document.createElement('tr');
+        const hasRealEmail = e.employee_email && !e.employee_email.includes('noemail');
+        const emailStatus = hasRealEmail ? '<span class="status status-success">Real</span>' : '<span class="status status-pending">Placeholder</span>';
+        tr.innerHTML = '<td>' + e.full_name + '</td><td>' + (e.employee_email || '-') + '</td><td>' + emailStatus + '</td><td>' + (hasRealEmail ? '<button class="btn btn-success" style="font-size:12px; padding:4px 8px;">✓</button>' : '<button class="btn btn-success" style="font-size:12px; padding:4px 8px;" onclick="fixEmployee(\'' + encodeURIComponent(e.full_name) + '\',\'' + encodeURIComponent(e.employee_email || '') + '\')">Fix</button>') + '</td>';
+        empBody.appendChild(tr);
+      });
+      app.appendChild(empCard);
+
+    } catch (err) {
+      loading.style.display = 'flex';
+      loading.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  function migrateAll() {
+    if (!confirm('Re-run migration? This will overwrite existing data.')) return;
+    alert('Re-run: node scripts/migrate-from-sheets.js');
+    render();
+  }
+
+  function fixEmployee(name, email) {
+    if (!email) {
+      email = prompt('Enter email for ' + name, 'newuser@tl-c.com.vn');
+      if (!email) return;
+    }
+    alert('Run on server: psql -c "UPDATE employees SET email = \'' + email + '\' WHERE full_name = \'' + name + '\"' );
+    render();
+  }
+
+  function resetEmployees() {
+    if (!confirm('Reset all employees to placeholder emails?')) return;
+    alert('Run on server: psql tlcg_workflow -c "TRUNCATE employees RESTART IDENTITY CASCADE"; then node scripts/migrate-from-sheets.js');
+    render();
+  }
+
+  render();
+});
+</script>
+</body>
+</html>

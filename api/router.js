@@ -6,6 +6,7 @@ import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVe
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherSummary } from './handlers/voucher-approve.js';
 import { handlePRSubmit, handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
+import { handleUpdateEmployee, handleResetEmployees } from './handlers/migration.js';
 
 // ── New handlers (Postgres) ──────────────────────────────────
 const NEW_HANDLERS = {
@@ -40,6 +41,10 @@ const NEW_HANDLERS = {
   rejectPurchaseRequest:       handlePRReject,
   getPurchaseRequestHistory:   handlePRHistory,
   getPurchaseRequest:          handlePRDetail,
+
+  // Migration admin
+  updateEmployee:         handleUpdateEmployee,
+  resetEmployees:         handleResetEmployees,
 };
 
 /**
