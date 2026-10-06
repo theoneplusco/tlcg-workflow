@@ -20,7 +20,7 @@ import voucherFileHandler from './api/voucher-file.js';
 import configHandler from './api/config.js';
 
 // New handlers (Postgres)
-import { routeNewAction, migratedActions } from './api/router.js';
+import { routeNewAction, migratedActions, postgresWorkflows } from './api/router.js';
 import { handleSSE } from './api/handlers/sse.js';
 import { handlePresign } from './api/handlers/presign.js';
 import { handleHealth } from './api/handlers/health.js';
@@ -151,6 +151,7 @@ app.use((err, req, res, _next) => {
 const server = app.listen(PORT, HOST, () => {
   console.log(`[server] TLCG Workflow on http://${HOST}:${PORT} (worker ${process.pid})`);
   console.log(`[server] Migrated actions (${migratedActions.length}): ${migratedActions.join(', ')}`);
+  console.log(`[server] Workflows on Postgres: ${postgresWorkflows.join(', ') || 'none (all workflows → GAS)'}`);
   console.log(`[server] Unmigrated actions → GAS proxy`);
 
   // Start the background email worker

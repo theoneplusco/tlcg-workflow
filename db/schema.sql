@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS employees (
   role            TEXT DEFAULT '',
   is_admin        BOOLEAN DEFAULT FALSE,
   password_hash   TEXT DEFAULT '',
+  legacy_password_sha256 TEXT DEFAULT '',   -- GAS column L; cleared on first bcrypt login
+  must_change_password   BOOLEAN DEFAULT FALSE,
   cached_signature TEXT,
   push_subscription TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
@@ -36,7 +38,10 @@ CREATE TABLE IF NOT EXISTS companies (
   treasurer_name     TEXT DEFAULT '',
   treasurer_email    TEXT DEFAULT '',
   treasurer_sig_url  TEXT DEFAULT '',
-  created_at     TIMESTAMPTZ DEFAULT NOW()
+  address            TEXT DEFAULT '',
+  tax_code           TEXT DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (company_name, company_key)
 );
 
 CREATE TABLE IF NOT EXISTS goods_catalog (
@@ -49,7 +54,8 @@ CREATE TABLE IF NOT EXISTS goods_catalog (
   spec        TEXT DEFAULT '',
   qbo_code    TEXT DEFAULT '',
   status      TEXT DEFAULT 'active',
-  created_at  TIMESTAMPTZ DEFAULT NOW()
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (name, category)
 );
 
 -- ── Vouchers (Phiếu Thu/Chi) ─────────────────────────────────

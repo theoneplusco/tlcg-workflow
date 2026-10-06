@@ -1,17 +1,22 @@
 // api/router.js — Central action router
 // Routes action params to either new Express handlers (Postgres) or
 // the old GAS proxy (for actions not yet migrated).
-import { handleGetMasterData, handleGetCompanyApprovers, handleGetEmployees } from './handlers/master-data.js';
+import { handleGetMasterData, handleGetCompanies, handleGetCompanyApprovers, handleGetEmployees, handleGetSuppliers, handleGetVendorBanks } from './handlers/master-data.js';
 import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherSummary } from './handlers/voucher-approve.js';
 import { handlePRSubmit, handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
+import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
+import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
+import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
-import { handleUpdateEmployee, handleResetEmployees } from './handlers/migration.js';
 
 // ── New handlers (Postgres) ──────────────────────────────────
 const NEW_HANDLERS = {
   // Auth + master data (Phase 1)
   getMasterData:        handleGetMasterData,
+  getCompanies:         handleGetCompanies,
+  getSuppliers:         handleGetSuppliers,
+  getVendorBanks:       handleGetVendorBanks,
   getCompanyApprovers:  handleGetCompanyApprovers,
   getEmployees:          handleGetEmployees,
   login:                 handleLogin,
@@ -42,10 +47,36 @@ const NEW_HANDLERS = {
   getPurchaseRequestHistory:   handlePRHistory,
   getPurchaseRequest:          handlePRDetail,
 
-  // Migration admin
-  updateEmployee:         handleUpdateEmployee,
-  resetEmployees:         handleResetEmployees,
+  // Admin — require an admin login token (checked in the handler)
+  adminListEmployees:          handleAdminListEmployees,
+  adminCreateEmployee:         handleAdminCreateEmployee,
+  adminUpdateEmployee:         handleAdminUpdateEmployee,
+  adminEmployeeOptions:        handleAdminEmployeeOptions,
+  adminMasterTables:           handleAdminMasterTables,
+  adminMasterGet:              handleAdminMasterGet,
+  adminMasterUpdateCell:       handleAdminMasterUpdateCell,
+  adminMasterAddColumn:        handleAdminMasterAddColumn,
+  adminMasterDeleteColumn:     handleAdminMasterDeleteColumn,
+  adminMasterRenameColumn:     handleAdminMasterRenameColumn,
+  adminApprovalFlowGet:        handleAdminApprovalFlowGet,
+  adminApprovalFlowSave:       handleAdminApprovalFlowSave,
+  adminApprovalFlowPreview:    handleAdminApprovalFlowPreview,
 };
+
+// ── Which workflows run on Postgres ──────────────────────────
+// A workflow moves to Postgres only once its history is imported and its
+// pages are verified; until then every one of its actions (reads AND writes)
+// stays on Google Apps Script, so a workflow never has data in two places.
+//   PG_WORKFLOWS=cash,vouchers,p2p   (comma list; auth/master/admin always Postgres)
+const WORKFLOW_ACTIONS = {
+  cash: ['getCashBook', 'getCashCount', 'getCashBookSummary', 'getRecentCashCounts', 'saveCashCount', 'signCashCount'],
+  vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'getVoucherSummary'],
+  p2p: ['purchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'getPurchaseRequestHistory', 'getPurchaseRequest'],
+};
+const PG_WORKFLOWS = new Set(String(process.env.PG_WORKFLOWS || '').split(',').map((s) => s.trim()).filter(Boolean));
+for (const [workflow, actions] of Object.entries(WORKFLOW_ACTIONS)) {
+  if (!PG_WORKFLOWS.has(workflow)) actions.forEach((a) => { delete NEW_HANDLERS[a]; });
+}
 
 /**
  * Check if an action is handled by the new Postgres backend.
@@ -68,3 +99,4 @@ export async function routeNewAction(action, req, res) {
  * List of migrated actions (for logging/debugging).
  */
 export const migratedActions = Object.keys(NEW_HANDLERS);
+export const postgresWorkflows = [...PG_WORKFLOWS];

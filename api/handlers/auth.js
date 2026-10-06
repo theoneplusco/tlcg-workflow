@@ -16,6 +16,37 @@ const MAX_OTP_GUESSES = 3;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRY = '7d';
 
+const BCRYPT_ROUNDS = 10;
+
+function sha256Hex(text) {
+  return crypto.createHash('sha256').update(String(text).trim(), 'utf8').digest('hex');
+}
+
+/**
+ * Check a password against the stored bcrypt hash, or against the GAS
+ * SHA-256 hash (column L) carried over by the migration. A legacy match
+ * is upgraded to bcrypt on the spot so the SHA-256 copy is used once.
+ */
+async function verifyPassword(user, password) {
+  if (user.password_hash) {
+    return bcrypt.compare(password, user.password_hash);
+  }
+  const legacy = (user.legacy_password_sha256 || '').toLowerCase();
+  if (!legacy) return false;
+  const submitted = Buffer.from(sha256Hex(password));
+  const stored = Buffer.from(legacy);
+  if (submitted.length !== stored.length || !crypto.timingSafeEqual(submitted, stored)) {
+    return false;
+  }
+  const upgraded = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  await pool.query(
+    `UPDATE employees SET password_hash = $1, legacy_password_sha256 = '', updated_at = NOW()
+     WHERE id = $2`,
+    [upgraded, user.id]
+  );
+  return true;
+}
+
 export async function handleLogin(req, res) {
   const { email, password, lang } = req.body || {};
   const vi = lang !== 'en';
@@ -29,21 +60,14 @@ export async function handleLogin(req, res) {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, full_name, email, position, department, company, role, is_admin,
-              password_hash, status
+      `SELECT id, full_name, email, position, department, company, phone, role, is_admin,
+              employee_id, password_hash, legacy_password_sha256, must_change_password, status
        FROM employees WHERE email = $1 AND status = 'active'`,
       [email.toLowerCase().trim()]
     );
 
     const user = rows[0];
-    if (!user || !user.password_hash) {
-      return res.status(401).json({
-        success: false,
-        message: vi ? 'Email hoặc mật khẩu không đúng' : 'Invalid email or password',
-      });
-    }
-
-    const valid = await bcrypt.compare(password, user.password_hash);
+    const valid = user ? await verifyPassword(user, password) : false;
     if (!valid) {
       return res.status(401).json({
         success: false,
@@ -57,20 +81,29 @@ export async function handleLogin(req, res) {
       { expiresIn: JWT_EXPIRY }
     );
 
+    // Flat GAS-compatible shape at data.* — index.html reads result.data.name / department / …
+    // (not result.data.user.*). Keep token + nested user for newer clients.
+    const profile = {
+      id: user.id,
+      employeeId: user.employee_id || (user.id != null ? String(user.id) : ''),
+      name: user.full_name || '',
+      email: user.email,
+      position: user.position || '',
+      role: user.position || user.role || 'User',
+      department: user.department || '',
+      company: user.company || '',
+      phone: user.phone || '',
+      isAdmin: !!user.is_admin,
+      mustChangePassword: !!user.must_change_password,
+    };
+
     return res.json({
       success: true,
+      message: 'Login successful',
       data: {
+        ...profile,
         token,
-        user: {
-          id: user.id,
-          name: user.full_name,
-          email: user.email,
-          position: user.position,
-          department: user.department,
-          company: user.company,
-          role: user.role,
-          isAdmin: user.is_admin,
-        },
+        user: profile,
       },
     });
   } catch (err) {
@@ -95,20 +128,19 @@ export async function handleChangePassword(req, res) {
   }
 
   try {
+    const pwValidation = validatePasswordRules(newPassword);
+    if (!pwValidation.valid) {
+      return res.json({ success: false, message: pwValidation.message });
+    }
+
     const { rows } = await pool.query(
-      `SELECT id, password_hash FROM employees WHERE email = $1 AND status = 'active'`,
+      `SELECT id, password_hash, legacy_password_sha256 FROM employees
+       WHERE email = $1 AND status = 'active'`,
       [email.toLowerCase().trim()]
     );
 
     const user = rows[0];
-    if (!user || !user.password_hash) {
-      return res.status(401).json({
-        success: false,
-        message: vi ? 'Mật khẩu hiện tại không đúng' : 'Current password is incorrect',
-      });
-    }
-
-    const valid = await bcrypt.compare(currentPassword, user.password_hash);
+    const valid = user ? await verifyPassword(user, currentPassword) : false;
     if (!valid) {
       return res.status(401).json({
         success: false,
@@ -116,9 +148,11 @@ export async function handleChangePassword(req, res) {
       });
     }
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.query(
-      `UPDATE employees SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      `UPDATE employees SET password_hash = $1, legacy_password_sha256 = '',
+              must_change_password = FALSE, updated_at = NOW()
+       WHERE id = $2`,
       [newHash, user.id]
     );
 
@@ -129,7 +163,7 @@ export async function handleChangePassword(req, res) {
   }
 }
 
-function validatePasswordRules(password) {
+export function validatePasswordRules(password) {
   if (!password || password.length < 8)
     return { valid: false, message: 'Mật khẩu phải có ít nhất 8 ký tự' };
   if (!/[A-Z]/.test(password))
@@ -263,9 +297,11 @@ export async function handleResetPassword(req, res) {
       return res.json({ success: false, message: 'Không tìm thấy người dùng' });
     }
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.query(
-      `UPDATE employees SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      `UPDATE employees SET password_hash = $1, legacy_password_sha256 = '',
+              must_change_password = FALSE, updated_at = NOW()
+       WHERE id = $2`,
       [newHash, rows[0].id]
     );
     await redis.del('reset_token:' + email);
@@ -274,6 +310,18 @@ export async function handleResetPassword(req, res) {
   } catch (err) {
     console.error('[Auth] Reset password error:', err.message);
     return res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+}
+
+/**
+ * Decode a login token; null when missing, expired or forged.
+ */
+export function decodeToken(token) {
+  if (!token) return null;
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
   }
 }
 

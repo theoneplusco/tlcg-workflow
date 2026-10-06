@@ -3,124 +3,1214 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Migration Admin</title>
-<link rel="stylesheet" href="style.css">
+<title>Master Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
-  body { font-family: Inter, system-ui, sans-serif; background: #f5f5f5; color: #1f2937; margin: 0; padding-top: 64px; }
-  .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
-  h1 { font-size: 24px; margin-bottom: 24px; }
-  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-  .card h2 { font-size: 18px; margin-top: 0; }
-  .btn { display: inline-block; padding: 8px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-right: 8px; margin-bottom: 8px; }
-  .btn:hover { background: #1d4ed8; }
-  .btn-success { background: #16a34a; }
-  .btn-success:hover { background: #15803d; }
-  .btn-danger { background: #dc2626; }
-  .btn-danger:hover { background: #b91c1c; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
-  th, td { padding: 8px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-  th { background: #f9fafb; font-weight: 600; }
-  tr:hover { background: #f9fafb; }
-  .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-  .status-success { background: #dcfce7; color: #166534; }
-  .status-pending { background: #fef3c7; color: #92400e; }
-  #loading { display: flex; align-items: center; justify-content: center; padding: 48px; color: #6b7280; }
+  /* Tokens: .claude/brand.md (index.html iOS system) */
+  :root {
+    --blue: #007AFF; --blue-rgb: 0,122,255; --green: #34C759; --orange: #FF9500; --red: #FF3B30; --indigo: #5856D6;
+    --bg: #F2F2F7; --card: #FFFFFF; --label: #1C1C1E; --muted: #6B7280;
+    --line: rgba(60,60,67,0.14); --line-strong: rgba(60,60,67,0.24); --head: #F7F7FA; --hover: #F0F6FF;
+    --pending: #FFF4DB; --pending-line: #FFB020;
+    --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    --shadow: 0 1px 2px rgba(var(--blue-rgb),.04), 0 8px 24px rgba(var(--blue-rgb),.06);
+    --shadow-float: 0 4px 12px rgba(0,0,0,.08), 0 24px 48px rgba(var(--blue-rgb),.14);
+    --ease: cubic-bezier(0.16,1,0.3,1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--label); font-family: var(--font-body); font-size: 14px; }
+  body { overflow-x: hidden; }
+  .page { padding: 16px clamp(12px, 2vw, 24px) 96px; }
+  a { color: var(--blue); }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .kicker { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--blue); display: inline-flex; align-items: center; gap: 8px; }
+  .kicker::before { content: ''; width: 18px; height: 2px; background: var(--blue); }
+  h1 { font-family: var(--font-display); font-size: 24px; letter-spacing: -0.03em; margin: 2px 0 0; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 10px; border: 1px solid transparent;
+    background: var(--blue); color: #fff; font: 600 13px var(--font-body); cursor: pointer; text-decoration: none; white-space: nowrap;
+    transition: transform .15s var(--ease), box-shadow .15s, opacity .15s; }
+  .btn:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(var(--blue-rgb),.25); transform: translateY(-1px); }
+  .btn:active:not(:disabled) { transform: translateY(0); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-ghost { background: var(--card); color: var(--label); border-color: var(--line-strong); }
+  .btn-ghost:hover:not(:disabled) { box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+  .btn-danger { background: var(--red); }
+  .btn-danger:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(255,59,48,.3); }
+  .btn-warn { background: var(--orange); }
+  .btn-sm { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--card); color: var(--label); cursor: pointer; font-size: 15px;
+    display: inline-flex; align-items: center; justify-content: center; flex: none; transition: background-color .15s, transform .15s var(--ease); }
+  .icon-btn:hover:not(:disabled) { background: var(--hover); }
+  .icon-btn:active:not(:disabled) { transform: scale(.94); }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
+  .btn:focus-visible, .tab:focus-visible, .icon-btn:focus-visible, .hbtn:focus-visible, input:focus-visible, select:focus-visible,
+  .menu button:focus-visible, .grid-wrap:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .stat { background: var(--card); border-radius: 12px; padding: 8px 14px; box-shadow: var(--shadow); display: flex; align-items: baseline; gap: 8px; }
+  .stat b { font-family: var(--font-display); font-size: 18px; letter-spacing: -0.02em; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .stat.warn b { color: var(--orange); }
+
+  .card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 14px; }
+  .card.is-full { position: fixed; inset: 0; z-index: 40; border-radius: 0; display: flex; flex-direction: column; padding-bottom: 80px; }
+  .card.is-full .grid-wrap { flex: 1; max-height: none; }
+
+  .tabs { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; overflow-x: auto; margin-bottom: 12px; scrollbar-width: none; }
+  .tab { flex: none; height: 32px; padding: 0 14px; border-radius: 9px; border: none; background: transparent; color: var(--muted); font: 600 13px var(--font-body); cursor: pointer;
+    transition: background-color .15s, color .15s; }
+  .tab:hover { color: var(--label); }
+  .tab small { font-weight: 500; margin-left: 4px; opacity: .7; }
+  .tab[aria-selected="true"] { background: var(--card); color: var(--label); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .field { height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--card); font: 13px var(--font-body); color: var(--label); }
+  .search { flex: 1 1 220px; min-width: 160px; }
+  .spacer { flex: 1; }
+  .count, .pos { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .jump { flex: 0 1 200px; min-width: 0; }
+
+  /* Grid */
+  .grid-wrap { position: relative; overflow: auto; max-height: calc(100vh - 300px); min-height: 260px; border: 1px solid var(--line); border-bottom: none;
+    border-radius: 12px 12px 0 0; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .grid-wrap.no-nav { border-bottom: 1px solid var(--line); border-radius: 12px; }
+  table.grid { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 13px; }
+  .grid th, .grid td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 0; text-align: left; vertical-align: middle; background: var(--card); }
+  .grid thead th { position: sticky; top: 0; z-index: 3; background: var(--head); font-weight: 600; white-space: nowrap; }
+  .grid th .h { display: flex; align-items: center; gap: 4px; padding: 7px 6px 7px 10px; }
+  .grid th .name { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+  .grid th .orig { font-weight: 400; color: var(--muted); font-size: 11px; }
+  .grid th .lock { font-size: 10px; opacity: .55; }
+  .hbtn { margin-left: auto; border: none; background: none; color: var(--muted); cursor: pointer; width: 24px; height: 24px; border-radius: 6px; font-size: 14px; line-height: 1;
+    opacity: .35; transition: opacity .15s, background-color .15s; }
+  .grid th:hover .hbtn, .hbtn:focus-visible, .hbtn[aria-expanded="true"] { opacity: 1; }
+  .hbtn:hover { background: rgba(0,0,0,.06); color: var(--label); }
+  .grid .c { padding: 8px 10px; min-height: 34px; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+  .grid tbody tr:hover td { background: #FAFBFF; }
+  .grid tbody td .c:hover { background: var(--hover); }
+  .grid .c.pending { background: var(--pending); box-shadow: inset 3px 0 0 var(--pending-line); }
+  .grid .c.ok { background: rgba(52,199,89,.14); }
+  .grid .edit { width: 100%; min-width: 180px; border: 2px solid var(--blue); border-radius: 6px; padding: 5px 8px; font: inherit; outline: none; background: #fff; }
+  .grid .edit.invalid { border-color: var(--red); background: #FFF5F5; }
+  .edit-hint { position: absolute; z-index: 70; max-width: 320px; padding: 6px 10px; border-radius: 8px; background: var(--label); color: #fff; font-size: 12px; line-height: 1.4;
+    box-shadow: var(--shadow-float); pointer-events: none; }
+  .edit-hint.bad { background: var(--red); }
+  .grid th .rule { font-size: 10px; color: var(--blue); opacity: .8; }
+  .grid.compact { font-size: 12px; }
+  .grid.compact .c { padding: 4px 8px; min-height: 26px; }
+  .grid.compact th .h { padding: 4px 6px 4px 8px; }
+  .grid .rn { position: sticky; left: 0; z-index: 2; color: var(--muted); text-align: right; font-size: 11px; padding: 0 8px; min-width: 44px; background: var(--head); }
+  .grid thead .rn { z-index: 4; }
+  .grid .frz { position: sticky; z-index: 2; }
+  .grid thead .frz { z-index: 4; }
+  .grid .frz-edge { box-shadow: 6px 0 8px -6px rgba(0,0,0,.18); }
+  .grid .frz-mid { box-shadow: none; }
+  .grid tr.inactive .c { color: var(--muted); }
+  .grid .hl { background: rgba(var(--blue-rgb),.10) !important; }
+
+  /* Horizontal scroller — attached under the table, like a scrollbar */
+  .hscroll { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--head); border: 1px solid var(--line); border-radius: 0 0 12px 12px; }
+  .hscroll[hidden] { display: none; }
+  .hscroll .icon-btn { width: 28px; height: 28px; font-size: 11px; border-radius: 8px; }
+  .hscroll input[type=range] { flex: 1; min-width: 80px; accent-color: var(--blue); height: 22px; cursor: ew-resize; margin: 0; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; margin: 0 3px 0 0; white-space: nowrap; }
+  .tag-ok { background: rgba(52,199,89,.15); color: #1E7A36; }
+  .tag-warn { background: rgba(255,149,0,.16); color: #8A4B00; }
+  .tag-bad { background: rgba(255,59,48,.12); color: #B4231A; }
+  .tag-info { background: rgba(88,86,214,.12); color: #3F3DB0; }
+  .acct { padding: 4px 10px; white-space: nowrap; display: flex; align-items: center; gap: 2px; }
+
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin: 8px 2px 0; }
+
+  /* Popover menus */
+  .menu-wrap { position: relative; }
+  .menu { position: absolute; z-index: 60; min-width: 220px; background: var(--card); border-radius: 14px; box-shadow: var(--shadow-float); padding: 6px; }
+  .menu[hidden] { display: none; }
+  .menu button { display: flex; width: 100%; align-items: center; gap: 8px; border: none; background: none; text-align: left; padding: 8px 10px; border-radius: 8px;
+    font: 13px var(--font-body); color: var(--label); cursor: pointer; }
+  .menu button:hover:not(:disabled) { background: var(--hover); }
+  .menu button:disabled { color: var(--muted); cursor: default; }
+  .menu button.danger { color: var(--red); }
+  .menu .note { font-size: 11px; color: var(--muted); padding: 2px 10px 6px; }
+  .menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+  #cols-menu { right: 0; top: 40px; width: 300px; max-height: 420px; display: flex; flex-direction: column; padding: 10px; }
+  #cols-menu[hidden] { display: none; }
+  #cols-menu .list { overflow: auto; margin: 8px 0; }
+  #cols-menu label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+  #cols-menu label:hover { background: var(--hover); }
+  #cols-menu .row { display: flex; gap: 6px; }
+
+  /* Unsaved-changes bar */
+  .savebar { position: fixed; left: 50%; bottom: 20px; z-index: 45; transform: translate(-50%, 140%); opacity: 0;
+    display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 18px; border-radius: 16px; background: var(--label); color: #fff; box-shadow: var(--shadow-float);
+    transition: transform .35s var(--ease), opacity .25s; max-width: calc(100vw - 24px); }
+  .savebar.show { transform: translate(-50%, 0); opacity: 1; }
+  .savebar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pending-line); flex: none; }
+  .savebar .btn-ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.3); }
+
+  #message { display: none; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; margin-bottom: 12px; }
+  #message.ok, #message.err { display: flex; }
+  #message.ok { background: rgba(52,199,89,.14); color: #1E7A36; }
+  #message.err { background: rgba(255,59,48,.12); color: #B4231A; }
+  #message code { background: #fff; padding: 2px 6px; border-radius: 6px; user-select: all; }
+  #message .x { margin-left: auto; border: none; background: none; cursor: pointer; color: inherit; font-size: 16px; }
+  .center { text-align: center; padding: 56px 16px; color: var(--muted); }
+
+  /* Dialogs */
+  dialog { border: none; border-radius: 18px; padding: 0; width: min(480px, calc(100vw - 24px)); box-shadow: 0 24px 64px rgba(0,0,0,.22); color: var(--label); }
+  dialog.wide { width: min(760px, calc(100vw - 24px)); }
+  dialog::backdrop { background: rgba(0,0,0,.32); }
+  dialog form { padding: 22px; }
+  dialog h3 { font-family: var(--font-display); letter-spacing: -0.02em; font-size: 18px; margin: 0 0 10px; }
+  dialog .body { color: #3A3A3C; line-height: 1.6; }
+  dialog .body p { margin: 0 0 10px; }
+  dialog label.lbl { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+  dialog input.field { width: 100%; }
+  dialog .err { color: var(--red); font-size: 12px; min-height: 16px; margin-top: 6px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+  .actions .left { margin-right: auto; }
+  .changes { list-style: none; padding: 0; margin: 0; max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .changes li { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.6fr) auto; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .changes li:last-child { border-bottom: none; }
+  .changes .who { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .changes .col { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .changes .diff { min-width: 0; overflow-wrap: anywhere; }
+  .changes .old { color: var(--muted); text-decoration: line-through; }
+  .changes .new { font-weight: 600; }
+  .changes .fail { grid-column: 1 / -1; color: var(--red); font-size: 12px; margin-top: -4px; }
+  .summary { margin: 4px 0 0; padding-left: 18px; line-height: 1.8; }
+  .checks { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 4px; }
+
+  @media (max-width: 720px) {
+    .grid-wrap { max-height: calc(100vh - 360px); }
+    .pos { display: none; }
+    .grid .c { max-width: 180px; }
+    .grid .frz-acct { position: static; box-shadow: none; }
+    .grid .frz-mid { box-shadow: 6px 0 8px -6px rgba(0,0,0,.18); }
+    .changes li { grid-template-columns: 1fr auto; }
+    .changes .col, .changes .diff { grid-column: 1 / 2; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  }
 </style>
 <script src="i18n.js"></script>
 </head>
 <body>
-<div id="app">
-  <div id="loading">Loading migration admin...</div>
+<div class="page">
+  <div class="top">
+    <div>
+      <span class="kicker">TLCG Workflow</span>
+      <h1>Master Data</h1>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-ghost" id="refresh-btn" type="button">↻ Refresh</button>
+      <a class="btn btn-ghost" href="approval_flows.html">Approval Flows</a>
+      <a class="btn btn-ghost" href="index.html" id="back-link">← Back to app</a>
+    </div>
+  </div>
+  <div id="message" role="status"></div>
+  <div id="app"><div class="center">Loading…</div></div>
 </div>
+
+<!-- Unsaved cell edits -->
+<div class="savebar" id="savebar" role="region" aria-label="Unsaved changes">
+  <span class="dot"></span><span id="savebar-text"></span>
+  <button class="btn btn-ghost btn-sm" id="savebar-discard" type="button">Discard</button>
+  <button class="btn btn-sm" id="savebar-review" type="button">Review &amp; save</button>
+</div>
+
+<!-- Column header menu -->
+<div class="menu" id="col-menu" hidden role="menu"></div>
+
+<!-- Generic confirmation / input dialog -->
+<dialog id="ask">
+  <form method="dialog" id="ask-form">
+    <h3 id="ask-title"></h3>
+    <div class="body" id="ask-body"></div>
+    <div id="ask-input-wrap" hidden>
+      <label class="lbl" id="ask-input-label" for="ask-input"></label>
+      <input class="field" id="ask-input" autocomplete="off" maxlength="100">
+    </div>
+    <div class="err" id="ask-err"></div>
+    <div class="actions" id="ask-actions"></div>
+  </form>
+</dialog>
+
+<!-- Review staged cell edits -->
+<dialog id="review" class="wide">
+  <form method="dialog" id="review-form">
+    <h3 id="review-title">Review changes</h3>
+    <p class="body" style="margin:0 0 12px;">Check each change before it is saved. Remove any you don't want with ×.</p>
+    <ul class="changes" id="review-list"></ul>
+    <div class="actions">
+      <button class="btn btn-ghost left" type="button" id="review-discard">Discard all</button>
+      <button class="btn btn-ghost" type="button" id="review-back">Keep editing</button>
+      <button class="btn" type="submit" id="review-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Employee account -->
+<dialog id="acct-dialog">
+  <form id="acct-form" method="dialog">
+    <h3 id="acct-title">Account</h3>
+    <div class="checks">
+      <label><input type="checkbox" name="active"> Active (can sign in)</label>
+      <label><input type="checkbox" name="isAdmin"> Admin rights</label>
+      <label><input type="checkbox" name="resetPassword"> Issue a new temporary password</label>
+      <label style="padding-left:24px;"><input type="checkbox" name="sendEmail" checked> Email it to the employee</label>
+    </div>
+    <div class="body" id="acct-summary" style="margin-top:14px;"></div>
+    <div class="actions">
+      <button class="btn btn-ghost" type="button" id="acct-cancel">Cancel</button>
+      <button class="btn" type="submit" id="acct-save" disabled>No changes</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
-const API_BASE = '/';
+(function () {
+  'use strict';
 
-document.addEventListener('DOMContentLoaded', async () => {
+  const PAGE_SIZE = 100;
   const app = document.getElementById('app');
+  const messageEl = document.getElementById('message');
 
-  async function fetchMasterData() {
-    const data = new URLSearchParams();
-    data.set('data', JSON.stringify({ action: 'getMasterData' }));
-    const res = await fetch(API_BASE + '/api/voucher', {
+  const state = { tables: [], summary: null, gaps: [], tab: null, data: null, filtered: [], page: 0, query: '' };
+  const cache = {};
+  const pending = new Map(); // "rowId|colIndex" → { id, j, old, value } for the current tab
+
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+  const show = (v) => (v === '' ? '<i style="color:var(--muted)">(empty)</i>' : esc(v));
+
+  const prefs = {
+    get(k, d) { try { const v = localStorage.getItem('tlc_admin_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('tlc_admin_' + k, JSON.stringify(v)); } catch (e) {} }
+  };
+  const hiddenCols = () => new Set(prefs.get('hidden_' + state.tab, []));
+
+  function currentUser() {
+    try { return JSON.parse(localStorage.getItem('tlc_current_user') || 'null'); }
+    catch (e) { return null; }
+  }
+
+  function showMessage(ok, html) {
+    messageEl.className = ok ? 'ok' : 'err';
+    messageEl.innerHTML = '<span>' + html + '</span><button class="x" aria-label="Dismiss">×</button>';
+    messageEl.querySelector('.x').onclick = () => { messageEl.className = ''; };
+  }
+
+  async function api(action, body) {
+    const user = currentUser();
+    const res = await fetch('/api/voucher', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: data.toString()
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ((user && user.token) || '') },
+      body: JSON.stringify(Object.assign({ action: action }, body || {}))
     });
-    const json = await res.json();
+    let json;
+    try { json = await res.json(); } catch (e) { throw new Error('Server returned HTTP ' + res.status); }
+    if (!json.success) {
+      const err = new Error(json.message || 'Request failed');
+      err.status = res.status;
+      throw err;
+    }
     return json.data || {};
   }
 
-  async function render() {
-    const loading = document.getElementById('loading');
-    loading.style.display = 'none';
-    app.innerHTML = '';
-
-    try {
-      const { companies, employees, goods } = await fetchMasterData();
-      if (!companies || !employees) {
-        loading.style.display = 'flex';
-        loading.textContent = 'No master data available.';
-        return;
+  // ── Value rules + label style — same logic as api/lib/master-registry.js ──
+  const DATE_RE = /^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})$/;
+  function checkRule(rule, raw) {
+    let v = raw == null ? '' : String(raw).trim();
+    if (!rule) return { ok: true, value: v };
+    if (!v) return rule.required || rule.type === 'required' ? { ok: false, message: 'Ô này không được để trống.' } : { ok: true, value: '' };
+    if (rule.upper) v = v.toUpperCase();
+    switch (rule.type) {
+      case 'enum': {
+        const hit = rule.values.find((x) => x.toLowerCase() === v.toLowerCase());
+        return hit ? { ok: true, value: hit } : { ok: false, message: 'Chỉ nhận: ' + rule.values.join(' / ') + '.' };
       }
+      case 'pattern': return new RegExp(rule.pattern).test(v) ? { ok: true, value: v } : { ok: false, message: 'Sai định dạng — ví dụ: ' + rule.example + '.' };
+      case 'email': return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? { ok: true, value: v.toLowerCase() } : { ok: false, message: 'Email không hợp lệ.' };
+      case 'date': return DATE_RE.test(v) ? { ok: true, value: v } : { ok: false, message: 'Ngày dạng YYYY-MM-DD (ví dụ 2026-10-06).' };
+      case 'digits': return /^[0-9]+$/.test(v) ? { ok: true, value: v } : { ok: false, message: 'Chỉ nhận chữ số.' };
+      case 'number': {
+        const n = Number(v.replace(/,/g, ''));
+        if (!Number.isFinite(n) || (rule.integer && !Number.isInteger(n))) return { ok: false, message: rule.integer ? 'Cần số nguyên.' : 'Cần nhập số.' };
+        if (rule.min != null && n < rule.min) return { ok: false, message: 'Không được nhỏ hơn ' + rule.min + '.' };
+        return { ok: true, value: v };
+      }
+      default: return { ok: true, value: v };
+    }
+  }
+  function ruleText(rule) {
+    const req = rule.required || rule.type === 'required' ? 'Required. ' : '';
+    switch (rule.type) {
+      case 'enum': return req + 'Allowed: ' + rule.values.join(' / ');
+      case 'pattern': return req + 'Format like ' + rule.example;
+      case 'email': return req + 'Email address';
+      case 'date': return req + 'Date: YYYY-MM-DD';
+      case 'digits': return req + 'Digits only';
+      case 'number': return req + (rule.integer ? 'Whole number' : 'Number') + (rule.min != null ? ' ≥ ' + rule.min : '');
+      default: return 'Required';
+    }
+  }
+  const ACRONYMS = { id: 'ID', url: 'URL', qb: 'QB', vat: 'VAT', ar: 'AR', ap: 'AP', mst: 'MST' };
+  function formatLabel(name) {
+    const words = String(name).replace(/([a-z])([A-Z])/g, '$1 $2').split(/[^\p{L}\p{N}%]+/u).filter(Boolean);
+    if (!words.length) return String(name);
+    return words.map((w) => {
+      const lower = w.toLowerCase();
+      if (ACRONYMS[lower]) return ACRONYMS[lower];
+      if (w.length > 1 && w === w.toUpperCase() && /\p{L}/u.test(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    }).join('_');
+  }
 
-      const statusEl = document.createElement('div');
-      statusEl.className = 'card';
-      statusEl.innerHTML = '<h2>Migration Status</h2><div><strong>Companies:</strong> ' + companies.length + '<br><strong>Employees:</strong> ' + employees.length + '<br><strong>Goods:</strong> ' + (goods ? goods.length : 0) + '</div><div style="margin-top: 12px;"><button class="btn" onclick="location.reload()">Refresh</button><button class="btn btn-success" onclick="migrateAll()">Re-run Migration</button><button class="btn btn-danger" onclick="resetEmployees()">Reset Employees (placeholder emails)</button></div>';
-      app.appendChild(statusEl);
-
-      const coCard = document.createElement('div');
-      coCard.className = 'card';
-      coCard.innerHTML = '<h2>Master Companies</h2><table><thead><tr><th>Full Name</th><th>Accountant</th><th>Legal Rep</th><th>Treasurer</th></tr></thead><tbody></tbody></table>';
-      const coBody = coCard.querySelector('tbody');
-      companies.forEach(function(c) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + c.full_name + '</td><td>' + (c.accountant_name || '-') + '</td><td>' + (c.legal_rep_name || '-') + '</td><td>' + (c.treasurer_name || '-') + '</td>';
-        coBody.appendChild(tr);
+  // ── Generic confirmation dialog ──────────────────────────────
+  // ask({ title, html, input: { label, value, placeholder }, requireText, buttons: [{ text, value, kind }] })
+  // Resolves with the clicked button's value (the input text for 'submit'), or null on Esc / Cancel.
+  const askDialog = document.getElementById('ask');
+  function ask(opts) {
+    return new Promise((resolve) => {
+      const input = document.getElementById('ask-input');
+      const errEl = document.getElementById('ask-err');
+      document.getElementById('ask-title').textContent = opts.title;
+      document.getElementById('ask-body').innerHTML = opts.html || '';
+      errEl.textContent = '';
+      errEl.style.color = '';
+      const wantsInput = !!(opts.input || opts.requireText);
+      document.getElementById('ask-input-wrap').hidden = !wantsInput;
+      if (wantsInput) {
+        document.getElementById('ask-input-label').textContent = opts.input ? opts.input.label : 'Type "' + opts.requireText + '" to confirm';
+        input.value = opts.input ? (opts.input.value || '') : '';
+        input.placeholder = opts.input ? (opts.input.placeholder || '') : opts.requireText;
+      }
+      const buttons = opts.buttons || [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Confirm', value: 'submit', kind: 'primary' }];
+      const actions = document.getElementById('ask-actions');
+      actions.innerHTML = '';
+      let primary = null;
+      buttons.forEach((b) => {
+        const el = document.createElement('button');
+        el.type = b.value === 'submit' ? 'submit' : 'button';
+        el.className = 'btn' + (b.kind === 'ghost' ? ' btn-ghost' : b.kind === 'danger' ? ' btn-danger' : '') + (b.left ? ' left' : '');
+        el.textContent = b.text;
+        if (b.value === 'submit') primary = el;
+        else el.onclick = () => finish(b.value);
+        actions.appendChild(el);
       });
-      app.appendChild(coCard);
+      const validate = () => {
+        if (!primary) return;
+        const v = input.value.trim();
+        primary.disabled = (opts.requireText && v !== opts.requireText) ||
+          (opts.input && (!v || (opts.input.unchanged && (opts.input.preview ? formatLabel(v) : v) === opts.input.value)));
+      };
+      const preview = () => {
+        if (!opts.input || !opts.input.preview) return;
+        const v = input.value.trim();
+        errEl.style.color = 'var(--muted)';
+        errEl.textContent = v ? 'Shown as: ' + formatLabel(v) : '';
+      };
+      input.oninput = () => { errEl.textContent = ''; validate(); preview(); };
+      preview();
+      validate();
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        askDialog.close();
+        resolve(value);
+      };
+      document.getElementById('ask-form').onsubmit = (e) => {
+        e.preventDefault();
+        if (primary && primary.disabled) return;
+        finish(opts.input ? input.value.trim() : 'submit');
+      };
+      askDialog.oncancel = (e) => { e.preventDefault(); finish(null); };
+      askDialog.showModal();
+      if (wantsInput) { input.focus(); input.select(); } else if (primary) primary.focus();
+    });
+  }
 
-      const empCard = document.createElement('div');
-      empCard.className = 'card';
-      empCard.innerHTML = '<h2>Master Employees</h2><table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>';
-      const empBody = empCard.querySelector('tbody');
-      employees.forEach(function(e) {
-        const tr = document.createElement('tr');
-        const hasRealEmail = e.employee_email && !e.employee_email.includes('noemail');
-        const emailStatus = hasRealEmail ? '<span class="status status-success">Real</span>' : '<span class="status status-pending">Placeholder</span>';
-        tr.innerHTML = '<td>' + e.full_name + '</td><td>' + (e.employee_email || '-') + '</td><td>' + emailStatus + '</td><td>' + (hasRealEmail ? '<button class="btn btn-success" style="font-size:12px; padding:4px 8px;">✓</button>' : '<button class="btn btn-success" style="font-size:12px; padding:4px 8px;" onclick="fixEmployee(\'' + encodeURIComponent(e.full_name) + '\',\'' + encodeURIComponent(e.employee_email || '') + '\')">Fix</button>') + '</td>';
-        empBody.appendChild(tr);
-      });
-      app.appendChild(empCard);
+  // ── Sign-in gate ─────────────────────────────────────────────
 
+  function gate(text, withSignIn) {
+    app.innerHTML = '<div class="card center"><p>' + text + '</p>' +
+      (withSignIn ? '<button class="btn" id="signin-again">Sign in again</button>' : '<a class="btn btn-ghost" href="index.html">Back to the app</a>') +
+      '</div>';
+    const b = document.getElementById('signin-again');
+    if (b) b.onclick = () => { try { localStorage.removeItem('tlc_current_user'); } catch (e) {} location.href = 'index.html'; };
+  }
+
+  // ── Shell ────────────────────────────────────────────────────
+
+  function renderShell() {
+    const s = state.summary || {};
+    const stat = (n, label, warn) => '<div class="stat' + (warn && n > 0 ? ' warn' : '') + '"><b>' + (n || 0) + '</b><span>' + label + '</span></div>';
+    app.innerHTML =
+      '<div class="stats">' +
+        stat(s.active_employees, 'active employees') +
+        stat(s.no_password, 'without password', true) +
+        stat(s.placeholder_emails, 'placeholder emails', true) +
+        stat(state.gaps.length, 'companies missing an approver', true) +
+      '</div>' +
+      (state.gaps.length ? '<div class="stats">' + state.gaps.map((g) =>
+        '<span class="tag tag-bad">' + esc(g.company_key || g.company_name) + ' — missing ' +
+        [g.no_legal_rep && 'legal rep', g.no_accountant && 'accountant', g.no_treasurer && 'treasurer'].filter(Boolean).join(', ') +
+        '</span>').join('') + '</div>' : '') +
+      '<div class="card" id="card">' +
+        '<div class="tabs" id="tabs" role="tablist" aria-label="Master tables"></div>' +
+        '<div class="toolbar">' +
+          '<input class="field search" id="search" type="search" placeholder="Search this table…" aria-label="Search this table">' +
+          '<span class="count" id="count"></span>' +
+          '<span class="spacer"></span>' +
+          '<span class="pos" id="nav-pos"></span>' +
+          '<select class="field jump" id="nav-jump" aria-label="Jump to column"></select>' +
+          '<button class="btn" id="add-col" type="button">+ Column</button>' +
+          '<span class="menu-wrap"><button class="btn btn-ghost" id="cols-btn" type="button" aria-haspopup="true" aria-expanded="false">Columns ▾</button>' +
+            '<div class="menu" id="cols-menu" hidden></div></span>' +
+          '<button class="icon-btn" id="density" type="button" title="Compact rows" aria-label="Toggle compact rows">☰</button>' +
+          '<button class="icon-btn" id="fullscreen" type="button" title="Full screen (Esc to exit)" aria-label="Toggle full screen">⤢</button>' +
+        '</div>' +
+        '<div class="grid-wrap" id="grid-wrap" tabindex="0" aria-label="Table — use ← → to scroll sideways"><div class="center">Loading…</div></div>' +
+        '<div class="hscroll" id="hscroll" hidden>' +
+          '<button class="icon-btn" id="nav-left" type="button" aria-label="Scroll left">◀</button>' +
+          '<input type="range" id="nav-slider" min="0" max="0" value="0" aria-label="Scroll table sideways">' +
+          '<button class="icon-btn" id="nav-right" type="button" aria-label="Scroll right">▶</button>' +
+        '</div>' +
+        '<div class="pager" id="pager"></div>' +
+        '<p class="hint">Click a cell to edit · Enter or Tab keeps the edit · Esc cancels · edits are saved only after you review them · ⋯ on a column header to rename, hide or delete it · 🔒 columns are used by the app.</p>' +
+      '</div>';
+
+    document.getElementById('search').addEventListener('input', (e) => { state.query = e.target.value; applyFilter(); });
+    document.getElementById('add-col').addEventListener('click', addColumn);
+    document.getElementById('cols-btn').addEventListener('click', toggleColumnsMenu);
+    document.getElementById('density').addEventListener('click', () => { prefs.set('compact', !prefs.get('compact', false)); applyDensity(); });
+    document.getElementById('fullscreen').addEventListener('click', toggleFullscreen);
+    setupNavigator();
+    renderTabs();
+  }
+
+  function renderTabs() {
+    const el = document.getElementById('tabs');
+    el.innerHTML = state.tables.map((t) =>
+      '<button class="tab" role="tab" id="tab-' + t.key + '" data-tab="' + t.key + '" aria-selected="' + (t.key === state.tab) + '" tabindex="' + (t.key === state.tab ? 0 : -1) + '">' +
+      esc(t.title) + '<small>' + t.rows + '</small></button>').join('');
+    el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+    el.onkeydown = (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const keys = state.tables.map((t) => t.key);
+      const i = keys.indexOf(state.tab) + (e.key === 'ArrowRight' ? 1 : -1);
+      const next = keys[(i + keys.length) % keys.length];
+      switchTab(next).then(() => { const b = document.getElementById('tab-' + next); if (b) b.focus(); });
+    };
+  }
+
+  function applyDensity() {
+    const t = document.querySelector('table.grid');
+    if (t) t.classList.toggle('compact', prefs.get('compact', false));
+    document.getElementById('density').setAttribute('aria-pressed', String(prefs.get('compact', false)));
+    positionFrozen();
+    updateNavigator();
+  }
+
+  function toggleFullscreen() {
+    const card = document.getElementById('card');
+    const on = card.classList.toggle('is-full');
+    document.getElementById('fullscreen').textContent = on ? '⤡' : '⤢';
+    document.body.style.overflow = on ? 'hidden' : '';
+    updateNavigator();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+    if (!document.getElementById('col-menu').hidden) { closeColMenu(); return; }
+    const cm = document.getElementById('cols-menu');
+    if (cm && !cm.hidden) { closeColumnsMenu(); return; }
+    const card = document.getElementById('card');
+    if (card && card.classList.contains('is-full') && !document.querySelector('.grid input.edit')) toggleFullscreen();
+  });
+
+  // ── Tabs and data ────────────────────────────────────────────
+
+  /** Leaving a tab with unsaved edits needs a decision first. */
+  async function guardPending(actionText) {
+    if (!pending.size) return true;
+    const choice = await ask({
+      title: pending.size + ' unsaved ' + (pending.size === 1 ? 'change' : 'changes'),
+      html: '<p>You edited cells in <b>' + esc(state.data.table.title) + '</b> that are not saved yet. Review them before you ' + actionText + '?</p>',
+      buttons: [
+        { text: 'Discard changes', value: 'discard', kind: 'ghost', left: true },
+        { text: 'Stay here', value: null, kind: 'ghost' },
+        { text: 'Review & save', value: 'submit', kind: 'primary' }
+      ]
+    });
+    if (choice === 'discard') { pending.clear(); updateSavebar(); return true; }
+    if (choice === 'submit') { await openReview(); return !pending.size; }
+    return false;
+  }
+
+  async function switchTab(key) {
+    if (key === state.tab) return;
+    if (!(await guardPending('switch tables'))) return renderTabs();
+    await openTab(key);
+  }
+
+  async function openTab(key, force) {
+    state.tab = key;
+    state.page = 0;
+    prefs.set('tab', key);
+    renderTabs();
+    closeColumnsMenu();
+    closeColMenu();
+    if (!cache[key] || force) {
+      document.getElementById('grid-wrap').innerHTML = '<div class="center">Loading…</div>';
+      try {
+        cache[key] = await api('adminMasterGet', { table: key });
+        cache[key].rows.forEach((r) => { r.search = r.v.join(' ').toLowerCase(); });
+      } catch (err) {
+        return handleError(err);
+      }
+    }
+    state.data = cache[key];
+    applyFilter(true);
+  }
+
+  function applyFilter(resetScroll) {
+    const q = state.query.trim().toLowerCase();
+    const rows = state.data ? state.data.rows : [];
+    state.filtered = q ? rows.filter((r) => r.search.includes(q)) : rows;
+    state.page = Math.min(state.page, Math.max(0, Math.ceil(state.filtered.length / PAGE_SIZE) - 1));
+    renderGrid(resetScroll);
+  }
+
+  function accountCell(a) {
+    const tags = [];
+    tags.push(a.active ? '<span class="tag tag-ok">Active</span>' : '<span class="tag tag-bad">Inactive</span>');
+    if (a.isAdmin) tags.push('<span class="tag tag-info">Admin</span>');
+    if (a.placeholderEmail) tags.push('<span class="tag tag-warn">Placeholder email</span>');
+    if (!a.hasPassword) tags.push('<span class="tag tag-bad">No password</span>');
+    else if (a.legacyPassword) tags.push('<span class="tag tag-info">GAS password</span>');
+    if (a.mustChangePassword) tags.push('<span class="tag tag-warn">Must change pw</span>');
+    return tags.join('');
+  }
+
+  function visibleColumns() {
+    const hidden = hiddenCols();
+    return state.data.columns.map((c, j) => Object.assign({ j: j }, c)).filter((c) => !hidden.has(c.name));
+  }
+
+  /** Row label for confirmations: the value in the first column. */
+  function rowLabel(row) {
+    return row.v[0] || ('Row #' + row.id);
+  }
+
+  function renderGrid(resetScroll) {
+    const d = state.data;
+    const wrap = document.getElementById('grid-wrap');
+    const keepLeft = resetScroll ? 0 : wrap.scrollLeft;
+    const isEmp = state.tab === 'employees';
+    const cols = visibleColumns();
+    const start = state.page * PAGE_SIZE;
+    const pageRows = state.filtered.slice(start, start + PAGE_SIZE);
+    const hiddenCount = d.columns.length - cols.length;
+    document.getElementById('count').textContent =
+      (state.filtered.length !== d.rows.length ? state.filtered.length + ' of ' : '') + d.rows.length + ' rows · ' +
+      cols.length + (hiddenCount ? ' of ' + d.columns.length : '') + ' columns';
+    document.getElementById('cols-btn').textContent = hiddenCount ? 'Columns (' + hiddenCount + ' hidden) ▾' : 'Columns ▾';
+
+    const firstCls = isEmp ? ' class="frz frz-mid"' : ' class="frz frz-edge"';
+    const th = (c, k) => '<th data-j="' + c.j + '"' + (k === 0 ? firstCls : '') + '><div class="h">' +
+      '<span class="name" title="' + esc(c.label + (c.label !== c.name ? '\nSheet header: ' + c.name : '') + (c.rule ? '\n' + ruleText(c.rule) : '')) + '">' + esc(c.label) + '</span>' +
+      (c.rule && c.rule.type !== 'required' ? '<span class="rule" title="' + esc(ruleText(c.rule)) + '">' + (c.rule.type === 'enum' ? '▾' : '✓') + '</span>' : '') +
+      (c.locked ? '<span class="lock" title="Used by the app">🔒</span>' : '') +
+      '<button class="hbtn" data-colmenu="' + c.j + '" aria-haspopup="true" aria-expanded="false" aria-label="Column options for ' + esc(c.label) + '">⋯</button></div></th>';
+    const head = '<tr><th class="rn">#</th>' + cols.map((c, k) => th(c, k) + (k === 0 && isEmp ? '<th class="frz frz-acct frz-edge"><div class="h">Account</div></th>' : '')).join('') + '</tr>';
+
+    const body = pageRows.map((r, i) =>
+      '<tr data-id="' + r.id + '"' + (isEmp && r.account && !r.account.active ? ' class="inactive"' : '') + '>' +
+        '<td class="rn">' + (start + i + 1) + '</td>' +
+        cols.map((c, k) => {
+          const p = pending.get(r.id + '|' + c.j);
+          const v = p ? p.value : r.v[c.j];
+          const cell = '<td' + (k === 0 ? firstCls : '') + '><div class="c' + (p ? ' pending' : '') + '" data-col="' + c.j + '" title="' +
+            (p ? 'Unsaved — was: ' + esc(p.old) : esc(v)) + '">' + esc(v) + '</div></td>';
+          const acct = k === 0 && isEmp
+            ? '<td class="frz frz-acct frz-edge"><div class="acct">' + accountCell(r.account) +
+              '<button class="btn btn-sm ' + (!r.account.hasPassword || r.account.placeholderEmail ? 'btn-warn' : 'btn-ghost') + '" data-acct="' + r.id + '">Account</button></div></td>'
+            : '';
+          return cell + acct;
+        }).join('') +
+      '</tr>').join('');
+
+    wrap.innerHTML = state.filtered.length && cols.length
+      ? '<table class="grid' + (prefs.get('compact', false) ? ' compact' : '') + '"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>'
+      : '<div class="center">' + (cols.length ? 'No rows' + (state.query ? ' match "' + esc(state.query) + '"' : '') + '.' : 'All columns are hidden — use Columns ▾ to show some.') + '</div>';
+
+    const pages = Math.ceil(state.filtered.length / PAGE_SIZE);
+    document.getElementById('pager').innerHTML = pages > 1
+      ? '<button class="btn btn-ghost btn-sm" id="prev"' + (state.page === 0 ? ' disabled' : '') + '>‹ Prev</button>' +
+        'Rows ' + (start + 1) + '–' + Math.min(start + PAGE_SIZE, state.filtered.length) + ' of ' + state.filtered.length +
+        '<button class="btn btn-ghost btn-sm" id="next"' + (state.page >= pages - 1 ? ' disabled' : '') + '>Next ›</button>'
+      : '';
+    const prev = document.getElementById('prev'), next = document.getElementById('next');
+    if (prev) prev.onclick = () => { state.page--; renderGrid(); wrap.scrollTop = 0; };
+    if (next) next.onclick = () => { state.page++; renderGrid(); wrap.scrollTop = 0; };
+
+    document.getElementById('nav-jump').innerHTML = '<option value="">Jump to column…</option>' +
+      cols.map((c) => '<option value="' + c.j + '">' + esc(c.label) + '</option>').join('');
+
+    positionFrozen();
+    wrap.scrollLeft = keepLeft;
+    updateNavigator();
+    updateSavebar();
+  }
+
+  /** Stack the frozen columns (row number, first column, employee Account) from the left. */
+  function positionFrozen() {
+    const headRow = document.querySelector('.grid thead tr');
+    if (!headRow) return;
+    let left = 0;
+    const lefts = [];
+    [...headRow.children].forEach((th, i) => {
+      if (th.classList.contains('rn')) { left += th.getBoundingClientRect().width; return; }
+      if (!th.classList.contains('frz')) return;
+      const sticky = getComputedStyle(th).position === 'sticky';
+      lefts.push([i, left, sticky]);
+      if (sticky) left += th.getBoundingClientRect().width;
+    });
+    document.querySelectorAll('.grid tr').forEach((tr) => {
+      lefts.forEach(([i, l]) => { const cell = tr.children[i]; if (cell) cell.style.left = l + 'px'; });
+    });
+  }
+
+  // ── Horizontal navigation ────────────────────────────────────
+
+  function setupNavigator() {
+    const wrap = document.getElementById('grid-wrap');
+    const slider = document.getElementById('nav-slider');
+    const step = () => Math.max(200, (wrap.clientWidth - frozenWidth()) * 0.8);
+    document.getElementById('nav-left').onclick = () => wrap.scrollBy({ left: -step(), behavior: 'smooth' });
+    document.getElementById('nav-right').onclick = () => wrap.scrollBy({ left: step(), behavior: 'smooth' });
+    slider.addEventListener('input', () => { wrap.scrollLeft = Number(slider.value); });
+    let raf = 0;
+    wrap.addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updateNavigator); }, { passive: true });
+    wrap.addEventListener('keydown', (e) => {
+      if (e.target !== wrap) return;
+      if (e.key === 'ArrowRight') { wrap.scrollBy({ left: 160 }); e.preventDefault(); }
+      if (e.key === 'ArrowLeft') { wrap.scrollBy({ left: -160 }); e.preventDefault(); }
+    });
+    document.getElementById('nav-jump').addEventListener('change', (e) => {
+      if (e.target.value !== '') jumpToColumn(Number(e.target.value));
+      e.target.value = '';
+    });
+    window.addEventListener('resize', () => { positionFrozen(); updateNavigator(); });
+  }
+
+  function frozenWidth() {
+    return [...document.querySelectorAll('.grid thead .rn, .grid thead .frz')]
+      .filter((el) => getComputedStyle(el).position === 'sticky')
+      .reduce((w, el) => w + el.getBoundingClientRect().width, 0);
+  }
+
+  function updateNavigator() {
+    const wrap = document.getElementById('grid-wrap');
+    const bar = document.getElementById('hscroll');
+    if (!wrap || !bar) return;
+    const max = wrap.scrollWidth - wrap.clientWidth;
+    const scrollable = max > 4;
+    bar.hidden = !scrollable;
+    wrap.classList.toggle('no-nav', !scrollable);
+    const posEl = document.getElementById('nav-pos');
+    if (!scrollable) { posEl.textContent = ''; return; }
+    const slider = document.getElementById('nav-slider');
+    slider.max = String(max);
+    slider.value = String(wrap.scrollLeft);
+    document.getElementById('nav-left').disabled = wrap.scrollLeft <= 0;
+    document.getElementById('nav-right').disabled = wrap.scrollLeft >= max - 1;
+
+    const ths = [...document.querySelectorAll('.grid thead th[data-j]:not(.frz)')];
+    const view = wrap.getBoundingClientRect();
+    const fromX = view.left + frozenWidth();
+    let first = -1, last = -1;
+    ths.forEach((th, i) => {
+      const r = th.getBoundingClientRect();
+      if (r.right > fromX + 8 && r.left < view.right - 8) { if (first < 0) first = i; last = i; }
+    });
+    posEl.textContent = first < 0 ? '' : 'Columns ' + (first + 2) + '–' + (last + 2) + ' of ' + (ths.length + 1);
+  }
+
+  function jumpToColumn(j) {
+    const wrap = document.getElementById('grid-wrap');
+    const th = document.querySelector('.grid thead th[data-j="' + j + '"]');
+    if (!th) return;
+    if (!th.classList.contains('frz')) wrap.scrollTo({ left: Math.max(0, th.offsetLeft - frozenWidth() - 16), behavior: 'smooth' });
+    const k = [...th.parentNode.children].indexOf(th) + 1;
+    const cells = [th, ...document.querySelectorAll('.grid tbody tr > :nth-child(' + k + ')')];
+    cells.forEach((el) => el.classList.add('hl'));
+    setTimeout(() => cells.forEach((el) => el.classList.remove('hl')), 1400);
+  }
+
+  // ── Columns menu (show / hide — a personal view setting) ─────
+
+  function toggleColumnsMenu() {
+    const menu = document.getElementById('cols-menu');
+    if (!menu.hidden) return closeColumnsMenu();
+    closeColMenu();
+    const hidden = hiddenCols();
+    menu.innerHTML =
+      '<input class="field" id="cols-filter" placeholder="Find a column…" aria-label="Find a column">' +
+      '<div class="note" style="padding:6px 2px 0;">Only changes your view — no data is changed.</div>' +
+      '<div class="list">' + state.data.columns.map((c) =>
+        '<label data-name="' + esc(c.label.toLowerCase()) + '"><input type="checkbox" value="' + esc(c.name) + '"' + (hidden.has(c.name) ? '' : ' checked') + '> ' +
+        esc(c.label) + (c.locked ? ' <span class="lock">🔒</span>' : '') + '</label>').join('') + '</div>' +
+      '<div class="row"><button class="btn btn-ghost btn-sm" id="cols-all" type="button">Show all</button>' +
+      '<button class="btn btn-ghost btn-sm" id="cols-locked" type="button">Only 🔒 columns</button></div>';
+    menu.hidden = false;
+    document.getElementById('cols-btn').setAttribute('aria-expanded', 'true');
+    document.getElementById('cols-filter').focus();
+    document.getElementById('cols-filter').addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      menu.querySelectorAll('.list label').forEach((l) => { l.style.display = l.dataset.name.includes(q) ? '' : 'none'; });
+    });
+    menu.querySelector('.list').addEventListener('change', saveHiddenFromMenu);
+    document.getElementById('cols-all').onclick = () => { menu.querySelectorAll('.list input').forEach((i) => { i.checked = true; }); saveHiddenFromMenu(); };
+    document.getElementById('cols-locked').onclick = () => {
+      const locked = new Set(state.data.columns.filter((c) => c.locked).map((c) => c.name));
+      menu.querySelectorAll('.list input').forEach((i) => { i.checked = locked.has(i.value); });
+      saveHiddenFromMenu();
+    };
+  }
+  function saveHiddenFromMenu() {
+    const hidden = [...document.querySelectorAll('#cols-menu .list input')].filter((i) => !i.checked).map((i) => i.value);
+    prefs.set('hidden_' + state.tab, hidden);
+    renderGrid();
+  }
+  function closeColumnsMenu() {
+    const menu = document.getElementById('cols-menu');
+    if (!menu || menu.hidden) return;
+    menu.hidden = true;
+    document.getElementById('cols-btn').setAttribute('aria-expanded', 'false');
+  }
+
+  // ── Column header menu: rename / hide / delete ───────────────
+
+  const colMenu = document.getElementById('col-menu');
+  let colMenuBtn = null;
+  function openColMenu(btn) {
+    if (colMenuBtn === btn && !colMenu.hidden) return closeColMenu();
+    closeColMenu();
+    closeColumnsMenu();
+    const c = state.data.columns[Number(btn.dataset.colmenu)];
+    colMenu.innerHTML =
+      '<div class="note" style="padding:6px 10px 4px;"><b style="color:var(--label)">' + esc(c.label) + '</b>' +
+        (c.label !== c.name ? '<br>Sheet header: ' + esc(c.name) : '') + '</div><hr>' +
+      '<button type="button" role="menuitem" data-act="rename">✎ Rename label…</button>' +
+      '<button type="button" role="menuitem" data-act="hide">◌ Hide from my view</button><hr>' +
+      (c.locked
+        ? '<button type="button" role="menuitem" disabled>🔒 Delete column</button><div class="note">Used by the app, so it can’t be deleted.</div>'
+        : '<button type="button" role="menuitem" class="danger" data-act="delete">✕ Delete column…</button>');
+    const r = btn.getBoundingClientRect();
+    colMenu.hidden = false;
+    const w = colMenu.offsetWidth;
+    colMenu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + window.scrollX + 'px';
+    colMenu.style.top = r.bottom + 6 + window.scrollY + 'px';
+    colMenu.style.position = 'absolute';
+    btn.setAttribute('aria-expanded', 'true');
+    colMenuBtn = btn;
+    colMenu.onclick = (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      closeColMenu();
+      if (b.dataset.act === 'rename') renameColumn(c);
+      if (b.dataset.act === 'hide') { prefs.set('hidden_' + state.tab, [...hiddenCols(), c.name]); renderGrid(); showMessage(true, 'Hid “' + esc(c.label) + '” from your view. Use Columns ▾ to show it again.'); }
+      if (b.dataset.act === 'delete') deleteColumn(c);
+    };
+    const first = colMenu.querySelector('button:not(:disabled)');
+    if (first) first.focus();
+  }
+  function closeColMenu() {
+    if (colMenu.hidden) return;
+    colMenu.hidden = true;
+    if (colMenuBtn) colMenuBtn.setAttribute('aria-expanded', 'false');
+    colMenuBtn = null;
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#col-menu') && !e.target.closest('[data-colmenu]')) closeColMenu();
+    if (!e.target.closest('.menu-wrap')) closeColumnsMenu();
+  });
+  document.addEventListener('scroll', closeColMenu, true);
+
+  async function addColumn() {
+    const table = state.data.table.title;
+    const name = await ask({
+      title: 'Add a column to ' + table,
+      html: '<p>The new column is added at the end, empty in all ' + state.data.rows.length + ' rows. You can fill it in afterwards.</p>',
+      input: { label: 'Column name', value: '', placeholder: 'e.g. Ghi chú nội bộ', preview: true },
+      buttons: [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Add column', value: 'submit', kind: 'primary' }]
+    });
+    if (!name) return;
+    try {
+      await api('adminMasterAddColumn', { table: state.tab, name: name });
+      showMessage(true, 'Added column “' + esc(formatLabel(name)) + '” to ' + esc(table) + '.');
+      await reloadTab();
+      const j = state.data.columns.findIndex((c) => c.name === name);
+      if (j > -1) jumpToColumn(j);
+    } catch (err) { handleError(err); }
+  }
+
+  async function renameColumn(c) {
+    const label = await ask({
+      title: 'Rename column',
+      html: '<p>Changes the name shown here. ' + (c.locked ? 'The app keeps using the sheet header internally, so nothing breaks.' : '') +
+        '<br><span style="color:var(--muted);font-size:12px;">Sheet header: ' + esc(c.name) + '</span></p>',
+      input: { label: 'New name', value: c.label, unchanged: true, preview: true },
+      buttons: [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Rename', value: 'submit', kind: 'primary' }]
+    });
+    if (!label || formatLabel(label) === c.label) return;
+    try {
+      const data = await api('adminMasterRenameColumn', { table: state.tab, name: c.name, label: label });
+      showMessage(true, 'Renamed “' + esc(c.label) + '” to “' + esc(data.label) + '”.');
+      await reloadTab();
+    } catch (err) { handleError(err); }
+  }
+
+  async function deleteColumn(c) {
+    const filled = state.data.rows.filter((r) => r.v[state.data.columns.indexOf(c)] !== '').length;
+    const ok = await ask({
+      title: 'Delete column “' + c.label + '”?',
+      html: '<p>This removes the column from <b>' + esc(state.data.table.title) + '</b> and deletes its values in <b>' + filled + '</b> of ' +
+        state.data.rows.length + ' rows. <b>This cannot be undone.</b></p>',
+      requireText: c.label,
+      buttons: [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Delete column', value: 'submit', kind: 'danger' }]
+    });
+    if (!ok) return;
+    try {
+      await api('adminMasterDeleteColumn', { table: state.tab, name: c.name });
+      showMessage(true, 'Deleted column “' + esc(c.label) + '”.');
+      await reloadTab();
+    } catch (err) { handleError(err); }
+  }
+
+  /** Reload the current table, keeping staged edits whose cells still exist. */
+  async function reloadTab() {
+    const keep = [...pending.values()].map((p) => Object.assign({ name: state.data.columns[p.j].name }, p));
+    pending.clear();
+    await openTab(state.tab, true);
+    keep.forEach((p) => {
+      const j = state.data.columns.findIndex((c) => c.name === p.name);
+      if (j > -1) pending.set(p.id + '|' + j, Object.assign({}, p, { j: j }));
+    });
+    renderGrid();
+  }
+
+  // ── Cell edits are staged, then reviewed and saved ───────────
+
+  document.addEventListener('click', (e) => {
+    const hb = e.target.closest('[data-colmenu]');
+    if (hb) return openColMenu(hb);
+    const cell = e.target.closest('.grid td .c');
+    if (cell) return startEdit(cell);
+    const acct = e.target.closest('[data-acct]');
+    if (acct) return openAccount(Number(acct.dataset.acct));
+  });
+
+  const hintEl = document.createElement('div');
+  hintEl.className = 'edit-hint';
+  hintEl.hidden = true;
+  document.body.appendChild(hintEl);
+  function showHint(anchor, text, bad) {
+    if (!text) { hintEl.hidden = true; return; }
+    const r = anchor.getBoundingClientRect();
+    hintEl.textContent = text;
+    hintEl.classList.toggle('bad', !!bad);
+    hintEl.hidden = false;
+    hintEl.style.left = Math.max(8, Math.min(window.innerWidth - hintEl.offsetWidth - 8, r.left)) + window.scrollX + 'px';
+    hintEl.style.top = r.bottom + 4 + window.scrollY + 'px';
+  }
+
+  function startEdit(cell) {
+    if (cell.querySelector('.edit')) return;
+    const id = Number(cell.closest('tr').dataset.id);
+    const j = Number(cell.dataset.col);
+    const row = state.data.rows.find((r) => r.id === id);
+    const col = state.data.columns[j];
+    const rule = col.rule;
+    const key = id + '|' + j;
+    const saved = row.v[j];
+    const current = pending.has(key) ? pending.get(key).value : saved;
+
+    let input;
+    if (rule && rule.type === 'enum') {
+      // Fixed choices: a dropdown, so nothing else can be typed
+      input = document.createElement('select');
+      const optional = !rule.required;
+      const matched = rule.values.find((x) => x.toLowerCase() === String(current).toLowerCase());
+      input.innerHTML = (optional ? '<option value="">(empty)</option>' : '') +
+        (current && !matched ? '<option value="' + esc(current) + '" disabled>' + esc(current) + ' (not allowed)</option>' : '') +
+        rule.values.map((x) => '<option value="' + esc(x) + '">' + esc(x) + '</option>').join('');
+      input.value = matched || (current ? current : '');
+    } else {
+      input = document.createElement('input');
+      input.value = current;
+      if (rule && rule.type === 'pattern') input.placeholder = rule.example;
+    }
+    input.className = 'edit';
+    input.setAttribute('aria-label', col.label + ' — ' + rowLabel(row));
+    cell.textContent = '';
+    cell.appendChild(input);
+    input.focus();
+    if (input.select) input.select();
+    if (rule) showHint(input, ruleText(rule), false);
+
+    const validate = () => {
+      const res = checkRule(rule, input.value);
+      input.classList.toggle('invalid', !res.ok);
+      showHint(input, res.ok ? (rule ? ruleText(rule) : '') : res.message, !res.ok);
+      return res;
+    };
+    input.addEventListener('input', validate);
+
+    let done = false;
+    const finish = (keep, moveNext) => {
+      if (done) return;
+      let value = current;
+      if (keep) {
+        const res = validate();
+        if (!res.ok) {
+          // Enter / Tab on a bad value: stay in the cell. Blur: give up and say why.
+          if (moveNext !== 'blur') return;
+          showMessage(false, esc(col.label) + ' — not kept: ' + esc(res.message));
+        } else {
+          value = res.value;
+        }
+      }
+      done = true;
+      showHint(null);
+      if (value === saved) pending.delete(key);
+      else pending.set(key, { id: id, j: j, old: saved, value: value });
+      const p = pending.get(key);
+      cell.textContent = value;
+      cell.classList.toggle('pending', !!p);
+      cell.title = p ? 'Unsaved — was: ' + saved : value;
+      updateSavebar();
+      if (moveNext === true) {
+        const next = cell.closest('td').nextElementSibling;
+        const nc = next && next.querySelector('.c');
+        if (nc) startEdit(nc);
+      }
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Tab') { e.preventDefault(); finish(true, true); }
+      else if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+    });
+    if (input.tagName === 'SELECT') input.addEventListener('change', () => finish(true));
+    input.addEventListener('blur', () => finish(true, 'blur'));
+  }
+
+  const savebar = document.getElementById('savebar');
+  function updateSavebar() {
+    const n = pending.size;
+    savebar.classList.toggle('show', n > 0);
+    document.getElementById('savebar-text').textContent = n + ' unsaved ' + (n === 1 ? 'change' : 'changes');
+    document.getElementById('savebar-review').textContent = 'Review & save (' + n + ')';
+  }
+  document.getElementById('savebar-review').onclick = () => openReview();
+  document.getElementById('savebar-discard').onclick = async () => {
+    const ok = await ask({
+      title: 'Discard ' + pending.size + ' unsaved ' + (pending.size === 1 ? 'change' : 'changes') + '?',
+      html: '<p>The cells go back to their saved values. Nothing is sent to the server.</p>',
+      buttons: [{ text: 'Keep editing', value: null, kind: 'ghost' }, { text: 'Discard', value: 'submit', kind: 'danger' }]
+    });
+    if (ok) { pending.clear(); renderGrid(); }
+  };
+  window.addEventListener('beforeunload', (e) => { if (pending.size) { e.preventDefault(); e.returnValue = ''; } });
+  document.getElementById('back-link').addEventListener('click', async (e) => {
+    if (!pending.size) return;
+    e.preventDefault();
+    if (await guardPending('leave this page')) location.href = 'index.html';
+  });
+
+  const reviewDialog = document.getElementById('review');
+  let reviewResolve = null;
+  const failures = new Map();
+  function renderReview() {
+    const list = document.getElementById('review-list');
+    const n = pending.size;
+    document.getElementById('review-title').textContent = 'Review ' + n + ' ' + (n === 1 ? 'change' : 'changes') + ' — ' + state.data.table.title;
+    list.innerHTML = [...pending.entries()].map(([key, p]) => {
+      const row = state.data.rows.find((r) => r.id === p.id);
+      const fail = failures.get(key);
+      return '<li><span class="who" title="' + esc(rowLabel(row)) + '">' + esc(rowLabel(row)) + '</span>' +
+        '<span class="col">' + esc(state.data.columns[p.j].label) + '</span>' +
+        '<span class="diff"><span class="old">' + show(p.old) + '</span> → <span class="new">' + show(p.value) + '</span></span>' +
+        '<button type="button" class="icon-btn" style="width:28px;height:28px;" data-undo="' + esc(key) + '" aria-label="Remove this change">×</button>' +
+        (fail ? '<span class="fail">Not saved: ' + esc(fail) + '</span>' : '') + '</li>';
+    }).join('');
+    const save = document.getElementById('review-save');
+    save.textContent = 'Save ' + n + ' ' + (n === 1 ? 'change' : 'changes');
+    save.disabled = n === 0;
+  }
+  function openReview() {
+    if (!pending.size) return Promise.resolve();
+    failures.clear();
+    renderReview();
+    reviewDialog.showModal();
+    return new Promise((resolve) => { reviewResolve = resolve; });
+  }
+  function closeReview() {
+    reviewDialog.close();
+    renderGrid();
+    if (reviewResolve) { const r = reviewResolve; reviewResolve = null; r(); }
+  }
+  document.getElementById('review-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-undo]');
+    if (!b) return;
+    pending.delete(b.dataset.undo);
+    failures.delete(b.dataset.undo);
+    if (!pending.size) return closeReview();
+    renderReview();
+  });
+  document.getElementById('review-back').onclick = closeReview;
+  reviewDialog.oncancel = (e) => { e.preventDefault(); closeReview(); };
+  document.getElementById('review-discard').onclick = () => { pending.clear(); failures.clear(); closeReview(); };
+  document.getElementById('review-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const save = document.getElementById('review-save');
+    const entries = [...pending.entries()];
+    save.disabled = true;
+    failures.clear();
+    let saved = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const [key, p] = entries[i];
+      save.textContent = 'Saving ' + (i + 1) + ' of ' + entries.length + '…';
+      try {
+        const data = await api('adminMasterUpdateCell', { table: state.tab, id: p.id, column: state.data.columns[p.j].name, value: p.value });
+        const row = state.data.rows.find((r) => r.id === p.id);
+        row.v[p.j] = data.value;
+        row.search = row.v.join(' ').toLowerCase();
+        pending.delete(key);
+        saved++;
+      } catch (err) {
+        if (err.status === 401 || err.status === 403) { reviewDialog.close(); return handleError(err); }
+        failures.set(key, err.message);
+      }
+    }
+    if (!pending.size) {
+      closeReview();
+      showMessage(true, 'Saved ' + saved + ' ' + (saved === 1 ? 'change' : 'changes') + ' to ' + esc(state.data.table.title) + '.');
+    } else {
+      renderReview();
+      if (saved) showMessage(true, 'Saved ' + saved + '. ' + pending.size + ' could not be saved — see the list.');
+    }
+  };
+
+  // ── Employee account dialog with a change summary ────────────
+
+  const acctDialog = document.getElementById('acct-dialog');
+  const acctForm = document.getElementById('acct-form');
+  let acctRow = null;
+  function acctChanges() {
+    const a = acctRow.account, f = acctForm, out = [];
+    if (f.active.checked !== a.active) out.push(f.active.checked ? 'Activate the account (can sign in)' : 'Deactivate the account (can no longer sign in)');
+    if (f.isAdmin.checked !== a.isAdmin) out.push(f.isAdmin.checked ? 'Give admin rights' : 'Remove admin rights');
+    if (f.resetPassword.checked) out.push('Issue a new temporary password' + (f.sendEmail.checked ? ' and email it' : ' (shown to you, not emailed)'));
+    return out;
+  }
+  function renderAcctSummary() {
+    const ch = acctChanges();
+    document.getElementById('acct-summary').innerHTML = ch.length
+      ? '<b>This will:</b><ul class="summary">' + ch.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>'
+      : '<span style="color:var(--muted)">Tick what you want to change.</span>';
+    const btn = document.getElementById('acct-save');
+    btn.disabled = !ch.length;
+    btn.textContent = ch.length ? 'Confirm ' + ch.length + ' ' + (ch.length === 1 ? 'change' : 'changes') : 'No changes';
+    btn.className = 'btn' + (acctForm.active.checked === false && acctRow.account.active ? ' btn-danger' : '');
+  }
+  acctForm.addEventListener('change', renderAcctSummary);
+  function openAccount(id) {
+    acctRow = state.data.rows.find((r) => r.id === id);
+    document.getElementById('acct-title').textContent = 'Account — ' + rowLabel(acctRow);
+    acctForm.active.checked = acctRow.account.active;
+    acctForm.isAdmin.checked = acctRow.account.isAdmin;
+    acctForm.resetPassword.checked = false;
+    acctForm.sendEmail.checked = true;
+    renderAcctSummary();
+    acctDialog.showModal();
+  }
+  document.getElementById('acct-cancel').onclick = () => acctDialog.close();
+  acctForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const a = acctRow.account;
+    const body = { id: acctRow.id };
+    if (acctForm.active.checked !== a.active) body.status = acctForm.active.checked ? 'active' : 'inactive';
+    if (acctForm.isAdmin.checked !== a.isAdmin) body.isAdmin = acctForm.isAdmin.checked;
+    if (acctForm.resetPassword.checked) { body.resetPassword = true; body.sendEmail = acctForm.sendEmail.checked; }
+    if (Object.keys(body).length === 1) return;
+    const btn = document.getElementById('acct-save');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const data = await api('adminUpdateEmployee', body);
+      acctDialog.close();
+      let html = 'Saved ' + esc(data.employee.fullName) + '.';
+      if (data.tempPassword) {
+        html += ' Temporary password: <code>' + esc(data.tempPassword) + '</code>' +
+          (data.emailed ? ' (emailed to ' + esc(data.employee.email) + ')' : ' — <b>not emailed</b>, pass it on yourself.');
+      }
+      showMessage(true, html);
+      await reloadTab();
     } catch (err) {
-      loading.style.display = 'flex';
-      loading.textContent = 'Error: ' + err.message;
+      document.getElementById('acct-summary').insertAdjacentHTML('beforeend', '<div class="err">' + esc(err.message) + '</div>');
+      renderAcctSummary();
+    }
+  });
+
+  // ── Load ─────────────────────────────────────────────────────
+
+  function handleError(err) {
+    if (err.status === 401) return gate(esc(err.message), true);
+    if (err.status === 403) return gate(esc(err.message), false);
+    showMessage(false, esc(err.message));
+  }
+
+  async function load(tab) {
+    const user = currentUser();
+    if (!user) return gate('Please sign in first.', true);
+    if (!user.isAdmin) return gate('This page is for administrators only.', false);
+    if (!user.token) return gate('Your session is from before the admin tools existed.', true);
+    try {
+      const [tables, emp] = await Promise.all([api('adminMasterTables'), api('adminListEmployees')]);
+      state.tables = tables.tables;
+      state.summary = emp.summary;
+      state.gaps = emp.companyGaps || [];
+      Object.keys(cache).forEach((k) => delete cache[k]);
+      pending.clear();
+      renderShell();
+      const saved = prefs.get('tab', null);
+      await openTab(tab || (state.tables.some((t) => t.key === saved) ? saved : state.tables[0].key));
+    } catch (err) {
+      if (err.status === 401 || err.status === 403) return handleError(err);
+      gate('Could not load: ' + esc(err.message), false);
     }
   }
 
-  function migrateAll() {
-    if (!confirm('Re-run migration? This will overwrite existing data.')) return;
-    alert('Re-run: node scripts/migrate-from-sheets.js');
-    render();
-  }
-
-  function fixEmployee(name, email) {
-    if (!email) {
-      email = prompt('Enter email for ' + name, 'newuser@tl-c.com.vn');
-      if (!email) return;
-    }
-    alert('Run on server: psql -c "UPDATE employees SET email = \'' + email + '\' WHERE full_name = \'' + name + '\"' );
-    render();
-  }
-
-  function resetEmployees() {
-    if (!confirm('Reset all employees to placeholder emails?')) return;
-    alert('Run on server: psql tlcg_workflow -c "TRUNCATE employees RESTART IDENTITY CASCADE"; then node scripts/migrate-from-sheets.js');
-    render();
-  }
-
-  render();
-});
+  document.getElementById('refresh-btn').addEventListener('click', async () => {
+    if (!(await guardPending('refresh'))) return;
+    messageEl.className = '';
+    load(state.tab);
+  });
+  load();
+})();
 </script>
 </body>
 </html>

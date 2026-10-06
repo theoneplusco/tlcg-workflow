@@ -2467,6 +2467,12 @@
                         </div>
                         <span>My Profile</span>
                     </button>
+                    <button onclick="showPage('admin'); updateSidebarActive(this);" class="sidebar-item hidden" id="nav-admin" data-tooltip="Quản trị" data-i18n-title="navAdmin">
+                        <div class="sidebar-icon-box" style="background: #FF3B30;">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <span data-i18n="navAdmin">Quản trị</span>
+                    </button>
                 </div>
 
                 <div class="sidebar-section">
@@ -3572,14 +3578,60 @@
                         </div>
                     </div>
                 </div>
+            </main>
+
+            <!-- ADMIN (admins only; hub is revealed in updateProfileDisplay) -->
+            <main id="page-admin" class="hidden max-w-7xl mx-auto p-6 space-y-6 animate-in slide-in-from-right-4">
+                <h2 class="text-2xl font-bold flex items-center gap-3"><i class="fas fa-shield-alt text-orange-500"></i> <span data-i18n="navAdmin">Quản trị</span></h2>
                 <div id="admin-management-hub" class="hidden space-y-6">
+                    <div class="admin-card p-6 border-orange-100 shadow-orange-50 shadow-lg">
+                        <h3 class="font-bold text-orange-800 mb-2 flex items-center gap-2"><i class="fas fa-database"></i> <span data-i18n="admMasterData">Dữ liệu gốc</span></h3>
+                        <p class="text-sm text-slate-500 mb-4" data-i18n="admMigrationDesc">Kiểm tra dữ liệu gốc đã chuyển sang Postgres, sửa email, kích hoạt / khoá tài khoản và cấp lại mật khẩu.</p>
+                        <a href="admin.html" class="inline-flex items-center gap-2 bg-orange-500 text-white px-5 py-3 rounded-xl font-bold hover:bg-orange-600 transition">
+                            <i class="fas fa-users-gear"></i> <span data-i18n="admOpenMigration">Mở Dữ liệu gốc</span>
+                        </a>
+                        <a href="approval_flows.html" class="inline-flex items-center gap-2 bg-white text-orange-700 border border-orange-300 px-5 py-3 rounded-xl font-bold hover:bg-orange-50 transition ml-2">
+                            <i class="fas fa-sitemap"></i> <span data-i18n="admOpenFlows">Luồng phê duyệt</span>
+                        </a>
+                    </div>
                     <div class="admin-card p-6 border-blue-100 shadow-blue-50 shadow-lg">
-                        <h3 class="font-bold text-blue-800 mb-6 flex items-center gap-2"><i class="fas fa-user-plus"></i> <span>User Management</span></h3>
-                        <form onsubmit="handleAddEmployee(event)" class="space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4"><input type="text" id="new-emp-name" required placeholder="Full Name"><input type="email" id="new-emp-email" required placeholder="Email"></div>
-                            <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">ADD EMPLOYEE</button>
+                        <h3 class="font-bold text-blue-800 mb-6 flex items-center gap-2"><i class="fas fa-user-plus"></i> <span data-i18n="admUserMgmt">Quản lý người dùng</span></h3>
+                        <form id="add-employee-form" onsubmit="handleAddEmployee(event)" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <input type="text" id="new-emp-name" required data-i18n-placeholder="admFullName" placeholder="Họ và tên *" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                <input type="email" id="new-emp-email" required data-i18n-placeholder="admEmailLogin" placeholder="Email (tên đăng nhập) *" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                <div class="space-y-2">
+                                    <select id="new-emp-position" data-choice="position" aria-label="Chọn chức vụ" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm bg-white"><option value="" data-i18n="admPickTitle">Chọn chức vụ</option></select>
+                                    <input type="text" id="new-emp-position-new" hidden data-i18n-placeholder="admNewTitle" placeholder="Tên chức vụ mới" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                </div>
+                                <div class="space-y-2">
+                                    <select id="new-emp-department" data-choice="department" aria-label="Chọn phòng ban" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm bg-white"><option value="" data-i18n="admPickDept">Chọn phòng ban</option></select>
+                                    <input type="text" id="new-emp-department-new" hidden data-i18n-placeholder="admNewDept" placeholder="Tên phòng ban mới" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                </div>
+                                <div class="space-y-2">
+                                    <select id="new-emp-company" data-choice="company" aria-label="Công ty" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm bg-white"><option value="" data-i18n="admPickCompany">Chọn công ty</option></select>
+                                    <div id="new-emp-company-new" hidden class="grid grid-cols-3 gap-2">
+                                        <input type="text" id="new-emp-company-new-name" data-i18n-placeholder="admNewCompanyName" placeholder="Tên công ty mới" class="col-span-2 w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                        <input type="text" id="new-emp-company-new-key" data-i18n-placeholder="admNewCompanyKey" placeholder="Mã (vd TLC)" maxlength="30" oninput="this.value=this.value.toUpperCase()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                    </div>
+                                </div>
+                                <input type="tel" id="new-emp-phone" pattern="\+?[0-9]{8,12}" title="0903954475" data-i18n-placeholder="ixPhone" placeholder="Điện thoại" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                <input type="text" id="new-emp-employee-id" placeholder="Employee ID (TLCG-001)" pattern="[A-Za-z]{4}-[0-9]{3}" title="TLCG-001" oninput="this.value=this.value.toUpperCase()" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+                                <div class="space-y-1">
+                                    <div class="flex gap-2">
+                                        <input type="text" id="new-emp-password" autocomplete="new-password" spellcheck="false" aria-describedby="new-emp-password-help" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-mono">
+                                        <button type="button" id="new-emp-password-regen" onclick="suggestTempPassword_()" data-i18n-title="admNewPassword" title="Tạo mật khẩu khác" class="px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600"><i class="fas fa-rotate"></i></button>
+                                    </div>
+                                    <p id="new-emp-password-help" class="text-xs text-slate-500" data-i18n="admPasswordHelp">Mật khẩu tạm cho lần đăng nhập đầu — nhân viên bắt buộc đổi ngay khi đăng nhập.</p>
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap gap-6 text-sm text-slate-700">
+                                <label class="flex items-center gap-2" style="display:flex; text-transform:none; font-weight:500; margin:0; color:#334155; font-size:14px; white-space:nowrap;"><input type="checkbox" id="new-emp-send-email" checked style="width:16px; height:16px; margin:0; flex:none;"> <span data-i18n="admSendEmail">Gửi email đăng nhập cho nhân viên</span></label>
+                                <label class="flex items-center gap-2" style="display:flex; text-transform:none; font-weight:500; margin:0; color:#334155; font-size:14px; white-space:nowrap;"><input type="checkbox" id="new-emp-is-admin" style="width:16px; height:16px; margin:0; flex:none;"> <span data-i18n="admIsAdmin">Quyền quản trị</span></label>
+                            </div>
+                            <button type="submit" id="add-employee-btn" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-60" data-i18n="admAddEmployee">THÊM NHÂN VIÊN</button>
                         </form>
-                        <div id="mgmt-feedback" class="hidden mt-4 p-3 rounded-xl text-xs font-bold text-center border"></div>
+                        <div id="mgmt-feedback" class="hidden mt-4 p-3 rounded-xl text-sm text-center border"></div>
                     </div>
                 </div>
             </main>
@@ -4147,7 +4199,7 @@
                 'process-cash': 'sidebar-cash',
                 'profile': 'sidebar-profile',
                 'comm': 'sidebar-comm',
-                'admin': 'sidebar-profile'
+                'admin': 'nav-admin'
             };
             const sidebarId = sidebarMap[pageId] || 'sidebar-home';
             const sidebarItem = document.getElementById(sidebarId);
@@ -4240,6 +4292,9 @@
                 return;
             }
             
+            // Admin page is for admins only
+            if (pageId === 'admin' && currentUser && !currentUser.isAdmin) pageId = 'home';
+
             // Hide login if showing a page
             document.getElementById('login-page').classList.add('hidden');
             document.getElementById('main-content').classList.remove('hidden');
@@ -4260,6 +4315,9 @@
             if (pageId === 'process-cash') {
                 loadCashSummary();
             }
+            if (pageId === 'admin') {
+                loadAdminCompanyOptions();
+            }
             
             window.scrollTo(0,0);
         }
@@ -4272,7 +4330,15 @@
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
             first && first.focus();
+            if (modal._trapFn) document.removeEventListener('keydown', modal._trapFn);
             modal._trapFn = function(e) {
+                // Login hid the modal without closeLogin(): drop the trap so Esc
+                // elsewhere does not jump back to the dashboard.
+                if (modal.classList.contains('hidden')) {
+                    document.removeEventListener('keydown', modal._trapFn);
+                    modal._trapFn = null;
+                    return;
+                }
                 if (e.key === 'Escape') { closeLogin(); return; }
                 if (e.key !== 'Tab') return;
                 if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
@@ -4556,7 +4622,7 @@
                 return;
             }
 
-            const btn = document.querySelector('#change-password-modal button:first-of-type');
+            const btn = document.getElementById('chpw-submit-btn');
             const origText = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<div class="spinner inline-block mr-2"></div> Saving...';
@@ -4578,6 +4644,10 @@
                 const result = JSON.parse(await response.text());
 
                 if (result.success) {
+                    if (currentUser && currentUser.mustChangePassword) {
+                        currentUser.mustChangePassword = false;
+                        try { localStorage.setItem('tlc_current_user', JSON.stringify(currentUser)); } catch (e) {}
+                    }
                     hideChangePasswordModal();
                     showToast('Password set successfully! Welcome, ' + (currentUser && currentUser.name || ''), 'success');
                     updateUI();
@@ -4792,17 +4862,24 @@
                 console.log('Result data keys:', result.data ? Object.keys(result.data) : 'N/A');
                 
                 if (result.success && result.data) {
-                    const employeeId = result.data.employeeId || result.data['EmployeeId'] || '';
+                    // GAS returns flat user fields on data.*; Postgres may nest under data.user
+                    const u = (result.data.user && typeof result.data.user === 'object')
+                        ? { ...result.data, ...result.data.user }
+                        : result.data;
+                    const employeeId = u.employeeId || u['EmployeeId'] || u.id || '';
                     currentUser = {
-                        email: result.data.email || email,
-                        name: result.data.name || result.data['Họ và tên'] || 'User',
-                        role: result.data.role || result.data['Chức vụ'] || 'User',
-                        isAdmin: result.data.isAdmin || false,
+                        email: u.email || email,
+                        name: u.name || u['Họ và tên'] || u.full_name || 'User',
+                        role: u.position || u.role || u['Chức vụ'] || 'User',
+                        position: u.position || u['Chức vụ'] || u.role || '',
+                        isAdmin: !!(u.isAdmin || u.isadmin),
                         id: employeeId || 'N/A',
                         employeeId: employeeId,
-                        department: result.data.department || result.data['Phòng ban'] || '',
-                        company: result.data.company || result.data['Công ty'] || '',
-                        phone: result.data.phone || result.data['Điện thoại'] || '',
+                        department: u.department || u['Phòng ban'] || '',
+                        company: u.company || u['Công ty'] || '',
+                        phone: u.phone || u['Điện thoại'] || '',
+                        token: u.token || result.data.token || '',
+                        mustChangePassword: !!u.mustChangePassword,
                         loginTimestamp: Date.now()
                     };
 
@@ -5084,7 +5161,7 @@
             const profileEmployeeId = document.getElementById('profile-employee-id');
             
             if (profileEmail) profileEmail.textContent = currentUser.email || 'N/A';
-            if (profilePosition) profilePosition.textContent = currentUser.role || 'N/A';
+            if (profilePosition) profilePosition.textContent = currentUser.position || currentUser.role || 'N/A';
             if (profileDepartment) profileDepartment.textContent = currentUser.department || 'N/A';
             if (profileCompany) profileCompany.textContent = currentUser.company || 'N/A';
             if (profilePhone) profilePhone.textContent = currentUser.phone || 'N/A';
@@ -5094,14 +5171,13 @@
                 profileEmployeeId.textContent = displayEmployeeId;
             }
             
-            if (currentUser.isAdmin) {
-                const navAdmin = document.getElementById('nav-admin');
-                if (navAdmin) navAdmin.classList.remove('hidden');
-                const mobileNavAdmin = document.getElementById('mobile-nav-admin');
-                if (mobileNavAdmin) mobileNavAdmin.classList.remove('hidden');
-                document.getElementById('admin-management-hub').classList.remove('hidden');
-                document.getElementById('admin-verified-badge').classList.remove('hidden');
-            }
+            // Toggle both ways so a non-admin signing in after an admin
+            // does not inherit the admin chrome.
+            const isAdmin = !!currentUser.isAdmin;
+            ['nav-admin', 'mobile-nav-admin', 'admin-management-hub', 'admin-verified-badge'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('hidden', !isAdmin);
+            });
         }
 
         // setLanguage() is provided globally by i18n.js.
@@ -5133,16 +5209,201 @@
             } catch (e) { return "Service unavailable."; }
         }
 
-        function handleAddEmployee(event) {
+        function adminEsc_(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        /** Confirmation gate for admin changes: resolves true only on an explicit confirm. */
+        function adminConfirm_(title, rows, confirmText) {
+            return new Promise((resolve) => {
+                const dlg = document.createElement('dialog');
+                dlg.style.cssText = 'border:none;border-radius:18px;padding:0;width:min(440px,calc(100vw - 24px));box-shadow:0 24px 64px rgba(0,0,0,.22);';
+                dlg.innerHTML =
+                    '<form method="dialog" style="padding:22px;">' +
+                    '<h3 style="font-family:var(--font-display);font-size:18px;font-weight:700;margin:0 0 12px;">' + adminEsc_(title) + '</h3>' +
+                    '<dl style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:14px;">' +
+                    rows.filter((r) => r[1] !== '').map((r) => '<dt style="color:#6B7280;">' + adminEsc_(r[0]) + '</dt><dd style="margin:0;font-weight:600;overflow-wrap:anywhere;">' + adminEsc_(r[1]) + '</dd>').join('') +
+                    '</dl>' +
+                    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">' +
+                    '<button type="button" data-v="0" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold">' + adminEsc_(TLCI18n.t('cancel', 'Huỷ')) + '</button>' +
+                    '<button type="submit" data-v="1" class="px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold">' + adminEsc_(confirmText) + '</button>' +
+                    '</div></form>';
+                document.body.appendChild(dlg);
+                const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+                dlg.querySelector('[data-v="0"]').onclick = () => done(false);
+                dlg.querySelector('form').onsubmit = (e) => { e.preventDefault(); done(true); };
+                dlg.oncancel = (e) => { e.preventDefault(); done(false); };
+                dlg.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
+                dlg.showModal();
+                dlg.querySelector('[data-v="1"]').focus();
+            });
+        }
+
+        // ── Add Employee: dropdowns from Master Data + suggested temporary password ──
+        const ADM_NEW = '__new__';
+        let adminOptionsLoaded = false;
+
+        /** Fill Title / Department / Company from Master Data; the last option adds a new value. */
+        async function loadAdminEmployeeOptions(force) {
+            if (adminOptionsLoaded && !force) return;
+            if (!currentUser || !currentUser.token) return;
+            try {
+                const res = await fetch('/api/voucher', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentUser.token },
+                    body: JSON.stringify({ action: 'adminEmployeeOptions' })
+                }).then((r) => r.json());
+                if (!res.success) return;
+                const fill = (field, values, pickKey, addKey) => {
+                    const sel = document.getElementById('new-emp-' + field);
+                    const keep = sel.value;
+                    sel.innerHTML = '<option value="">' + adminEsc_(TLCI18n.t(pickKey)) + '</option>' +
+                        values.map((v) => '<option value="' + adminEsc_(v) + '">' + adminEsc_(v) + '</option>').join('') +
+                        '<option value="' + ADM_NEW + '">' + adminEsc_(TLCI18n.t(addKey)) + '</option>';
+                    if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+                };
+                fill('position', res.data.titles, 'admPickTitle', 'admAddNewTitle');
+                fill('department', res.data.departments, 'admPickDept', 'admAddNewDept');
+                fill('company', res.data.companies, 'admPickCompany', 'admAddNewCompany');
+                adminOptionsLoaded = true;
+            } catch (e) {
+                console.warn('[Admin] Could not load employee options:', e);
+            }
+        }
+        // Kept for showPage('admin'), which calls it on entry
+        function loadAdminCompanyOptions() {
+            loadAdminEmployeeOptions();
+            if (!document.getElementById('new-emp-password').value) suggestTempPassword_();
+        }
+
+        document.addEventListener('change', (e) => {
+            const sel = e.target.closest && e.target.closest('select[data-choice]');
+            if (!sel) return;
+            const box = document.getElementById('new-emp-' + sel.dataset.choice + '-new');
+            const isNew = sel.value === ADM_NEW;
+            box.hidden = !isNew;
+            const first = box.tagName === 'INPUT' ? box : box.querySelector('input');
+            if (isNew && first) first.focus();
+        });
+
+        /** Random password that meets the password rules (8+, capital, digit, special). */
+        function suggestTempPassword_() {
+            const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ', lower = 'abcdefghijkmnopqrstuvwxyz', digits = '23456789', special = '#@$%&*!';
+            const pick = (set, n) => {
+                const buf = new Uint32Array(n);
+                crypto.getRandomValues(buf);
+                return [...buf].map((x) => set[x % set.length]).join('');
+            };
+            const pw = pick(upper, 2) + pick(lower, 5) + pick(digits, 3) + pick(special, 1);
+            document.getElementById('new-emp-password').value = pw;
+        }
+
+        /** Selected value, or the typed new value when "+ Add new…" is chosen. */
+        function adminChoiceValue_(field) {
+            const sel = document.getElementById('new-emp-' + field);
+            if (sel.value !== ADM_NEW) return { value: sel.value.trim(), isNew: false };
+            const box = document.getElementById('new-emp-' + field + '-new');
+            const v = (box.tagName === 'INPUT' ? box.value : '').trim();
+            return { value: v, isNew: true };
+        }
+
+        async function handleAddEmployee(event) {
             event.preventDefault();
-            const name = document.getElementById('new-emp-name').value;
-            const email = document.getElementById('new-emp-email').value;
             const feedback = document.getElementById('mgmt-feedback');
-            feedback.classList.remove('hidden');
-            feedback.className = 'mt-4 p-3 rounded-xl text-xs font-bold text-center border bg-green-50 text-green-700 border-green-200';
-            feedback.textContent = `Employee ${name} (${email}) added successfully!`;
-            document.getElementById('new-emp-name').value = '';
-            document.getElementById('new-emp-email').value = '';
+            const btn = document.getElementById('add-employee-btn');
+            const val = (id) => document.getElementById(id).value.trim();
+            const showFeedback = (ok, html) => {
+                feedback.className = 'mt-4 p-3 rounded-xl text-sm text-center border ' +
+                    (ok ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200');
+                feedback.innerHTML = html;
+            };
+
+            if (!currentUser || !currentUser.token) {
+                showFeedback(false, adminEsc_(TLCI18n.t('admNeedRelogin')));
+                return;
+            }
+
+            const title = adminChoiceValue_('position');
+            const dept = adminChoiceValue_('department');
+            const companySel = document.getElementById('new-emp-company');
+            const newCompany = companySel.value === ADM_NEW
+                ? { name: val('new-emp-company-new-name'), key: val('new-emp-company-new-key') }
+                : null;
+            if ((title.isNew && !title.value) || (dept.isNew && !dept.value) || (newCompany && (!newCompany.name || !newCompany.key))) {
+                showFeedback(false, adminEsc_(TLCI18n.t('admFillNew')));
+                return;
+            }
+            if (!val('new-emp-password')) suggestTempPassword_();
+
+            const payload = {
+                action: 'adminCreateEmployee',
+                fullName: val('new-emp-name'),
+                email: val('new-emp-email'),
+                position: title.value,
+                department: dept.value,
+                company: newCompany ? newCompany.name : companySel.value,
+                newCompany: newCompany,
+                phone: val('new-emp-phone'),
+                employeeId: val('new-emp-employee-id'),
+                password: val('new-emp-password'),
+                isAdmin: document.getElementById('new-emp-is-admin').checked,
+                sendEmail: document.getElementById('new-emp-send-email').checked
+            };
+
+            const isNewTag = ' ' + TLCI18n.t('admNewTag');
+            const confirmed = await adminConfirm_(TLCI18n.t('admConfirmCreate'), [
+                [TLCI18n.t('admFullName').replace(' *', ''), payload.fullName],
+                [TLCI18n.t('admEmailLogin').replace(' *', ''), payload.email],
+                [TLCI18n.t('ixJobTitle'), payload.position + (title.isNew ? isNewTag : '')],
+                [TLCI18n.t('department'), payload.department + (dept.isNew ? isNewTag : '')],
+                [TLCI18n.t('company'), payload.company ? payload.company + (newCompany ? ' (' + newCompany.key + ')' + isNewTag : '') : ''],
+                ['Employee ID', payload.employeeId],
+                [TLCI18n.t('admIsAdmin'), payload.isAdmin ? '✓' : '—'],
+                [TLCI18n.t('admTempPassword'), payload.password + ' — ' + TLCI18n.t('admMustChange')],
+                [TLCI18n.t('admSendEmail'), payload.sendEmail ? '✓' : '—']
+            ], TLCI18n.t('admConfirmCreateBtn'));
+            if (!confirmed) return;
+
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/voucher', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + currentUser.token
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (!result.success) {
+                    showFeedback(false, adminEsc_(result.message || TLCI18n.t('admCreateFailed')));
+                    return;
+                }
+                const d = result.data || {};
+                let html = adminEsc_(result.message);
+                // Show the password once so the admin can pass it on if the email did not go out
+                html += `<div class="mt-2 text-slate-700">${adminEsc_(TLCI18n.t('admTempPassword'))}: ` +
+                    `<code class="px-2 py-1 bg-white border rounded font-mono select-all">${adminEsc_(d.tempPassword)}</code> ` +
+                    `<span class="text-slate-500">— ${adminEsc_(TLCI18n.t('admMustChange'))}</span></div>`;
+                if (d.companyAdded) {
+                    html += `<div class="mt-1 text-slate-700">${adminEsc_(TLCI18n.t('admCompanyAdded'))}</div>`;
+                }
+                if (payload.sendEmail && !d.emailed) {
+                    html += `<div class="mt-1 text-amber-700">${adminEsc_(TLCI18n.t('admEmailNotSent'))}</div>`;
+                }
+                showFeedback(true, html);
+                document.getElementById('add-employee-form').reset();
+                ['position', 'department', 'company'].forEach((f) => { document.getElementById('new-emp-' + f + '-new').hidden = true; });
+                document.getElementById('new-emp-send-email').checked = true;
+                suggestTempPassword_();
+                loadAdminEmployeeOptions(true); // new title / department / company now come from Master Data
+            } catch (e) {
+                showFeedback(false, adminEsc_(TLCI18n.t('admCreateFailed') + ' ' + e.message));
+            } finally {
+                btn.disabled = false;
+            }
         }
 
         // Enhanced Approval Workflow Functions
@@ -6431,6 +6692,10 @@
             initGlobalSearch();
             const requested = new URLSearchParams(location.search).get('page');
             showPage(requested || 'home');
+            // A first-time password was never changed: a reload must not skip the forced change
+            if (currentUser && currentUser.mustChangePassword) {
+                showChangePasswordModal(currentUser.email, true);
+            }
             // Seed dropdowns safely
             const seedSelect = (id, data, valKey = 'name') => {
                 const el = document.getElementById(id);
