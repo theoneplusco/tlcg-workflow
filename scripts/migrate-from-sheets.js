@@ -50,9 +50,13 @@ async function migrateEmployees(employees) {
   let count = 0;
   for (const emp of employees) {
     try {
-      const email = emp.email || '';
-      // Use a unique placeholder if email is empty (UNIQUE constraint)
+      // GAS getMasterData returns: employee_email, full_name, department_name,
+      // company_name, employee_phone, employee_status, employee_role, isAdmin
+      const email = (emp.employee_email || emp.email || '').toString().trim().toLowerCase();
+      // Use a unique placeholder only if there is genuinely no email
       const uniqueEmail = email || `noemail-${count + 1}@local`;
+      // GAS status is "Active" (capitalized); our queries filter status = 'active'
+      const status = (emp.employee_status || emp.status || 'active').toString().trim().toLowerCase();
       await pool.query(
         `INSERT INTO employees (full_name, position, department, company, email, phone, status, role, is_admin)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -66,13 +70,15 @@ async function migrateEmployees(employees) {
            role = EXCLUDED.role,
            is_admin = EXCLUDED.is_admin,
            updated_at = NOW()`,
-        [emp.name || emp.full_name || '', emp.position || '', emp.department || '',
-         emp.company || '', uniqueEmail, emp.phone || '',
-         emp.status || 'active', emp.role || '', emp.isAdmin || false]
+        [emp.full_name || emp.name || '', emp.position || '',
+         emp.department_name || emp.department || '',
+         emp.company_name || emp.company || '', uniqueEmail,
+         (emp.employee_phone || emp.phone || '').toString(),
+         status, emp.employee_role || emp.role || '', emp.isAdmin || false]
       );
       count++;
     } catch (err) {
-      console.error(`[Migrate] Employee "${emp.email}":`, err.message);
+      console.error(`[Migrate] Employee "${emp.employee_email || emp.email}":`, err.message);
     }
   }
   console.log(`[Migrate] Imported ${count}/${employees.length} employees`);
