@@ -37,6 +37,7 @@ function mapEmployee(row) {
     Status: status,
     employee_id: row.employee_id || (row.id != null ? String(row.id) : ''),
     EmployeeId: row.employee_id || (row.id != null ? String(row.id) : ''),
+    employeeId: row.employee_id || (row.id != null ? String(row.id) : ''),
     isAdmin: !!row.is_admin,
     isadmin: !!row.is_admin,
   };
@@ -186,12 +187,17 @@ export async function handleGetCompanies(req, res) {
 }
 
 /**
- * GET getCompanyApprovers — returns approvers (with signature URLs) for a company.
- * Used by signature verification.
+ * getCompanyApprovers — the three voucher approvers (with signature sample
+ * links) for a company. Same shape as GAS handleGetCompanyApprovers:
+ * data.approvers.{legalRep, accountant, treasurer}.{name, email, signature, role}.
+ * voucher.html, approve_voucher.html and index.html all read data.approvers.
+ * Accepts companyName or company (body or query string), companyKey optional.
  */
 export async function handleGetCompanyApprovers(req, res) {
-  const { companyName, companyKey, lang } = req.body || req.query || {};
-  const vi = lang !== 'en';
+  const src = Object.assign({}, req.query || {}, req.body || {});
+  const companyName = String(src.companyName || src.company || '').trim();
+  const companyKey = String(src.companyKey || '').trim();
+  const vi = src.lang !== 'en';
 
   if (!companyName) {
     return res.status(400).json({
@@ -201,43 +207,27 @@ export async function handleGetCompanyApprovers(req, res) {
   }
 
   try {
-    let query, params;
-    if (companyKey) {
-      query = `SELECT * FROM companies WHERE company_name = $1 AND company_key = $2 LIMIT 1`;
-      params = [companyName, companyKey];
-    } else {
-      query = `SELECT * FROM companies WHERE company_name = $1 LIMIT 1`;
-      params = [companyName];
-    }
-
-    const { rows } = await pool.query(query, params);
+    const { rows } = companyKey
+      ? await pool.query(`SELECT * FROM companies WHERE company_name = $1 AND company_key = $2 LIMIT 1`, [companyName, companyKey])
+      : await pool.query(`SELECT * FROM companies WHERE company_name = $1 ORDER BY id LIMIT 1`, [companyName]);
     const company = rows[0];
     if (!company) {
       return res.status(404).json({
         success: false,
-        message: vi ? 'Không tìm thấy công ty' : 'Company not found',
+        message: (vi ? 'Không tìm thấy công ty: ' : 'Company not found: ') + companyName,
       });
     }
 
+    const approvers = {
+      legalRep: { name: company.legal_rep_name || '', email: company.legal_rep_email || '', signature: company.legal_rep_sig_url || '', role: 'Đại diện pháp luật' },
+      accountant: { name: company.accountant_name || '', email: company.accountant_email || '', signature: company.accountant_sig_url || '', role: 'Kế toán trưởng' },
+      treasurer: { name: company.treasurer_name || '', email: company.treasurer_email || '', signature: company.treasurer_sig_url || '', role: 'Thủ quỹ' },
+    };
     return res.json({
       success: true,
-      data: {
-        legalRep: {
-          name: company.legal_rep_name,
-          email: company.legal_rep_email,
-          signature: company.legal_rep_sig_url,
-        },
-        accountant: {
-          name: company.accountant_name,
-          email: company.accountant_email,
-          signature: company.accountant_sig_url,
-        },
-        treasurer: {
-          name: company.treasurer_name,
-          email: company.treasurer_email,
-          signature: company.treasurer_sig_url,
-        },
-      },
+      message: 'Thành công',
+      // approvers: the GAS shape every page reads; the flat keys are kept for older callers
+      data: { companyName: company.company_name, approvers, ...approvers },
     });
   } catch (err) {
     console.error('[MasterData] getApprovers error:', err.message);
