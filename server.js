@@ -5,7 +5,7 @@
  * Routes new actions to Postgres handlers; unmigrated actions
  * still proxy to the old GAS backends.
  *
- * Start:  pm2 start ecosystem.config.js
+ * Start:  pm2 start ecosystem.config.cjs
  * Env:    see .env (DATABASE_URL, REDIS_URL, R2_*, RESEND_API_KEY, etc.)
  */
 
@@ -31,6 +31,9 @@ import { startVoucherReminderJob } from './api/jobs/voucher-reminders.js';
 import { startSheetMirrorJob } from './api/jobs/sheet-mirror.js';
 import { rateLimit } from './api/middleware/rate-limiter.js';
 import { unwrapPayload } from './api/middleware/unwrap-payload.js';
+import { missingVoucherSchema } from './api/lib/startup-checks.js';
+import { jwtSecret } from './api/handlers/auth.js';
+import pool from './db/pool.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -158,6 +161,15 @@ app.use((err, req, res, _next) => {
 /* ─────────────────────────────────────────────────────────────
    7. Start.
    ───────────────────────────────────────────────────────────── */
+// Vouchers on Postgres need migration 006 (sheet_outbox): refuse to boot without it so PM2 shows the error.
+const schemaProblem = await missingVoucherSchema(postgresWorkflows, pool);
+if (schemaProblem) {
+  console.error(`[server] FATAL: ${schemaProblem}`);
+  process.exit(1);
+}
+// No dev default in production: logins are refused until JWT_SECRET is set (GAS proxy keeps working).
+if (!jwtSecret()) console.error('[server] JWT_SECRET is not set (NODE_ENV=production): login and token checks are refused');
+
 const server = app.listen(PORT, HOST, () => {
   console.log(`[server] TLCG Workflow on http://${HOST}:${PORT} (worker ${process.pid})`);
   console.log(`[server] Migrated actions (${migratedActions.length}): ${migratedActions.join(', ')}`);

@@ -13,8 +13,17 @@ const RATE_WINDOW_SEC = 1800;     // 30 minutes
 const MAX_OTP_REQUESTS = 3;
 const MAX_OTP_GUESSES = 3;
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const DEV_JWT_SECRET = 'dev-secret-change-in-production';
 const JWT_EXPIRY = '7d';
+
+/**
+ * The login token secret. Outside production (local dev, tests) a fixed dev secret is used when
+ * JWT_SECRET is unset; in production there is no default, so no token is signed or accepted.
+ */
+export function jwtSecret(env = process.env) {
+  if (env.JWT_SECRET) return env.JWT_SECRET;
+  return env.NODE_ENV === 'production' ? null : DEV_JWT_SECRET;
+}
 
 const BCRYPT_ROUNDS = 10;
 
@@ -75,9 +84,14 @@ export async function handleLogin(req, res) {
       });
     }
 
+    const secret = jwtSecret();
+    if (!secret) {
+      console.error('[Auth] JWT_SECRET is not set (NODE_ENV=production): login refused');
+      return res.status(500).json({ success: false, message: 'Máy chủ chưa cấu hình JWT_SECRET' });
+    }
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role, isAdmin: user.is_admin },
-      JWT_SECRET,
+      secret,
       { expiresIn: JWT_EXPIRY }
     );
 
@@ -317,9 +331,10 @@ export async function handleResetPassword(req, res) {
  * Decode a login token; null when missing, expired or forged.
  */
 export function decodeToken(token) {
-  if (!token) return null;
+  const secret = jwtSecret();
+  if (!token || !secret) return null;
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, secret);
   } catch {
     return null;
   }
@@ -334,8 +349,10 @@ export function verifyToken(req, res, next) {
     return res.status(401).json({ success: false, message: 'No token' });
   }
   const token = auth.slice(7);
+  const secret = jwtSecret();
+  if (!secret) return res.status(500).json({ success: false, message: 'Máy chủ chưa cấu hình JWT_SECRET' });
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, secret);
     req.user = decoded;
     next();
   } catch {
