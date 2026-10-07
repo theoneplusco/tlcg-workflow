@@ -303,3 +303,16 @@ test('summary myTurn + approval context: whose turn, sample signature, missing s
     await pool.query(`TRUNCATE approval_flows`);
   }
 });
+
+test('server refuses an approval when the approver has no sample signature (no "no_sample" bypass)', { skip }, async () => {
+  const person = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE status='active' AND LOWER(email) NOT IN ($1,$2,$3) LIMIT 1`,
+    [people.accountant, people.legal, people.treasurer])).rows[0];
+  if (!person) return;
+  await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  const r = await approve(no, person.e, { signatureVerification: { verified: true, reason: 'no_sample', similarity: '0' } });
+  assert.equal(r.success, false);
+  assert.match(r.message, /Chưa có chữ ký mẫu/);
+  await pool.query(`TRUNCATE approval_flows`);
+});

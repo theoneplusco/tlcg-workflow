@@ -98,6 +98,31 @@ function attachmentLines(files) {
   }).join('\n\n');
 }
 
+// Role → Master Company signature column (the sample each role holder signs against)
+const ROLE_SAMPLE = { chief_accountant: 'accountant_sig_url', legal_rep: 'legal_rep_sig_url', treasurer: 'treasurer_sig_url' };
+const EMPLOYEE_SAMPLE_HEADERS = ['Signature', 'Chữ ký', 'Chu_ky', 'employee_signature', 'Signature_URL'];
+
+/**
+ * The sample signature an approver must match: their role's sample on the
+ * voucher's company (Master Company), else a Signature column on their Master
+ * Employee row. { url, from } — url '' when none is registered.
+ */
+async function sampleSignatureFor(db, companyId, entries, email) {
+  const company = companyId ? (await db.query(`SELECT * FROM companies WHERE id = $1`, [companyId])).rows[0] : null;
+  for (const a of entries) {
+    const col = ROLE_SAMPLE[a.role];
+    if (company && col && company[col]) return { url: company[col], from: a.label };
+  }
+  const emp = (await db.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [email])).rows[0];
+  const extra = (emp && emp.extra) || {};
+  const hit = EMPLOYEE_SAMPLE_HEADERS.find((h) => String(extra[h] || '').trim());
+  return hit ? { url: String(extra[hit]).trim(), from: 'Master Employee' } : { url: '', from: '' };
+}
+const NO_SAMPLE = {
+  vi: 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).',
+  en: 'No sample signature is registered for you. Ask an administrator to add it in Master Data (Employees › Signature).',
+};
+
 /**
  * The acting user: the login token's user when present (the email in the body
  * must then match it); without a token, the body's email unless
@@ -237,6 +262,14 @@ async function approveOne({ voucherNumber, approverEmail, approverName, signatur
 
     // Approved every entry they have and the plan moved on → GAS "already approved"
     if (mine.every((a) => a.status === 'approved')) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'alreadyApprovedByYouCash') }; }
+
+    // No registered sample = nothing to verify against: refuse (GAS let these through as "no_sample")
+    const open = pendingStep(plan);
+    const pendingMine = open >= 0 ? plan.steps[open].approvers.filter((a) => a.email === email && a.status !== 'approved') : [];
+    if (pendingMine.length && !(await sampleSignatureFor(client, row.company_id, pendingMine, email)).url) {
+      await client.query('ROLLBACK');
+      return { ok: false, error: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
+    }
 
     let result;
     const at = now();
@@ -596,9 +629,6 @@ export async function handleVoucherApprovalStatus(req, res) {
   }
 }
 
-// Role → Master Company signature column (the sample each role holder signs against)
-const ROLE_SAMPLE = { chief_accountant: 'accountant_sig_url', legal_rep: 'legal_rep_sig_url', treasurer: 'treasurer_sig_url' };
-const EMPLOYEE_SAMPLE_HEADERS = ['Signature', 'Chữ ký', 'Chu_ky', 'employee_signature', 'Signature_URL'];
 
 /**
  * getApprovalContext { voucherNumber } — for the signed-in user: the voucher,
@@ -635,22 +665,8 @@ export async function handleVoucherApprovalContext(req, res) {
     let sampleSignatureUrl = '';
     let sampleFrom = '';
     if (myEntries.length) {
-      const company = row.company_id ? (await pool.query(`SELECT * FROM companies WHERE id = $1`, [row.company_id])).rows[0] : null;
-      for (const a of myEntries) {
-        const col = ROLE_SAMPLE[a.role];
-        if (company && col && company[col]) { sampleSignatureUrl = company[col]; sampleFrom = a.label; break; }
-      }
-      if (!sampleSignatureUrl) {
-        const emp = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [caller.email])).rows[0];
-        const extra = (emp && emp.extra) || {};
-        const hit = EMPLOYEE_SAMPLE_HEADERS.find((h) => String(extra[h] || '').trim());
-        if (hit) { sampleSignatureUrl = String(extra[hit]).trim(); sampleFrom = 'Master Employee'; }
-      }
-      if (!sampleSignatureUrl) {
-        reason = lang === 'en'
-          ? 'No sample signature is registered for you. Ask an administrator to add it in Master Data (Employees › Signature).'
-          : 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).';
-      }
+      ({ url: sampleSignatureUrl, from: sampleFrom } = await sampleSignatureFor(pool, row.company_id, myEntries, caller.email));
+      if (!sampleSignatureUrl) reason = NO_SAMPLE[lang === 'en' ? 'en' : 'vi'];
     }
 
     return res.json({

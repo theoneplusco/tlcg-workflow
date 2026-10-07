@@ -13,6 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <script src="i18n.js"></script>
+    <script src="voucher-steps.js"></script>
     <style>
         :root {
             /* iOS System Colors */
@@ -3230,6 +3231,18 @@
         // 10. Ensure your Google account has permissions to send emails via Gmail (usually default).
         // Use proxy URL like index.html (Cash & Admin) does - this works correctly
         const GOOGLE_APPS_SCRIPT_WEB_APP_URL = '/api/voucher'; // Voucher operations proxy
+
+        /** JSON call to /api/voucher (the login token is added by i18n.js). Postgres-only actions. */
+        async function voucherApi(action, body) {
+            const res = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(Object.assign({ action: action }, body || {}))
+            });
+            let json = null;
+            try { json = await res.json(); } catch (e) { /* handled below */ }
+            if (!json) throw new Error('HTTP ' + res.status);
+            return json;
+        }
         const VOUCHER_SUBMIT_FETCH_TIMEOUT_MS = 120000;
 
         // ==================== API REQUEST QUEUE & RETRY LOGIC ====================
@@ -5230,6 +5243,8 @@
                 if (!result.success || !result.data) {
                     throw new Error(result.message || 'Không thể tải dữ liệu phiếu');
                 }
+                // Rows from the Postgres engine carry myTurn: switch the page to step-aware mode
+                window.__vouchersOnPostgres = Array.isArray(result.data.recent) && result.data.recent.some(r => typeof r.myTurn === 'boolean');
                 if (result.data.callerApproverRole) {
                     try {
                         const u = JSON.parse(localStorage.getItem('tlc_current_user') || '{}');
@@ -5250,14 +5265,16 @@
 
         function normalizeVoucherState(voucher) {
             const rawStatus = (voucher.status || '').toLowerCase();
-            const progressRaw = voucher.meta?.companyApprovers?.approvalProgress || '0/3';
-            const progressNum = parseInt(progressRaw.split('/')[0], 10) || 0;
+            // "done/total": Postgres flows can have any number of steps (GAS: /3)
+            const prog = VoucherSteps.progress(voucher);
+            const progressNum = prog.done;
+            const progressTotal = prog.total;
             const isRejected = rawStatus.includes('rejected') || rawStatus.includes('từ chối');
             const isReceived = rawStatus.includes('received')
                 || rawStatus.includes('xác nhận')
                 || rawStatus.includes('đã thu')
                 || rawStatus.includes('đã nhận');
-            const isApproved = !isRejected && (progressNum >= 3 || rawStatus.includes('approved') || rawStatus.includes('đã duyệt'));
+            const isApproved = !isRejected && (progressNum >= progressTotal || rawStatus.includes('approved') || rawStatus.includes('đã duyệt'));
             const submitDate = new Date(voucher.timestamp || voucher.meta?.voucherDate || 0);
             const isOverdue = !isRejected && !isApproved && Number.isFinite(submitDate.getTime())
                 ? ((Date.now() - submitDate.getTime()) > (2 * 24 * 60 * 60 * 1000))
@@ -5266,10 +5283,11 @@
             if (isRejected) bucket = 'rejected';
             else if (isReceived) bucket = 'acknowledged';
             else if (isApproved) bucket = 'approved';
-            else if (progressNum > 0 && progressNum < 3) bucket = 'in-progress';
+            else if (progressNum > 0 && progressNum < progressTotal) bucket = 'in-progress';
             return {
                 bucket,
                 progressNum,
+                progressTotal,
                 isRejected,
                 isApproved,
                 isReceived,
@@ -5417,11 +5435,13 @@
             if (state.bucket === 'approved') return { status: 'Đã duyệt', detail: 'Chờ người nộp xác nhận', statusClass: 'approved' };
             if (state.bucket === 'in-progress') {
                 const role = getCallerRole();
-                const isMyTurn = (role === 'accountant' && state.progressNum === 0)
+                // Postgres rows say whose turn it is; GAS rows: infer from the fixed 3 steps
+                const isMyTurn = typeof voucher.myTurn === 'boolean' ? voucher.myTurn
+                              : (role === 'accountant' && state.progressNum === 0)
                               || (role === 'legalRep'    && state.progressNum === 1)
                               || (role === 'treasurer'   && state.progressNum === 2);
                 return {
-                    status: `Đang duyệt (${state.progressNum}/3)`,
+                    status: `Đang duyệt (${state.progressNum}/${state.progressTotal})`,
                     detail: isMyTurn ? 'Đến lượt bạn phê duyệt — hãy mở chi tiết' : 'Đang chờ bước duyệt tiếp theo',
                     statusClass: 'in-progress'
                 };
@@ -5700,6 +5720,7 @@
             return vouchers.filter(v => {
                 const s = normalizeVoucherState(v);
                 if (s.bucket === 'rejected' || s.bucket === 'acknowledged') return false;
+                if (typeof v.myTurn === 'boolean') return v.myTurn; // Postgres: waiting for me now
                 if (role === 'accountant') return s.progressNum === 0;
                 if (role === 'legalRep')   return s.progressNum === 1;
                 if (role === 'treasurer')  return s.progressNum === 2;
@@ -5764,6 +5785,9 @@
                 (v.requestorEmail || '').toLowerCase() === email ||
                 (!v.requestorEmail && userName && (v.employee || '').toLowerCase().trim() === userName)
             );
+
+            // Postgres: vouchers waiting for me now, plus my own still-open ones
+            if (typeof v.myTurn === 'boolean') return v.myTurn || (isOwnVoucher && state.bucket !== 'rejected');
 
             // Admin (no approver role): only truly pending vouchers
             if (role === 'admin') return state.progressNum === 0 && state.bucket !== 'rejected';
@@ -6137,7 +6161,23 @@
                 let verificationResult = { verified: true, reason: 'no_sample', similarity: '0' };
                 const approverRole = getCurrentUserApproverRole();
                 let sampleSignatureUrl = null;
-                if (approverRole && data.selectedCompanyApprovers && data.selectedCompanyApprovers[approverRole]) {
+                if (window.__vouchersOnPostgres) {
+                    // Postgres: ask per voucher (companies / flows differ); keep only those I can approve now
+                    const ready = [];
+                    const skipped = [];
+                    for (const no of voucherNumbers.slice()) {
+                        const c = await voucherApi('getApprovalContext', { voucherNumber: no });
+                        if (c.success && c.data.canApprove) { ready.push(no); if (!sampleSignatureUrl) sampleSignatureUrl = c.data.sampleSignatureUrl; }
+                        else skipped.push(no + ': ' + ((c.data && c.data.reason) || c.message));
+                    }
+                    if (skipped.length) showToast('Bỏ qua ' + skipped.length + ' phiếu chưa thể duyệt:\n' + skipped.slice(0, 5).join('\n'), 'warning');
+                    voucherNumbers.length = 0;
+                    ready.forEach(n => voucherNumbers.push(n));
+                    if (!voucherNumbers.length) {
+                        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Duyệt'; }
+                        return;
+                    }
+                } else if (approverRole && data.selectedCompanyApprovers && data.selectedCompanyApprovers[approverRole]) {
                     sampleSignatureUrl = data.selectedCompanyApprovers[approverRole].signature;
                 }
                 if (sampleSignatureUrl && sampleSignatureUrl.trim() !== '') {
@@ -6505,15 +6545,23 @@
                 if (statusData && statusData.approvers) {
                     const progress = statusData.approvalProgress || '0/3';
                     const progressNum = parseInt(progress.split('/')[0]);
+                    const progressTotal = VoucherSteps.progress(progress).total;
+                    const detailPlan = VoucherSteps.planOf(voucher)
+                        || (historyList || []).map(h => h.meta && h.meta.approvalPlan).filter(Boolean)[0] || null;
 
-                    // Detect current approver role based on approval progress
-                    if (progressNum === 0) currentApproverRole = 'accountant';
-                    else if (progressNum === 1) currentApproverRole = 'legalRep';
-                    else if (progressNum === 2) currentApproverRole = 'treasurer';
-                    else currentApproverRole = null;
+                    if (detailPlan) {
+                        // Postgres: the plan knows who is pending (any number of steps / group steps)
+                        currentApproverRole = statusData.currentApprover || null;
+                        isAlsoCurrentApprover = VoucherSteps.isPendingFor(detailPlan, getCurrentUserEmail());
+                    } else {
+                        // GAS: fixed 3 steps, inferred from the progress
+                        if (progressNum === 0) currentApproverRole = 'accountant';
+                        else if (progressNum === 1) currentApproverRole = 'legalRep';
+                        else if (progressNum === 2) currentApproverRole = 'treasurer';
+                        else currentApproverRole = null;
+                        isAlsoCurrentApprover = isCurrentUserCurrentApprover(statusData.approvers, currentApproverRole);
+                    }
                     console.log('Current approver role detected:', currentApproverRole, 'Progress:', progress);
-
-                    isAlsoCurrentApprover = isCurrentUserCurrentApprover(statusData.approvers, currentApproverRole);
 
                     approvalStatusHtml = `
                         <div class="approval-progress-section" style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid #e2e8f0;">
@@ -6526,7 +6574,7 @@
                             <div class="progress-bar-container" style="margin-bottom: 0.75rem;">
                                 <div class="progress-label" style="font-size: 0.8125rem; color: #64748b; margin-bottom: 0.5rem; line-height: 1.5;">${formatApprovalStatusText(statusData).detail || ''}</div>
                                 <div class="progress-bar" style="background: #e2e8f0; height: 20px; border-radius: 10px; overflow: hidden; position: relative;">
-                                    <div class="progress-fill" style="background: ${progressNum === 3 ? '#10b981' : progressNum > 0 ? '#007AFF' : '#f59e0b'}; height: 100%; width: ${(progressNum / 3) * 100}%; transition: width 0.3s ease; border-radius: 10px;"></div>
+                                    <div class="progress-fill" style="background: ${progressNum >= progressTotal ? '#10b981' : progressNum > 0 ? '#007AFF' : '#f59e0b'}; height: 100%; width: ${(progressNum / progressTotal) * 100}%; transition: width 0.3s ease; border-radius: 10px;"></div>
                                 </div>
                             </div>
                         </div>
@@ -7062,7 +7110,20 @@
                 const companyApprovers = currentModalMeta?.companyApprovers ||
                                          currentModalVoucher?.companyApprovers;
 
-                if (companyApprovers && currentApproverRole) {
+                let pgContext = null;
+                if (window.__vouchersOnPostgres || VoucherSteps.onPostgres(currentModalVoucher)) {
+                    // Postgres: the server says whether it is my turn and which sample to check
+                    const ctxRes = await voucherApi('getApprovalContext', { voucherNumber: currentModalVoucher.voucherNumber });
+                    pgContext = ctxRes.success ? ctxRes.data : null;
+                    if (!pgContext || !pgContext.canApprove) {
+                        alert('❌ ' + ((pgContext && pgContext.reason) || ctxRes.message || 'Không thể phê duyệt phiếu này.'));
+                        modalLoading.classList.remove('show');
+                        modalContent.style.opacity = '1';
+                        modalFooter.querySelectorAll('button').forEach(btn => btn.disabled = false);
+                        return;
+                    }
+                    sampleSignatureUrl = pgContext.sampleSignatureUrl;
+                } else if (companyApprovers && currentApproverRole) {
                     if (currentApproverRole === 'accountant' && companyApprovers.accountant) {
                         sampleSignatureUrl = companyApprovers.accountant.signature;
                     } else if (currentApproverRole === 'legalRep' && companyApprovers.legalRep) {
@@ -7400,9 +7461,13 @@
                 if (meta[metaKey]) return meta[metaKey]; // base64 or Drive URL from approval event
                 return toDirectImgUrl(masterSig || '');
             }
-            const accountantSig = progressNum >= 1 ? getSig('accountantSignature', companyApprovers?.accountant?.signature) : '';
-            const legalRepSig   = progressNum >= 2 ? getSig('legalRepSignature',   companyApprovers?.legalRep?.signature)   : '';
-            const treasurerSig  = progressNum >= 3 ? getSig('treasurerSignature',  companyApprovers?.treasurer?.signature)  : '';
+            // A role's signature prints once that person has signed. GAS: same as the step
+            // count; approval flows: roles may sit in any step, so check each one.
+            const signed = (role) => companyApprovers?.[role]?.status === 'approved';
+            const pgFlow = !!(meta.approvalPlan || voucher.meta?.approvalPlan);
+            const accountantSig = (pgFlow ? signed('accountant') : progressNum >= 1) ? getSig('accountantSignature', companyApprovers?.accountant?.signature) : '';
+            const legalRepSig   = (pgFlow ? signed('legalRep')   : progressNum >= 2) ? getSig('legalRepSignature',   companyApprovers?.legalRep?.signature)   : '';
+            const treasurerSig  = (pgFlow ? signed('treasurer')  : progressNum >= 3) ? getSig('treasurerSignature',  companyApprovers?.treasurer?.signature)  : '';
             console.log('printVoucher: accountantSig =', !!accountantSig, '| legalRepSig =', !!legalRepSig, '| treasurerSig =', !!treasurerSig);
 
             // Determine voucher type title
@@ -10123,10 +10188,17 @@
             const approvers = statusData.approvers || {};
             const progress = statusData.approvalProgress || '0/3';
             const progressNum = parseInt(progress.split('/')[0]);
-            const progressPercent = (progressNum / 3) * 100;
+            const progressTotal = VoucherSteps.progress(progress).total;
+            const progressPercent = (progressNum / progressTotal) * 100;
             
             // Build approver list HTML
             const approversList = [];
+            if (statusData.approvalPlan) {
+                // Postgres: every step of this voucher's flow (any number, group steps)
+                approversList.push(VoucherSteps.stepsHtml(statusData.approvalPlan));
+                const waiting = VoucherSteps.waitingText(statusData.approvalPlan);
+                statusData = Object.assign({}, statusData, { currentApproverName: waiting || statusData.currentApproverName });
+            } else {
             
             // Accountant (Step 1)
             const accountant = approvers.accountant || {};
@@ -10154,6 +10226,7 @@
                 3,
                 statusData.currentApprover === 'treasurer'
             ));
+            }
             
             return `
                 <div class="approval-status-review-container" style="padding: 1.5rem;">
@@ -10169,7 +10242,7 @@
                         <div class="progress-bar-container" style="margin-top: 1rem;">
                             <div class="progress-label" style="font-size: 0.875rem; color: #64748b; margin-bottom: 0.5rem; line-height: 1.5;">${formatApprovalStatusText(statusData).detail || ''}</div>
                             <div class="progress-bar" style="background: #e2e8f0; height: 24px; border-radius: 12px; overflow: hidden; position: relative;">
-                                <div class="progress-fill" style="background: ${progressNum === 3 ? '#10b981' : progressNum > 0 ? '#007AFF' : '#f59e0b'}; height: 100%; width: ${progressPercent}%; transition: width 0.3s ease; border-radius: 12px;"></div>
+                                <div class="progress-fill" style="background: ${progressNum >= progressTotal ? '#10b981' : progressNum > 0 ? '#007AFF' : '#f59e0b'}; height: 100%; width: ${progressPercent}%; transition: width 0.3s ease; border-radius: 12px;"></div>
                                 <span class="progress-text" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.75rem; font-weight: 600; color: ${progressNum === 3 ? '#fff' : '#64748b'};">${progressPercent.toFixed(0)}%</span>
                             </div>
                         </div>
