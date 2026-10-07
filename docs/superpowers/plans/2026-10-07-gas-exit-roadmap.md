@@ -56,6 +56,16 @@ GAS also uses these Google services:
 7. **Rollback:** point DNS back to the Ubuntu tunnel and set `READ_ONLY=false` in GAS.
    - Changes made on the Mini after the switch would have to be copied back by hand, so the rollback window is the first hours only.
 
+## Gate C: checks on the Mini before turning on `files` or `SHEETS_MIRROR`
+1. Apply `db/migrations/006_sheet_outbox.sql`. The server refuses to start with vouchers on while it is missing.
+2. Redeploy PM2 with `pm2 delete tlcg-workflow && pm2 start ecosystem.config.cjs`, then check `pm2 env <id>`. The ecosystem file now passes only the variables that are set, so `.env` wins.
+3. R2 CORS on `tlcg-attachments`:
+   - allow `PUT` from https://workflow.tl-c.us and https://mini.tl-c.us;
+   - `AllowedHeaders` must include `content-type` and `content-disposition`.
+4. Do one real presigned upload of a pdf and of an xlsx. A PUT with a swapped Content-Type must get a 403. Test the `/api/voucher-file` fallback too.
+5. Set `VOUCHER_SPREADSHEET_ID` to a scratch copy. Run `scripts/check-sheet-access.js` and one real Sheet write with `SHEETS_MIRROR=on`. Only then switch to the production id.
+6. Attachment types are now allow-listed: pdf, raster images, Office files, csv, txt, zip. `.xlsm`, `.rar` and `.eml` are refused, where GAS accepted anything. Extend the list if users complain.
+
 ## Open items for the user (before Plan 9)
 
 - Share the master spreadsheet with `tlcg-sheets-mirror@n8n-mediainsdier.iam.gserviceaccount.com` as **Editor**. This is needed for the Sheet copy.
