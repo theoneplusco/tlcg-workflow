@@ -2,6 +2,7 @@
 // Rules: api/lib/purchase-requests/state.js. Who acts: the login token (never the body's email).
 import { STATUS, isRole, BAD_ROLE, applyApprove, applyReject, sendBackInputError, applySendBack, pendingEmails, parseVerification } from '../../lib/purchase-requests/state.js';
 import { updatePR, recordChange } from '../../lib/purchase-requests/repo.js';
+import { signatureFormatOk, BAD_SIGNATURE } from '../../lib/purchase-requests/validate.js';
 import { purchasingRequest, completed, rejectedNotice, sendBackNotices } from '../../lib/purchase-requests/emails.js';
 import { fail, signedInCaller, claimProblem } from '../../lib/purchase-requests/respond.js';
 import { signatureProblem, sampleSignatureFor, NO_SAMPLE } from '../../lib/approval/signature-check.js';
@@ -32,6 +33,7 @@ export async function handlePRApprove(req, res, d) {
   const verification = raw == null || raw === '' ? null : parseVerification(raw);
   const sigErr = signatureProblem('vi', b.approverSignature, verification);
   if (sigErr) return fail(res, sigErr);
+  if (!signatureFormatOk(b.approverSignature)) return fail(res, BAD_SIGNATURE); // stored in metadata: image data URL, ≤ 500 KB
   return withLockedPR(db, prNo, res, async (client, row) => {
     const at = now().toISOString();
     const r = applyApprove(row, row.metadata || {}, { email: caller.email, role: b.approverRole, note: b.note || '',

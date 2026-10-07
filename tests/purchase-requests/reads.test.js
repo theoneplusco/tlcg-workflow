@@ -60,7 +60,7 @@ test('search: 2+ chars, substring on number/company/requester/purpose, visible o
 });
 
 test('getP2PHistory: PR flow from pr_audit_log, other flows go to GAS', { skip }, async () => {
-  await call(dd.handlePRApprove, { prNo: mine, approverRole: 'budget', approverSignature: 'data:s', signatureVerification: SIG_OK }, as(people.treasurer));
+  await call(dd.handlePRApprove, { prNo: mine, approverRole: 'budget', approverSignature: 'data:image/png;base64,AAAA', signatureVerification: SIG_OK }, as(people.treasurer));
   const h = await call(r.handleP2PHistory, { docNo: mine, flow: 'PR' }, as('a@pr-test.vn'));
   assert.equal(h.message, 'OK');
   assert.deepEqual(h.history.map((x) => `${x.action}/${x.role}`), ['Submit/requester', 'Approve/budget', 'Approve/supplier']);
@@ -149,7 +149,7 @@ test('detail: the pending approver gets their own registered sample (mySampleSig
   assert.equal(await sample('a@pr-test.vn'), null, 'requester: not pending');
   assert.equal(await sample(people.treasurer), (await sampleSignatureFor(pool, company.id, null, people.treasurer)).url, 'budget/supplier approver');
   assert.equal(await sample(people.ap), null, 'purchasing approver: not their turn yet');
-  await call(dd.handlePRApprove, { prNo: no, approverRole: 'budget', note: '', approverSignature: 'data:sig', signatureVerification: SIG_OK }, as(people.treasurer));
+  await call(dd.handlePRApprove, { prNo: no, approverRole: 'budget', note: '', approverSignature: 'data:image/png;base64,AAAA', signatureVerification: SIG_OK }, as(people.treasurer));
   const { extra } = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.ap])).rows[0];
   try {
     await pool.query(`UPDATE employees SET extra = extra - 'Chữ ký' - 'Chu_ky' - 'employee_signature' - 'Signature_URL' || '{"Signature":"https://sig.test/ap.png"}'::jsonb WHERE LOWER(email) = $1`, [people.ap]);

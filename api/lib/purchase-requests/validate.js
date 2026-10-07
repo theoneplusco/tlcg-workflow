@@ -12,6 +12,10 @@ export const NUMBER_ERROR = 'Số lượng, đơn giá và thành tiền phải 
 export const TOO_LONG_ERROR = 'Danh sách hàng hóa quá dài.';
 export const MAX_ITEMS = 200;
 export const MAX_ITEM_FIELD = 1000;
+export const BAD_SIGNATURE = 'Chữ ký không hợp lệ hoặc quá lớn.';
+export const MAX_SIGNATURE = 500 * 1024; // characters of the data URL
+/** A signature the server stores: an image data URL (never a link) of at most MAX_SIGNATURE characters. */
+export const signatureFormatOk = (v) => typeof v === 'string' && v.startsWith('data:image/') && v.length <= MAX_SIGNATURE;
 /** The keys purchase_request.html submitForm() puts on each item; nothing else is stored. */
 export const ITEM_KEYS = ['section', 'loai', 'desc', 'qty', 'unit', 'price', 'total', 'note'];
 
@@ -102,6 +106,8 @@ export function checkSubmission(b) {
   if (branch === 'full' && empty('contractApprover')) {
     return { error: 'Đề nghị này (Dịch vụ hoặc giá trị ≥ 2.000.000₫) yêu cầu người thẩm định hợp đồng.' };
   }
+  // Optional (the page sends '' without a saved signature); when sent, an image data URL within the cap.
+  if (b.requesterSignature != null && b.requesterSignature !== '' && !signatureFormatOk(b.requesterSignature)) return { error: BAD_SIGNATURE };
   return {
     items: norm.items, purchaseType, grandTotal, branch,
     picks: { budget: lower(b.budgetApprover), supplier: lower(b.supplierApprover),

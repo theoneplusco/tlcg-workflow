@@ -19,6 +19,20 @@ test('checkSubmission: GAS checks 1–8 in order, same wording', () => {
   assert.equal(e({ items: '[]' }), 'Vui lòng nhập ít nhất 1 hàng hóa / dịch vụ.');
   assert.equal(e({ purchaseType: 'services' }), 'Đề nghị này (Dịch vụ hoặc giá trị ≥ 2.000.000₫) yêu cầu người thẩm định hợp đồng.');
 });
+test('checkSubmission: requesterSignature, when sent, must be a data:image/ URL of at most 500 KB', () => {
+  const e = (sig) => checkSubmission(body({ requesterSignature: sig })).error;
+  const BAD = 'Chữ ký không hợp lệ hoặc quá lớn.';
+  assert.equal(e(''), undefined, 'optional: the page sends "" without a saved signature');
+  assert.equal(e(undefined), undefined);
+  assert.equal(e('data:image/png;base64,AAAA'), undefined);
+  const head = 'data:image/png;base64,';
+  assert.equal(e(head + 'A'.repeat(500 * 1024 - head.length)), undefined, 'exactly 500 KB accepted');
+  assert.equal(e(head + 'A'.repeat(500 * 1024 - head.length + 1)), BAD, 'one character over refused');
+  assert.equal(e('https://evil.example/x.png'), BAD);
+  assert.equal(e('data:text/html;base64,PHNjcmlwdD4='), BAD);
+  assert.equal(e({ src: 'data:image/png;base64,AAAA' }), BAD, 'not a string');
+  assert.equal(e(12345), BAD);
+});
 test('checkSubmission: total and branch from the items, never the client (S4); picks lower-cased', () => {
   // Line total '1' and grandTotal 1 from the client are ignored: 5 × 500,000 (decision #6).
   const big = JSON.stringify([{ section: 'hang-hoa', desc: 'Khăn', qty: '5', price: '500000', total: '1' }]);

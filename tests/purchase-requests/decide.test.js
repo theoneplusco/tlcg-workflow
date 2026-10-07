@@ -17,7 +17,7 @@ const pr = async (no) => (await pool.query('SELECT * FROM purchase_requests WHER
 const mailsTo = async (no, subjectPart) => (await pool.query(
   `SELECT to_email FROM email_queue WHERE subject LIKE $1 ORDER BY id`, [`%${subjectPart}%${no}`])).rows.map((r) => r.to_email);
 const submit = async (over = {}) => (await call(s.handlePRSubmit, submitBody(company, people, over), REQ)).prNo;
-const approve = (no, who, role, extra = {}) => call(d.handlePRApprove, { prNo: no, approverRole: role, note: '', approverSignature: 'data:sig', signatureVerification: SIG_OK, ...extra }, as(who));
+const approve = (no, who, role, extra = {}) => call(d.handlePRApprove, { prNo: no, approverRole: role, note: '', approverSignature: 'data:image/png;base64,AAAA', signatureVerification: SIG_OK, ...extra }, as(who));
 
 test('approve: the shared budget/supplier approver approves once; purchasing emailed on a simplified PR (B2)', { skip }, async () => {
   const no = await submit();
@@ -130,6 +130,10 @@ const NO_SAMPLE = 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản
 test('approve needs a signature the browser verified (decision #13): missing, unverified and no_sample-without-sample refused', { skip }, async () => {
   const no = await submit();
   assert.equal((await approve(no, people.treasurer, 'budget', { approverSignature: '' })).message, NOT_SIGNED);
+  const BAD_SIG = 'Chữ ký không hợp lệ hoặc quá lớn.';
+  for (const sig of ['data:sig', 'https://evil.example/x.png', { a: 1 }, 'data:image/png;base64,' + 'A'.repeat(500 * 1024)]) {
+    assert.equal((await approve(no, people.treasurer, 'budget', { approverSignature: sig })).message, BAD_SIG, 'not an image data URL, or over 500 KB');
+  }
   assert.equal((await approve(no, people.treasurer, 'budget', { signatureVerification: '' })).message,
     'Thiếu dữ liệu xác thực chữ ký. Vui lòng thử lại hoặc liên hệ quản trị viên.');
   const bad = await approve(no, people.treasurer, 'budget', { signatureVerification: JSON.stringify({ verified: false, similarity: 40, reason: 'mismatch' }) });
