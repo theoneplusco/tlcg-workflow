@@ -27,8 +27,28 @@ export function attachmentKey(voucherNumber, fileName, rand = crypto.randomBytes
   return `vouchers/${safe(voucherNumber) || 'draft'}/${rand}-${safe(fileName) || 'attachment'}`;
 }
 
-export function validateUpload({ fileSize, fileName }) {
+// Attachment types we accept. Anything that a browser would run (html, svg, xhtml) is refused.
+export const ALLOWED_TYPES = new Set([
+  'application/pdf',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/heic',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/csv', 'text/plain', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream',
+]);
+
+/** "Text/Plain; charset=utf-8" → "text/plain"; empty → application/octet-stream (what the page sends then). */
+export const baseType = (mimeType) => String(mimeType || '').split(';')[0].trim().toLowerCase() || 'application/octet-stream';
+
+/** PDFs and images open in the browser; every other type is served as a download. */
+export function contentDisposition(mimeType) {
+  const t = baseType(mimeType);
+  return t === 'application/pdf' || t.startsWith('image/') ? undefined : 'attachment';
+}
+
+export function validateUpload({ fileSize, fileName, mimeType }) {
   const size = Number(fileSize);
   if (!(size > 0 && size <= MAX_ATTACHMENT_BYTES) || !fileName) return 'File không hợp lệ';
+  if (!ALLOWED_TYPES.has(baseType(mimeType))) return 'Loại file không được hỗ trợ';
   return null;
 }

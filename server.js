@@ -46,7 +46,9 @@ app.disable('x-powered-by');
    1. Multipart upload — MUST be before body parser.
    ───────────────────────────────────────────────────────────── */
 app.post('/api/drive-upload', driveUploadHandler);
-app.post('/api/voucher-file', postgresWorkflows.includes('files') ? handleVoucherFileUpload : voucherFileHandler);
+// Postgres/R2 path is rate limited (keyed by IP: the multipart body is not parsed yet); GAS path unchanged
+if (postgresWorkflows.includes('files')) app.post('/api/voucher-file', rateLimit, handleVoucherFileUpload);
+else app.post('/api/voucher-file', voucherFileHandler);
 
 /* ─────────────────────────────────────────────────────────────
    2. Body parsing.
