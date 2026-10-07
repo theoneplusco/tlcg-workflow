@@ -25,6 +25,7 @@ import { buildPlan, DEFAULT_STEPS } from '../api/lib/approval/engine.js';
 import { planFromCompanyApprovers, legacyCompanyApprovers, planIndex } from '../api/lib/vouchers/compat.js';
 import { toAmount, findCompany, employeesByEmail } from '../api/lib/vouchers/repo.js';
 import { sheetTime } from '../api/lib/sheets/voucher-records.js'; // GMT sheet times
+import { parseCsv } from '../api/lib/sheets/grid.js';
 
 const SPREADSHEET_ID = '1ujmPbtEdkGLgEshfhvV8gRB6R0GLI31jsZM5rDOJS0g';
 const args = process.argv.slice(2);
@@ -37,20 +38,6 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL || 'postgr
 const lower = (s) => String(s || '').trim().toLowerCase();
 
 // ── Reading ─────────────────────────────────────────────────────
-
-function parseCsv(text) {
-  const rows = []; let row = [], f = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
-    else if (c === '"') q = true;
-    else if (c === ',') { row.push(f); f = ''; }
-    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
-    else f += c;
-  }
-  if (f !== '' || row.length) { row.push(f); rows.push(row); }
-  return rows;
-}
 
 async function readTab(name) {
   let grid;
