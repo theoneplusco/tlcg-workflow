@@ -40,3 +40,6 @@ vast-torus-*.json
 .env.bak
 .env.*.local
 !.env.example
+
+# Service-account keys and other credentials (never commit)
+secrets/
