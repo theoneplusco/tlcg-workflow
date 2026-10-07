@@ -25,6 +25,9 @@ const submitBody = (no, extra = {}) => ({
 const emails = async (no) => (await pool.query(`SELECT to_email, cc, subject FROM email_queue WHERE subject LIKE $1 OR body_html LIKE $1 ORDER BY id`, [`%${no}%`])).rows;
 const voucher = async (no) => (await pool.query(`SELECT * FROM vouchers WHERE voucher_number = $1`, [no])).rows[0];
 const history = async (no) => (await pool.query(`SELECT status, action, note, approver_email, rejection_reason FROM voucher_history WHERE voucher_number = $1 ORDER BY id`, [no])).rows;
+// Sheet copy queued for one voucher: History rows key voucher_number, Current rows voucherNumber
+const outbox = async (no) => (await pool.query(
+  `SELECT tab, mode, key_column, record FROM sheet_outbox WHERE record->>'voucher_number' = $1 OR record->>'voucherNumber' = $1 ORDER BY id`, [no])).rows;
 const approve = (no, email, extra = {}) => call(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: email, approverSignature: 'data:sig', signatureVerification: ok, ...extra } });
 
 before(async () => {
@@ -35,7 +38,7 @@ before(async () => {
   pool = (await import('../../db/pool.js')).default;
   ({ saveVersion } = await import('../../api/lib/approval/flows-repo.js'));
   await pool.query(`DELETE FROM vouchers WHERE voucher_number LIKE 'MI-PC20261007%'; DELETE FROM voucher_history WHERE voucher_number LIKE 'MI-PC20261007%';
-                    TRUNCATE email_queue; TRUNCATE approval_flows`);
+                    TRUNCATE email_queue; TRUNCATE approval_flows; TRUNCATE sheet_outbox`);
   company = (await pool.query(`SELECT * FROM companies WHERE company_key = 'M.I'`)).rows[0];
   people = { accountant: company.accountant_email.toLowerCase(), legal: company.legal_rep_email.toLowerCase(), treasurer: company.treasurer_email.toLowerCase() };
 });
@@ -100,12 +103,31 @@ test('full approval → final emails; acknowledge once; history like the sheet',
   assert.equal(v.status, 'Đã duyệt');
   assert.equal(v.metadata.treasurerSignature, 'data:sig');
   assert.equal(v.metadata.approverSignature, 'data:sig', 'print-template alias');
+  let ob = await outbox(no);
+  assert.deepEqual(ob.map((r) => r.tab), Array(4).fill(['Voucher_History', 'Voucher_Current']).flat(), 'History then Current, per change');
+  const cur = ob.filter((r) => r.tab === 'Voucher_Current');
+  assert.ok(cur.every((r) => r.mode === 'upsert' && r.key_column === 'voucherNumber'));
+  assert.ok(ob.filter((r) => r.tab === 'Voucher_History').every((r) => r.mode === 'append' && r.key_column === null));
+  assert.deepEqual(cur.map((r) => r.record.approvalProgress), [0, 1, 2, 3]);
+  assert.equal(cur.at(-1).record.status, 'Đã duyệt');
+  assert.equal(cur.at(-1).record.submittedAt, cur[0].record.submittedAt, 'original submission time kept');
+  assert.equal(cur[0].record.lastUpdated, cur[0].record.submittedAt);
+  assert.equal(ob[0].record.amount, 1500000);
   const ack = await call(h.handleVoucherAcknowledge, { voucherNumber: no, requesterEmail: 'sub@x.vn', requesterName: 'Người Lập', requesterSignature: 'data:ack' });
   assert.equal(ack.success, true, ack.message);
   assert.match((await call(h.handleVoucherAcknowledge, { voucherNumber: no, requesterSignature: 'x' })).message, /đã được xác nhận nhận tiền rồi/);
   assert.equal((await voucher(no)).status, 'Received');
   const hist = await history(no);
   assert.deepEqual(hist.map((x) => x.status), ['Đang treo', 'Đang duyệt (1/3)', 'Đang duyệt (2/3)', 'Đã duyệt', 'Received']);
+  ob = await outbox(no);
+  assert.deepEqual(ob.filter((r) => r.tab === 'Voucher_History').map((r) => r.record.status), hist.map((x) => x.status), 'one History append per history row');
+  const ackRow = ob.filter((r) => r.tab === 'Voucher_History').at(-1).record;
+  assert.equal(ackRow.acknowledged_by, 'sub@x.vn');
+  assert.equal(ackRow.signature_url, 'data:ack');
+  assert.equal(ackRow.acknowledged_at, ackRow.submitted_at, 'event time');
+  const lastCur = ob.filter((r) => r.tab === 'Voucher_Current').at(-1).record;
+  assert.equal(lastCur.status, 'Received');
+  assert.equal(lastCur.approvalProgress, 3);
   assert.equal(hist[3].note, 'Tất cả 3 bước phê duyệt đã duyệt');
   const subjects = (await emails(no)).map((x) => x.subject);
   assert.ok(subjects.includes(`[ĐÃ DUYỆT HOÀN TOÀN] Phiếu ${no}`));
@@ -125,6 +147,11 @@ test('reject: reason required; any approver in the flow may reject; everyone not
   const last = (await history(no)).pop();
   assert.equal(last.status, 'Đã từ chối');
   assert.equal(last.rejection_reason, 'Sai số tiền');
+  const ob = await outbox(no);
+  assert.equal(ob.length, 4, 'submit + one reject; refused attempts queue nothing');
+  assert.equal(ob[2].record.rejection_reason, 'Sai số tiền');
+  assert.equal(ob[3].record.status, 'Đã từ chối');
+  assert.equal(ob[3].record.approvalProgress, 0);
   const rej = (await emails(no)).find((x) => x.subject === `[TỪ CHỐI] Phiếu ${no}`);
   assert.ok(rej.to_email.includes('sub@x.vn') && rej.to_email.includes(people.accountant));
 });
@@ -158,6 +185,10 @@ test('bulk approve: per-voucher results and one batch email per next approver', 
   assert.equal(r.success, true);
   assert.deepEqual(r.data.approved, nos);
   assert.equal(r.data.failed.length, 1);
+  for (const no of nos) {
+    const cur = (await outbox(no)).filter((x) => x.tab === 'Voucher_Current').map((x) => x.record);
+    assert.deepEqual(cur.map((x) => [x.status, x.approvalProgress]), [['Đang treo', 0], ['Đang duyệt (1/3)', 1]]);
+  }
   const batch = (await pool.query(`SELECT to_email, subject, body_html FROM email_queue WHERE subject LIKE '[PHÊ DUYỆT HÀNG LOẠT]%' ORDER BY id DESC LIMIT 1`)).rows[0];
   assert.equal(batch.to_email, people.legal);
   assert.match(batch.subject, /^\[PHÊ DUYỆT HÀNG LOẠT\] 2 phiếu/);

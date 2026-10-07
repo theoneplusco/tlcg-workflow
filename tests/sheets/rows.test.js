@@ -21,3 +21,8 @@ test('rowForHeader: protects leading zeros and long digit strings, leaves dates'
   assert.deepEqual(rowForHeader(['a', 'b', 'c', 'd', 'e', 'f'], { a: '00123', b: '1234567890123456', c: '2026-10-07 03:21:09', d: '0', e: '07/10/2026', f: '08:30' }),
     ["'00123", "'1234567890123456", '2026-10-07 03:21:09', '0', '07/10/2026', '08:30']);
 });
+test('rowForHeader: cuts strings over the 50,000-char cell limit', () => {
+  const [a, b] = rowForHeader(['a', 'b'], { a: 'x'.repeat(60000), b: 'y'.repeat(49000) });
+  assert.ok(a === 'x'.repeat(49000) + '…[cắt bớt]', `cut to 49,000 + marker (got ${a.length} chars)`);
+  assert.ok(b === 'y'.repeat(49000), 'exactly 49,000 kept');
+});

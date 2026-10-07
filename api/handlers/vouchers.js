@@ -20,6 +20,10 @@ import { callerFromRequest, requireLogin } from '../lib/auth-caller.js';
 import {
   toAmount, findCompany, employeesByEmail, lockVoucher, planOf, voucherView, saveState, appendHistory, audit,
 } from '../lib/vouchers/repo.js';
+import { enqueue } from '../lib/sheets/outbox.js';
+import {
+  historyRecord, currentRecord, VOUCHER_SPREADSHEET_ID, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
+} from '../lib/sheets/voucher-records.js';
 
 // ── Messages (GAS MSG_ table, vi / en) ───────────────────────
 const MSG = {
@@ -77,6 +81,16 @@ const msg = (lang, key, arg) => {
 const fail = (res, message) => res.json({ success: false, message });
 const now = () => new Date().toISOString();
 const lower = (s) => String(s || '').trim().toLowerCase();
+
+/**
+ * Queue the Google Sheet copy of one voucher change (same transaction, after the row is locked):
+ * the Sheet can lag but never miss or invent a row. `h` is the object given to appendHistory.
+ */
+async function mirrorVoucher(client, h, { at, submittedAt, progressDone }) {
+  await enqueue(client, { spreadsheetId: VOUCHER_SPREADSHEET_ID, tab: HISTORY_TAB, mode: 'append', record: historyRecord(h, at) });
+  await enqueue(client, { spreadsheetId: VOUCHER_SPREADSHEET_ID, tab: CURRENT_TAB, mode: 'upsert', keyColumn: CURRENT_KEY,
+    record: currentRecord(h, { submittedAt, progressDone, at }) });
+}
 
 /** GAS approve/bulk signature checks. Returns an error message or ''. */
 function signatureProblem(lang, signature, verification, bulk = false) {
@@ -199,12 +213,14 @@ export async function handleVoucherSubmit(req, res) {
         STATUS.submitted, v.dueDate || '', description, attachments, submittedAt, 'Đã nộp phiếu']
     );
     const row = rows[0];
-    await saveState(client, row, { plan, meta, status: STATUS.submitted, lastAction: 'Đã nộp phiếu' });
+    const idx = await saveState(client, row, { plan, meta, status: STATUS.submitted, lastAction: 'Đã nộp phiếu' });
     view = voucherView(row);
-    await appendHistory(client, {
+    const hist = {
       ...view, status: STATUS.submitted, action: 'Đã nộp phiếu', attachments, note: 'Gửi phê duyệt',
       approverEmail: plan.steps[0].approvers.map((a) => a.email).join(','), meta,
-    });
+    };
+    await appendHistory(client, hist);
+    await mirrorVoucher(client, hist, { at: submittedAt, submittedAt, progressDone: idx.done });
     await audit(client, { docNo: voucherNo, company: company.company_name, action: 'Submit', role: 'requester',
       actorEmail: lower(v.requestorEmail), actorName: v.employee, newStatus: STATUS.submitted, note: description });
     await client.query('COMMIT');
@@ -302,12 +318,14 @@ async function approveOne({ voucherNumber, approverEmail, approverName, signatur
     const status = statusText(next);
     const view = voucherView(row);
     const lastAction = 'Duyệt bởi ' + name;
-    await saveState(client, row, { plan: next, meta, status, lastAction });
+    const idx = await saveState(client, row, { plan: next, meta, status, lastAction });
     const label = mine[0].label || 'Người duyệt';
-    await appendHistory(client, {
+    const hist = {
       ...view, status, action: lastAction, approverEmail: email, approvedAt: at, meta,
       note: result.finished ? `Tất cả ${next.steps.length} bước phê duyệt đã duyệt` : `Đã duyệt bởi ${label} (${ca.approvalProgress})`,
-    });
+    };
+    await appendHistory(client, hist);
+    await mirrorVoucher(client, hist, { at, submittedAt: row.submitted_at || row.created_at, progressDone: idx.done });
     await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Approve', role: key, actorEmail: email,
       actorName: name, prevStatus: row.status, newStatus: status, extra: { signatureUploaded: !!signature } });
     await client.query('COMMIT');
@@ -416,8 +434,9 @@ export async function handleVoucherReject(req, res) {
     const plan = planOf(row);
     if (plan.status === 'rejected') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'alreadyRejected')); }
     if (plan.status === 'approved') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'alreadyFullyApproved')); }
+    const at = now();
     try {
-      next = applyRejection(plan, actor.email, { at: now(), reason, anyApprover: true });
+      next = applyRejection(plan, actor.email, { at, reason, anyApprover: true });
     } catch (e) {
       await client.query('ROLLBACK');
       if (e.code === 'NOT_IN_PLAN') return fail(res, msg(lang, 'rejecterInfoNotFound'));
@@ -428,11 +447,13 @@ export async function handleVoucherReject(req, res) {
     const meta = row.metadata || {};
     view = voucherView(row);
     const lastAction = 'Từ chối bởi ' + (who.name || email);
-    await saveState(client, row, { plan: next, meta, status: STATUS.rejected, lastAction });
-    await appendHistory(client, {
+    const idx = await saveState(client, row, { plan: next, meta, status: STATUS.rejected, lastAction });
+    const hist = {
       ...view, status: STATUS.rejected, action: lastAction, approverEmail: email, meta, rejectionReason: reason,
       note: `Từ chối bởi ${who.label || who.name || email}\nLý do: ${reason}`,
-    });
+    };
+    await appendHistory(client, hist);
+    await mirrorVoucher(client, hist, { at, submittedAt: row.submitted_at || row.created_at, progressDone: idx.done });
     await audit(client, { docNo: v.voucherNumber, company: row.company_name, action: 'Reject', role: who.role || '',
       actorEmail: email, actorName: who.name, prevStatus: row.status, newStatus: STATUS.rejected, note: reason });
     await client.query('COMMIT');
@@ -488,11 +509,14 @@ export async function handleVoucherAcknowledge(req, res) {
       [JSON.stringify(meta), STATUS.received, lastAction, b.requesterSignature, at, requesterEmail, row.id]
     );
     view = voucherView(row);
-    await appendHistory(client, {
+    const hist = {
       ...view, status: STATUS.received, action: lastAction, approverEmail: requesterEmail, approvedAt: at, meta,
       note: (isThu ? 'Người thu tiền đã xác nhận: ' : 'Người nhận tiền đã xác nhận: ') + (b.requesterName || requesterEmail),
       acknowledgedAt: at, acknowledgedBy: requesterEmail, signatureUrl: b.requesterSignature,
-    });
+    };
+    await appendHistory(client, hist);
+    // Acknowledging leaves the plan as it was: progress is the stored done count
+    await mirrorVoucher(client, hist, { at, submittedAt: row.submitted_at || row.created_at, progressDone: row.progress_done });
     await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Acknowledge', role: 'requester',
       actorEmail: requesterEmail, actorName: b.requesterName, prevStatus: row.status, newStatus: STATUS.received });
     await client.query('COMMIT');

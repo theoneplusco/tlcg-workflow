@@ -57,7 +57,7 @@ export function voucherView(row) {
   };
 }
 
-/** Persist a new plan/state on the vouchers row (keeps the legacy projection in sync). */
+/** Persist a new plan/state on the vouchers row (keeps the legacy projection in sync). Returns { done, total, … }. */
 export async function saveState(client, row, { plan, meta, status, lastAction }) {
   const idx = planIndex(plan);
   const ca = legacyCompanyApprovers(plan);
@@ -71,6 +71,7 @@ export async function saveState(client, row, { plan, meta, status, lastAction })
     [JSON.stringify(meta), status, lastAction, ca.approvalProgress, ca.overallStatus, ca.currentApprover || '',
       idx.done, idx.total, idx.pendingEmails, idx.approverEmails, row.id]
   );
+  return idx;
 }
 
 /** Append one history row (the Voucher_History sheet columns). */

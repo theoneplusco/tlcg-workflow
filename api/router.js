@@ -44,6 +44,8 @@ const NEW_HANDLERS = {
   getVoucherHistory:      handleVoucherHistory,
   getApprovalStatus:      handleVoucherApprovalStatus,
   getApprovalContext:     handleVoucherApprovalContext,
+  // The page's old "copy to Sheet" call: every voucher change already queued its Sheet copy (sheet_outbox)
+  syncToSheets:           (req, res) => res.json({ success: true, message: 'Đã đồng bộ (bản sao Google Sheet tự cập nhật)' }),
 
   // P2P (Phase 4)
   purchaseRequest:             handlePRSubmit,
@@ -80,7 +82,7 @@ const NEW_HANDLERS = {
 const WORKFLOW_ACTIONS = {
   cash: ['getCashBook', 'getCashCount', 'getCashBookSummary', 'getRecentCashCounts', 'saveCashCount', 'signCashCount'],
   vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'bulkApprove',
-    'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext'],
+    'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext', 'syncToSheets'],
   files: ['createVoucherUploadSession', 'finalizeVoucherUpload', 'fetchSignatureImage'],
   p2p: ['purchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'getPurchaseRequestHistory', 'getPurchaseRequest'],
 };

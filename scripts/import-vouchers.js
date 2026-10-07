@@ -24,6 +24,7 @@ import 'dotenv/config';
 import { buildPlan, DEFAULT_STEPS } from '../api/lib/approval/engine.js';
 import { planFromCompanyApprovers, legacyCompanyApprovers, planIndex } from '../api/lib/vouchers/compat.js';
 import { toAmount, findCompany, employeesByEmail } from '../api/lib/vouchers/repo.js';
+import { sheetTime } from '../api/lib/sheets/voucher-records.js'; // GMT sheet times
 
 const SPREADSHEET_ID = '1ujmPbtEdkGLgEshfhvV8gRB6R0GLI31jsZM5rDOJS0g';
 const args = process.argv.slice(2);
@@ -65,24 +66,6 @@ async function readTab(name) {
   const header = (grid[0] || []).map((h) => h.trim());
   return grid.slice(1).map((r, i) => ({ sheetRow: i + 2, ...Object.fromEntries(header.map((h, k) => [h, (r[k] || '').trim()])) }))
     .filter((r) => Object.keys(r).some((k) => k !== 'sheetRow' && r[k]));
-}
-
-/**
- * "3/27/2026 16:13:27" / "3/27/2026" or ISO → ISO UTC; null if empty/unknown.
- * The spreadsheet's time zone is GMT (the GAS script displays in Vietnam time):
- * sheet "8/28/2026 3:48:37" is shown by GAS as 10:48. Verified against live GAS.
- */
-const SHEET_UTC_OFFSET_HOURS = 0;
-export function sheetTime(s) {
-  const v = String(s || '').trim();
-  if (!v) return null;
-  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (m) {
-    const [, mo, d, y, h = '0', mi = '0', se = '0'] = m;
-    return new Date(Date.UTC(+y, +mo - 1, +d, +h - SHEET_UTC_OFFSET_HOURS, +mi, +se)).toISOString();
-  }
-  const t = new Date(v);
-  return Number.isNaN(t.getTime()) ? null : t.toISOString();
 }
 
 // ── Building one voucher ────────────────────────────────────────
