@@ -34,8 +34,10 @@ export function summarize(rows, caller, callerApproverRole = 'submitter') {
     done: r.progress_done || 0,
     total: r.progress_total || 3,
     approverEmails: r.approver_emails || [],
+    pendingEmails: r.pending_emails || [],
     currentApprover: r.current_approver || null,
   })).sort((a, b) => b.timestamp - a.timestamp);
+  const me = String((caller && caller.email) || '').toLowerCase();
 
   const visible = vouchers.filter((v) => shouldShow(v, caller));
   const isRejected = (v) => v.status === 'Rejected' || v.status === 'Đã từ chối';
@@ -57,6 +59,9 @@ export function summarize(rows, caller, callerApproverRole = 'submitter') {
         currentApprover: v.done < v.total && !isRejected(v) ? v.currentApprover : null,
       },
     },
+    // Step-aware pages: is the caller one of the approvers the voucher waits for now?
+    myTurn: !!me && !isRejected(v) && v.pendingEmails.includes(me),
+    approvalTotal: v.total,
   }));
 
   let globalStats = null;

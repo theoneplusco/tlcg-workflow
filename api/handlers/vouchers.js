@@ -16,6 +16,7 @@ import { getActiveFlow } from '../lib/approval/flows-repo.js';
 import { legacyCompanyApprovers, statusText, STATUS } from '../lib/vouchers/compat.js';
 import { approvalRequest, progressUpdate, finalApproved, rejected, acknowledged, batchRequest, baseUrl } from '../lib/vouchers/emails.js';
 import { summarize } from '../lib/vouchers/summary.js';
+import { callerFromRequest, requireLogin } from '../lib/auth-caller.js';
 import {
   toAmount, findCompany, employeesByEmail, lockVoucher, planOf, voucherView, saveState, appendHistory, audit,
 } from '../lib/vouchers/repo.js';
@@ -97,6 +98,30 @@ function attachmentLines(files) {
   }).join('\n\n');
 }
 
+/**
+ * The acting user: the login token's user when present (the email in the body
+ * must then match it); without a token, the body's email unless
+ * VOUCHER_REQUIRE_LOGIN is on. Returns { email, caller } or sends the error.
+ */
+async function resolveActor(req, res, claimed, lang) {
+  const caller = await callerFromRequest(req);
+  const want = lower(claimed);
+  if (caller) {
+    if (want && want !== caller.email) {
+      fail(res, lang === 'en'
+        ? `You are signed in as ${caller.email} and cannot act for ${want}.`
+        : `Bạn đang đăng nhập bằng ${caller.email}, không thể thao tác thay ${want}.`);
+      return null;
+    }
+    return { email: caller.email, caller };
+  }
+  if (requireLogin()) {
+    res.status(401).json({ success: false, message: lang === 'en' ? 'Please sign in again.' : 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.' });
+    return null;
+  }
+  return { email: want, caller: null };
+}
+
 const stepWaiting = (plan) => {
   const i = pendingStep(plan);
   return i < 0 ? [] : plan.steps[i].approvers.filter((a) => a.status !== 'approved');
@@ -112,6 +137,8 @@ export async function handleVoucherSubmit(req, res) {
   const reqMail = b.requesterEmail || null;
   const v = b.voucher || {};
   if (!email.to) return fail(res, msg(lang, 'missingRecipient'));
+  const actor = await resolveActor(req, res, '', lang);
+  if (!actor) return;
   const voucherNo = String(v.voucherNumber || 'AUTO-' + Date.now()).trim();
 
   const client = await pool.connect();
@@ -133,6 +160,7 @@ export async function handleVoucherSubmit(req, res) {
       requesterSignature: v.requesterSignature || '', reason: v.reason || '', voucherDate: v.voucherDate || '',
       department: v.department || '', payeeName: v.payeeName || '', amountInWords: v.amountInWords || '',
       expenseItems: v.expenseItems || [], submittedAt, approvalFlow: { id: flow.id, version: flow.version, source: flow.source },
+      submittedByEmail: actor.email || lower(v.requestorEmail),
     };
     const attachments = attachmentLines(v.files);
     const description = v.reason || v.description || '';
@@ -267,8 +295,10 @@ export async function handleVoucherApprove(req, res) {
   if (!v.voucherNumber) return fail(res, msg(lang, 'missingVoucherNo'));
   const sigErr = signatureProblem(lang, v.approverSignature, v.signatureVerification);
   if (sigErr) return fail(res, sigErr);
+  const actor = await resolveActor(req, res, v.approverEmail, lang);
+  if (!actor) return;
   try {
-    const r = await approveOne({ voucherNumber: v.voucherNumber, approverEmail: v.approverEmail, approverName: v.approverName,
+    const r = await approveOne({ voucherNumber: v.voucherNumber, approverEmail: actor.email, approverName: v.approverName,
       signature: v.approverSignature, verification: v.signatureVerification, lang });
     if (!r.ok) return fail(res, r.error);
     if (r.finished) {
@@ -298,13 +328,15 @@ export async function handleVoucherBulkApprove(req, res) {
   if (!b.approverEmail) return fail(res, msg(lang, 'missingApproverInfo'));
   const sigErr = signatureProblem(lang, b.approverSignature, b.signatureVerification, true);
   if (sigErr) return fail(res, sigErr);
+  const actor = await resolveActor(req, res, b.approverEmail, lang);
+  if (!actor) return;
 
   const approved = [];
   const failed = [];
   const nextByApprover = new Map(); // email → { approver, items[] }
   for (const no of numbers) {
     try {
-      const r = await approveOne({ voucherNumber: no, approverEmail: b.approverEmail, approverName: b.approverName,
+      const r = await approveOne({ voucherNumber: no, approverEmail: actor.email, approverName: b.approverName,
         signature: b.approverSignature, verification: b.signatureVerification, lang });
       if (!r.ok) { failed.push({ voucherNumber: no, error: r.error }); continue; }
       approved.push(no);
@@ -339,6 +371,8 @@ export async function handleVoucherReject(req, res) {
   if (!v.voucherNumber) return fail(res, msg(lang, 'missingVoucherNo'));
   const reason = String(v.rejectReason || '').trim();
   if (!reason) return fail(res, msg(lang, 'needRejectReason'));
+  const actor = await resolveActor(req, res, v.approverEmail, lang);
+  if (!actor) return;
 
   const client = await pool.connect();
   let view, next;
@@ -350,13 +384,13 @@ export async function handleVoucherReject(req, res) {
     if (plan.status === 'rejected') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'alreadyRejected')); }
     if (plan.status === 'approved') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'alreadyFullyApproved')); }
     try {
-      next = applyRejection(plan, v.approverEmail, { at: now(), reason, anyApprover: true });
+      next = applyRejection(plan, actor.email, { at: now(), reason, anyApprover: true });
     } catch (e) {
       await client.query('ROLLBACK');
       if (e.code === 'NOT_IN_PLAN') return fail(res, msg(lang, 'rejecterInfoNotFound'));
       throw e;
     }
-    const email = lower(v.approverEmail);
+    const email = actor.email;
     const who = plan.steps.flatMap((s) => s.approvers).find((a) => a.email === email);
     const meta = row.metadata || {};
     view = voucherView(row);
@@ -389,6 +423,8 @@ export async function handleVoucherAcknowledge(req, res) {
   const voucherNumber = String(b.voucherNumber || '');
   if (!voucherNumber) return fail(res, msg(lang, 'missingVoucherNo'));
   if (!b.requesterSignature) return fail(res, msg(lang, 'needAckSignature'));
+  const actor = await resolveActor(req, res, '', lang);
+  if (!actor) return;
 
   const client = await pool.connect();
   let view, plan;
@@ -401,8 +437,13 @@ export async function handleVoucherAcknowledge(req, res) {
     if (plan.status !== 'approved') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'voucherNotFullyApproved')); }
     const meta = row.metadata || {};
     if (meta.acknowledgedSignature) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'voucherAlreadyAcknowledged')); }
+    // Signed in: only the voucher's requester (or an admin) confirms the money
+    if (actor.caller && !actor.caller.isAdmin && lower(row.requestor_email) && actor.caller.email !== lower(row.requestor_email)) {
+      await client.query('ROLLBACK');
+      return fail(res, lang === 'en' ? 'Only the requester can confirm receipt.' : 'Chỉ người đề nghị mới xác nhận nhận tiền.');
+    }
     const isThu = String(row.voucher_type || '').toUpperCase().includes('THU');
-    const requesterEmail = lower(b.requesterEmail);
+    const requesterEmail = actor.caller ? actor.caller.email : lower(b.requesterEmail);
     meta.acknowledgedSignature = b.requesterSignature;
     meta.requesterName = b.requesterName || row.employee_name || '';
     meta.acknowledgedAt = at;
@@ -443,8 +484,11 @@ export async function handleVoucherAcknowledge(req, res) {
  */
 export async function handleVoucherSummary(req, res) {
   const src = { ...(req.query || {}), ...(req.body || {}) };
-  const email = lower(src.callerEmail || src.userEmail || src.email);
-  const wantsAdmin = src.isAdmin === true || src.isAdmin === 'true';
+  const caller = await callerFromRequest(req);
+  if (!caller && requireLogin()) return res.status(401).json({ success: false, message: 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.' });
+  // Signed in: the token's user, never the emails / admin flag sent by the page
+  const email = caller ? caller.email : lower(src.callerEmail || src.userEmail || src.email);
+  const wantsAdmin = caller ? caller.isAdmin : (src.isAdmin === true || src.isAdmin === 'true');
   try {
     const [admin, roles] = await Promise.all([
       email && wantsAdmin
@@ -460,7 +504,7 @@ export async function handleVoucherSummary(req, res) {
     ]);
     const callerApproverRole = roles.accountant ? 'accountant' : roles.legal ? 'legalRep' : roles.treasurer ? 'treasurer' : 'submitter';
     const cols = `voucher_number, voucher_type, company_name, employee_name, requestor_email, amount, status, last_action,
-                  updated_at, progress_done, progress_total, approver_emails, current_approver`;
+                  updated_at, progress_done, progress_total, approver_emails, pending_emails, current_approver`;
     const { rows } = admin
       ? await pool.query(`SELECT ${cols} FROM vouchers`)
       : await pool.query(`SELECT ${cols} FROM vouchers WHERE LOWER(requestor_email) = $1 OR $1 = ANY(approver_emails)`, [email]);
@@ -471,12 +515,31 @@ export async function handleVoucherSummary(req, res) {
   }
 }
 
+/**
+ * May this caller open one voucher? Admin, the requester, or anyone in its
+ * flow. Without a token: allowed unless VOUCHER_REQUIRE_LOGIN (GAS parity).
+ * Sends the error and returns false when not allowed.
+ */
+async function mayView(req, res, row) {
+  const caller = await callerFromRequest(req);
+  if (!caller) {
+    if (!requireLogin()) return true;
+    res.status(401).json({ success: false, message: 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.' });
+    return false;
+  }
+  if (!row || caller.isAdmin || lower(row.requestor_email) === caller.email || (row.approver_emails || []).includes(caller.email)) return true;
+  res.status(403).json({ success: false, message: 'Bạn không có quyền xem phiếu này.' });
+  return false;
+}
+
 /** getVoucherHistory { voucherNumber } — every sheet-style row, newest first (GAS: data is the array). */
 export async function handleVoucherHistory(req, res) {
   const src = { ...(req.query || {}), ...(req.body || {}) };
   const no = String(src.voucherNumber || '').trim();
   if (!no) return fail(res, 'Thiếu voucher number');
   try {
+    const owner = (await pool.query(`SELECT requestor_email, approver_emails FROM vouchers WHERE voucher_number = $1`, [no])).rows[0];
+    if (!(await mayView(req, res, owner))) return;
     const { rows } = await pool.query(
       `SELECT * FROM voucher_history WHERE voucher_number = $1 ORDER BY submitted_at DESC, id DESC`, [no]);
     return res.json({
@@ -505,6 +568,7 @@ export async function handleVoucherApprovalStatus(req, res) {
     const { rows } = await pool.query(`SELECT * FROM vouchers WHERE voucher_number = $1`, [no]);
     const row = rows[0];
     if (!row) return fail(res, msg(src.lang, 'voucherNotFound') + no);
+    if (!(await mayView(req, res, row))) return;
     const plan = planOf(row);
     const ca = legacyCompanyApprovers(plan);
     const current = ca.currentApprover ? ca.approvers[ca.currentApprover] : null;
@@ -528,6 +592,84 @@ export async function handleVoucherApprovalStatus(req, res) {
     });
   } catch (err) {
     console.error('[Vouchers] status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi: ' + err.message });
+  }
+}
+
+// Role → Master Company signature column (the sample each role holder signs against)
+const ROLE_SAMPLE = { chief_accountant: 'accountant_sig_url', legal_rep: 'legal_rep_sig_url', treasurer: 'treasurer_sig_url' };
+const EMPLOYEE_SAMPLE_HEADERS = ['Signature', 'Chữ ký', 'Chu_ky', 'employee_signature', 'Signature_URL'];
+
+/**
+ * getApprovalContext { voucherNumber } — for the signed-in user: the voucher,
+ * its plan, my entries on the current step, whether I can approve / reject,
+ * and the sample signature to verify against (role sample from Master
+ * Company, else a "Signature" column on my Master Employee row).
+ */
+export async function handleVoucherApprovalContext(req, res) {
+  const src = { ...(req.query || {}), ...(req.body || {}) };
+  const lang = src.lang;
+  const no = String(src.voucherNumber || '').trim();
+  if (!no) return fail(res, msg(lang, 'missingVoucherNo'));
+  const caller = await callerFromRequest(req);
+  if (!caller) return res.status(401).json({ success: false, message: lang === 'en' ? 'Please sign in to approve.' : 'Vui lòng đăng nhập để phê duyệt.' });
+  try {
+    const row = (await pool.query(`SELECT * FROM vouchers WHERE voucher_number = $1`, [no])).rows[0];
+    if (!row) return fail(res, msg(lang, 'voucherNotFound') + no);
+    if (!(await mayView(req, res, row))) return;
+    const plan = planOf(row);
+    const open = pendingStep(plan);
+    const inPlan = plan.steps.some((st) => st.approvers.some((a) => a.email === caller.email));
+    const myEntries = open >= 0 ? plan.steps[open].approvers.filter((a) => a.email === caller.email && a.status !== 'approved') : [];
+
+    let reason = '';
+    if (plan.status === 'rejected') reason = msg(lang, 'voucherRejectedCannotApprove');
+    else if (plan.status === 'approved') reason = msg(lang, 'alreadyFullyApproved');
+    else if (!inPlan) reason = msg(lang, 'approverInfoNotFound');
+    else if (!myEntries.length) {
+      const done = plan.steps.flatMap((st) => st.approvers).filter((a) => a.email === caller.email).every((a) => a.status === 'approved');
+      reason = done ? msg(lang, 'alreadyApprovedByYouCash') : `Chưa đến lượt bạn. Đang chờ: ${nameList(stepWaiting(plan))}.`;
+    }
+
+    // Sample signature: first my role sample on this company, else my own registered one
+    let sampleSignatureUrl = '';
+    let sampleFrom = '';
+    if (myEntries.length) {
+      const company = row.company_id ? (await pool.query(`SELECT * FROM companies WHERE id = $1`, [row.company_id])).rows[0] : null;
+      for (const a of myEntries) {
+        const col = ROLE_SAMPLE[a.role];
+        if (company && col && company[col]) { sampleSignatureUrl = company[col]; sampleFrom = a.label; break; }
+      }
+      if (!sampleSignatureUrl) {
+        const emp = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [caller.email])).rows[0];
+        const extra = (emp && emp.extra) || {};
+        const hit = EMPLOYEE_SAMPLE_HEADERS.find((h) => String(extra[h] || '').trim());
+        if (hit) { sampleSignatureUrl = String(extra[hit]).trim(); sampleFrom = 'Master Employee'; }
+      }
+      if (!sampleSignatureUrl) {
+        reason = lang === 'en'
+          ? 'No sample signature is registered for you. Ask an administrator to add it in Master Data (Employees › Signature).'
+          : 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).';
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Thành công',
+      data: {
+        voucher: { ...voucherView(row), status: row.status, attachments: row.attachments, meta: { ...(row.metadata || {}), approvalPlan: undefined } },
+        approvalPlan: plan,
+        me: { email: caller.email, name: caller.name, isAdmin: caller.isAdmin },
+        myEntries,
+        canApprove: !reason,
+        canReject: plan.status !== 'approved' && plan.status !== 'rejected' && inPlan,
+        reason,
+        sampleSignatureUrl,
+        sampleFrom,
+      },
+    });
+  } catch (err) {
+    console.error('[Vouchers] context error:', err.message);
     return res.status(500).json({ success: false, message: 'Lỗi: ' + err.message });
   }
 }

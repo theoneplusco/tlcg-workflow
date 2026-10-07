@@ -749,8 +749,38 @@
       } catch (e) {
         /* not ours — send the original request untouched */
       }
+      try {
+        init = withLoginToken(input, init);
+      } catch (e) {
+        /* never block a request over the token */
+      }
       return nativeFetch(input, init);
     };
+  }
+
+  /**
+   * Same-origin /api/ calls carry the signed-in user's token, so the server
+   * knows who is acting instead of trusting emails sent in the body. Never
+   * added to other origins (a custom header would trigger a CORS preflight
+   * that Apps Script cannot answer).
+   */
+  function withLoginToken(input, init) {
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    var loc = global.location;
+    if (!loc || !url) return init;
+    var target;
+    try { target = new URL(url, loc.href); } catch (e) { return init; }
+    if (target.origin !== loc.origin || target.pathname.indexOf('/api/') !== 0) return init;
+    var token = '';
+    try {
+      var user = JSON.parse(global.localStorage.getItem('tlc_current_user') || 'null');
+      token = (user && user.token) || '';
+    } catch (e) { return init; }
+    if (!token) return init;
+    var headers = new global.Headers((init && init.headers) || (typeof input !== 'string' && input.headers) || undefined);
+    if (headers.has('Authorization')) return init;
+    headers.set('Authorization', 'Bearer ' + token);
+    return Object.assign({}, init || {}, { headers: headers });
   }
 
   /** Apply the resolved language on load without overwriting the stored one. */

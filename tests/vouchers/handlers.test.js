@@ -213,3 +213,93 @@ test('daily reminder: one email per pending approver for vouchers due tomorrow',
   await runVoucherReminders(pool, '2026-10-05');
   assert.equal((await emails(no)).length, later, 'not due tomorrow → nothing');
 });
+
+// ── Signed-in identity (Plan 3, Task 1–2) ─────────────────────
+const jwtFor = async (email) => {
+  const jwt = (await import('jsonwebtoken')).default;
+  const { rows } = await pool.query(`SELECT id FROM employees WHERE LOWER(email) = $1`, [email]);
+  return 'Bearer ' + jwt.sign({ id: rows[0].id }, process.env.JWT_SECRET || 'dev-secret-change-in-production');
+};
+const callAs = (fn, body, auth) => new Promise((resolve, reject) => {
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { resolve({ code: this.statusCode, ...b }); } };
+  Promise.resolve(fn({ body, query: {}, headers: auth ? { authorization: auth } : {} }, res)).catch(reject);
+});
+
+test('token identity: cannot act for someone else; body email optional; page admin flag ignored', { skip }, async () => {
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  const acc = await jwtFor(people.accountant);
+  const other = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: people.legal, approverSignature: 's', signatureVerification: ok } }, acc);
+  assert.match(other.message, /không thể thao tác thay/);
+  const mine = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverSignature: 's', signatureVerification: ok } }, acc);
+  assert.equal(mine.success, true, mine.message);
+  const nonAdmin = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE NOT is_admin AND status='active' LIMIT 1`)).rows[0].e;
+  const admin = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE is_admin AND status='active' LIMIT 1`)).rows[0].e;
+  const s = await callAs(h.handleVoucherSummary, { callerEmail: admin, isAdmin: 'true' }, await jwtFor(nonAdmin));
+  assert.equal(s.data.globalStats, null, 'token user, not the page claims');
+});
+
+test('VOUCHER_REQUIRE_LOGIN: no token → 401 for writes and lists', { skip }, async () => {
+  process.env.VOUCHER_REQUIRE_LOGIN = 'true';
+  try {
+    const r = await call(h.handleVoucherApprove, { voucher: { voucherNumber: 'X', approverEmail: people.accountant, approverSignature: 's', signatureVerification: ok } });
+    assert.equal(r.code, 401);
+    assert.equal((await call(h.handleVoucherSummary, { callerEmail: people.accountant })).code, 401);
+  } finally {
+    delete process.env.VOUCHER_REQUIRE_LOGIN;
+  }
+});
+
+test('single voucher reads: strangers refused; acknowledge only by the requester', { skip }, async () => {
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  const stranger = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE NOT is_admin AND status='active' AND LOWER(email) NOT IN ($1,$2,$3) LIMIT 1`,
+    [people.accountant, people.legal, people.treasurer])).rows[0];
+  if (stranger) {
+    const r = await callAs(h.handleVoucherHistory, { voucherNumber: no }, await jwtFor(stranger.e));
+    assert.equal(r.code, 403);
+  }
+  for (const e of [people.accountant, people.legal, people.treasurer]) await approve(no, e);
+  const ack = await callAs(h.handleVoucherAcknowledge, { voucherNumber: no, requesterSignature: 'x' }, await jwtFor(people.accountant));
+  const accIsAdmin = (await pool.query(`SELECT is_admin FROM employees WHERE LOWER(email) = $1`, [people.accountant])).rows[0].is_admin;
+  if (!accIsAdmin) assert.match(ack.message, /Chỉ người đề nghị/);
+});
+
+test('summary myTurn + approval context: whose turn, sample signature, missing sample', { skip }, async () => {
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  const acc = await jwtFor(people.accountant);
+  const sum = await callAs(h.handleVoucherSummary, {}, acc);
+  assert.equal(sum.data.recent.find((r) => r.voucherNumber === no).myTurn, true);
+  if (people.legal !== people.accountant) {
+    const legalSum = await callAs(h.handleVoucherSummary, {}, await jwtFor(people.legal));
+    assert.equal(legalSum.data.recent.find((r) => r.voucherNumber === no).myTurn, false);
+    const notYet = await callAs(h.handleVoucherApprovalContext, { voucherNumber: no }, await jwtFor(people.legal));
+    assert.equal(notYet.data.canApprove, false);
+    assert.match(notYet.data.reason, /Chưa đến lượt/);
+  }
+  const ctx = await callAs(h.handleVoucherApprovalContext, { voucherNumber: no }, acc);
+  assert.equal(ctx.data.canApprove, true, ctx.data.reason);
+  assert.equal(ctx.data.sampleSignatureUrl, company.accountant_sig_url);
+  assert.equal(ctx.data.approvalPlan.steps.length, 3);
+  assert.equal((await call(h.handleVoucherApprovalContext, { voucherNumber: no })).code, 401);
+
+  // A named person in the flow needs a "Signature" on their Master Employee row
+  const person = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE status='active' AND LOWER(email) NOT IN ($1,$2,$3) LIMIT 1`,
+    [people.accountant, people.legal, people.treasurer])).rows[0];
+  if (person) {
+    await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
+    const no2 = newNo();
+    await call(h.handleVoucherSubmit, submitBody(no2));
+    const pAuth = await jwtFor(person.e);
+    const noSample = await callAs(h.handleVoucherApprovalContext, { voucherNumber: no2 }, pAuth);
+    assert.equal(noSample.data.canApprove, false);
+    assert.match(noSample.data.reason, /Chưa có chữ ký mẫu/);
+    await pool.query(`UPDATE employees SET extra = extra || '{"Signature":"https://drive/sample"}' WHERE LOWER(email) = $1`, [person.e]);
+    const withSample = await callAs(h.handleVoucherApprovalContext, { voucherNumber: no2 }, pAuth);
+    assert.equal(withSample.data.canApprove, true);
+    assert.equal(withSample.data.sampleSignatureUrl, 'https://drive/sample');
+    await pool.query(`UPDATE employees SET extra = extra - 'Signature' WHERE LOWER(email) = $1`, [person.e]);
+    await pool.query(`TRUNCATE approval_flows`);
+  }
+});
