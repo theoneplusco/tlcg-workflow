@@ -128,3 +128,43 @@ test('attachments go to R2; a refused file is recorded and the submit still succ
   assert.equal(row.attachments[1].error, 'Loại file không được hỗ trợ');
   assert.deepEqual(row.metadata.attachments, row.attachments);
 });
+
+test('requesterEmail claim in another case is the caller (accepted)', { skip }, async () => {
+  const r = await call(h.handlePRSubmit, submitBody(company, people, { requesterEmail: ' REQ@PR-Test.vn ' }), REQ);
+  assert.equal(r.success, true, r.message);
+});
+
+test('client line total ignored: stored items and grand_total from qty × price (decision #6)', { skip }, async () => {
+  const items = JSON.stringify([{ section: 'hang-hoa', desc: 'Khăn', qty: '5', price: '29900', total: '1', hack: 'x' }]);
+  const r = await call(h.handlePRSubmit, submitBody(company, people, { items }), REQ);
+  assert.equal(r.success, true, r.message);
+  const row = await pr(r.prNo);
+  assert.equal(Number(row.grand_total), 149500);
+  assert.equal(row.items[0].total, 149500);
+  assert.equal(row.items[0].hack, undefined);
+});
+
+test('tx: prDeps is lazy about R2 and checks the login against the injected db; withLockedPR rolls back without saved', { skip }, async () => {
+  const { prDeps, withLockedPR } = await import('../../api/handlers/pr/tx.js');
+  assert.equal(prDeps({ s3: null }).s3, null);
+  const seen = [];
+  const fakeDb = { query: async (sql, params) => { seen.push(params); return { rows: [] }; } };
+  const jwt = (await import('jsonwebtoken')).default;
+  const { jwtSecret } = await import('../../api/handlers/auth.js');
+  const token = jwt.sign({ id: 424242 }, jwtSecret());
+  assert.equal(await prDeps({ db: fakeDb }).who({ headers: { authorization: 'Bearer ' + token } }), null);
+  assert.deepEqual(seen.at(-1), [424242], 'caller looked up in the injected db');
+  const body = submitBody(company, people);
+  const made = await call(h.handlePRSubmit, body, REQ);
+  assert.equal(made.success, true, made.message);
+  const before = (await pr(made.prNo)).purpose;
+  const r = await new Promise((resolve) => {
+    const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { resolve({ code: this.statusCode, ...b }); } };
+    withLockedPR(pool, made.prNo, res, async (client, row) => {
+      await client.query('UPDATE purchase_requests SET purpose = $2 WHERE id = $1', [row.id, 'changed']);
+      return { message: 'x' }; // no saved row
+    });
+  });
+  assert.equal(r.success, false);
+  assert.equal((await pr(made.prNo)).purpose, before, 'rolled back');
+});

@@ -12,9 +12,16 @@ import { ok, fail } from '../../lib/purchase-requests/respond.js';
  * Handlers take `d` (tests) over these defaults. paymentsForPR(db, prNo) → [{status}] is the payment
  * side of validatePRForDirectPayment; Plan 6 replaces it when payments move to Postgres.
  */
-export const prDeps = (d = {}) => ({
-  db: pool, s3: getS3(), who: callerFromRequest, now: () => new Date(), gasProxy, paymentsForPR: async () => [], ...d,
-});
+export function prDeps(d = {}) {
+  const db = d.db ?? pool;
+  return {
+    db,
+    s3: Object.hasOwn(d, 's3') ? d.s3 : getS3(), // lazy; an explicit null means "no R2" (tests)
+    who: (req) => callerFromRequest(req, db), // the login check reads the same database as the handler
+    now: () => new Date(), gasProxy, paymentsForPR: async () => [],
+    ...d,
+  };
+}
 
 /**
  * Lock the PR, run `work(client, row)` → { error } | { saved, mails, message, fields }, commit,
@@ -27,6 +34,7 @@ export async function withLockedPR(db, prNo, res, work) {
     await client.query('BEGIN');
     const row = await lockPR(client, prNo);
     out = row ? await work(client, row) : { error: `Không tìm thấy đề nghị: ${prNo}` };
+    if (!out || (!out.error && !out.saved)) throw new Error('PR write returned no saved row'); // rolls back below
     await client.query(out.error ? 'ROLLBACK' : 'COMMIT');
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});

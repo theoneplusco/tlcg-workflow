@@ -20,7 +20,9 @@ test('checkSubmission: GAS checks 1–8 in order, same wording', () => {
   assert.equal(e({ purchaseType: 'services' }), 'Đề nghị này (Dịch vụ hoặc giá trị ≥ 2.000.000₫) yêu cầu người thẩm định hợp đồng.');
 });
 test('checkSubmission: total and branch from the items, never the client (S4); picks lower-cased', () => {
-  const s = checkSubmission(body({ grandTotal: 1, items: items('2500000'), contractApprover: 'KT@x.vn' }));
+  // Line total '1' and grandTotal 1 from the client are ignored: 5 × 500,000 (decision #6).
+  const big = JSON.stringify([{ section: 'hang-hoa', desc: 'Khăn', qty: '5', price: '500000', total: '1' }]);
+  const s = checkSubmission(body({ grandTotal: 1, items: big, contractApprover: 'KT@x.vn' }));
   assert.equal(s.grandTotal, 2500000);
   assert.equal(s.branch, 'full');
   assert.deepEqual(s.picks, { budget: 'linh@x.vn', supplier: 'linh@x.vn', contract: 'kt@x.vn', purchasing: 'tlc.ap@x.vn' });
@@ -69,4 +71,68 @@ test('storeAttachments: R2 keys without the PR number; bad files recorded, never
   assert.equal(sent[0].ContentType, 'application/pdf');
   const none = await storeAttachments(null, [{ fileName: 'a.pdf', fileData: pdf }]);
   assert.deepEqual(none, [{ fileName: 'a.pdf', fileUrl: '', error: 'R2 chưa cấu hình' }]);
+});
+
+// ── Fix round 1: the server computes every line (decision #6), currency-aware numbers, caps ──
+import { num, normalizeItems, NUMBER_ERROR, TOO_LONG_ERROR, MAX_ITEMS } from '../../api/lib/purchase-requests/validate.js';
+const list = (arr) => JSON.stringify(arr);
+
+test('line totals: qty × price wins over the client total; total only when qty or price is missing', () => {
+  const s = checkSubmission(body({ contractApprover: 'kt@x.vn',
+    items: list([{ desc: 'A', qty: '100', price: '1000000', total: '1' }]) }));
+  assert.equal(s.grandTotal, 100000000);
+  assert.equal(s.branch, 'full');
+  assert.equal(s.items[0].total, 100000000, 'stored item agrees with grand_total');
+  const mixed = checkSubmission(body({ items: list([
+    { desc: 'A', qty: '2', price: '10000', total: '999' }, // 20,000
+    { desc: 'B', total: '50000' }, // no qty/price → 50,000
+    { desc: 'C', qty: '3', price: '', total: '7000' }, // price missing → 7,000
+    { desc: 'D' }, // nothing → 0
+  ]) }));
+  assert.equal(mixed.grandTotal, 77000);
+  assert.deepEqual(mixed.items.map((i) => i.total), [20000, 50000, 7000, 0]);
+});
+
+test('negative or non-numeric qty / price / total refused', () => {
+  const e = (it) => checkSubmission(body({ items: list([{ desc: 'A', qty: '1', price: '1000' }, it]) })).error;
+  assert.equal(NUMBER_ERROR, 'Số lượng, đơn giá và thành tiền phải là số không âm.');
+  assert.equal(e({ desc: 'B', qty: '-1', price: '1000' }), NUMBER_ERROR);
+  assert.equal(e({ desc: 'B', qty: '1', price: '-1000' }), NUMBER_ERROR);
+  assert.equal(e({ desc: 'B', total: '-5' }), NUMBER_ERROR);
+  assert.equal(e({ desc: 'B', qty: '1', price: '1000', total: '-5' }), NUMBER_ERROR, 'even an ignored total');
+  assert.equal(e({ desc: 'B', qty: 'abc', price: '1000' }), NUMBER_ERROR);
+  assert.equal(e({ desc: 'B', qty: 'Infinity', price: '1000' }), NUMBER_ERROR);
+  const inf = checkSubmission(body({ items: '[{"desc":"B","qty":1e400,"price":"1000"}]' })).error; // JSON.parse → Infinity
+  assert.equal(inf, NUMBER_ERROR);
+});
+
+test('num: dotted / comma thousands only for VND; other currencies are plain decimals', () => {
+  assert.equal(num('1.234.567'), 1234567);
+  assert.equal(num('1.234.567', 'VND'), 1234567);
+  assert.equal(num('4.125', 'VND'), 4125);
+  assert.equal(num('1,234,567', 'VND'), 1234567);
+  assert.equal(num('4.125', 'USD'), 4.125);
+  assert.equal(num('1,234.5', 'USD'), 1234.5);
+  assert.equal(num('2.75', 'EUR'), 2.75);
+  assert.equal(num('', 'USD'), 0);
+  assert.ok(Number.isNaN(num('1.234.567', 'USD')));
+  const usd = checkSubmission(body({ currency: 'USD', items: list([{ desc: 'A', qty: '1.5', price: '2.75', total: '0' }]) }));
+  assert.equal(usd.grandTotal, 4.125);
+  assert.equal(usd.items[0].total, 4.125);
+  const vnd = checkSubmission(body({ currency: 'VND', items: list([{ desc: 'A', qty: '1', price: '1.234.567' }]) }));
+  assert.equal(vnd.grandTotal, 1234567);
+  const kg = checkSubmission(body({ currency: 'VND', items: list([{ desc: 'Gạo', qty: '1.500', price: '20000' }]) }));
+  assert.equal(kg.grandTotal, 30000, 'quantity 1.500 is 1.5 (the page parseFloat), not 1,500');
+});
+
+test('caps: at most 200 items and 1000 characters per field; stored keys are the page keys', () => {
+  assert.equal(TOO_LONG_ERROR, 'Danh sách hàng hóa quá dài.');
+  const many = Array.from({ length: MAX_ITEMS + 1 }, (_, i) => ({ desc: 'x' + i, qty: '1', price: '1' }));
+  assert.equal(checkSubmission(body({ items: list(many) })).error, TOO_LONG_ERROR);
+  assert.equal(checkSubmission(body({ items: list(many.slice(0, MAX_ITEMS)) })).error, undefined);
+  assert.equal(checkSubmission(body({ items: list([{ desc: 'x'.repeat(1001) }]) })).error, TOO_LONG_ERROR);
+  const { items: kept } = normalizeItems([{ section: 'hang-hoa', loai: 'Hàng Hóa', desc: 'Khăn', qty: '5', unit: 'Cái',
+    price: '29900', total: '1', note: 'n', evil: '<script>', fileUrl: 'https://x' }]);
+  assert.deepEqual(kept, [{ section: 'hang-hoa', loai: 'Hàng Hóa', desc: 'Khăn', qty: '5', unit: 'Cái', price: '29900', total: 149500, note: 'n' }]);
+  assert.equal(normalizeItems([{ desc: 'Old', quantity: '2', unitPrice: '10' }]).items[0].total, 20, 'legacy keys read as qty/price');
 });
