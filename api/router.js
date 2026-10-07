@@ -3,8 +3,7 @@
 // the old GAS proxy (for actions not yet migrated).
 import { handleGetMasterData, handleGetCompanies, handleGetCompanyApprovers, handleGetEmployees, handleGetSuppliers, handleGetVendorBanks } from './handlers/master-data.js';
 import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
-import { handleVoucherSummary } from './handlers/voucher-approve.js';
-import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove } from './handlers/vouchers.js';
+import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus } from './handlers/vouchers.js';
 import { handlePRSubmit, handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
 import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
 import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
@@ -41,6 +40,8 @@ const NEW_HANDLERS = {
   acknowledgeReceipt:     handleVoucherAcknowledge,
   bulkApprove:            handleVoucherBulkApprove,
   getVoucherSummary:      handleVoucherSummary,
+  getVoucherHistory:      handleVoucherHistory,
+  getApprovalStatus:      handleVoucherApprovalStatus,
 
   // P2P (Phase 4)
   purchaseRequest:             handlePRSubmit,
@@ -72,7 +73,8 @@ const NEW_HANDLERS = {
 //   PG_WORKFLOWS=cash,vouchers,p2p   (comma list; auth/master/admin always Postgres)
 const WORKFLOW_ACTIONS = {
   cash: ['getCashBook', 'getCashCount', 'getCashBookSummary', 'getRecentCashCounts', 'saveCashCount', 'signCashCount'],
-  vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'bulkApprove', 'getVoucherSummary'],
+  vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'bulkApprove',
+    'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus'],
   p2p: ['purchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'getPurchaseRequestHistory', 'getPurchaseRequest'],
 };
 const PG_WORKFLOWS = new Set(String(process.env.PG_WORKFLOWS || '').split(',').map((s) => s.trim()).filter(Boolean));

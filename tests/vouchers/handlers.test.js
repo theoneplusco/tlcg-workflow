@@ -163,3 +163,40 @@ test('bulk approve: per-voucher results and one batch email per next approver', 
   assert.match(batch.subject, /^\[PHÊ DUYỆT HÀNG LOẠT\] 2 phiếu/);
   assert.ok(nos.every((no) => batch.body_html.includes(no)));
 });
+
+test('reads: summary visibility + admin flag check, history newest first, approval status', { skip }, async () => {
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  await approve(no, people.accountant);
+  const admin = (await pool.query(`SELECT LOWER(email) AS e FROM employees WHERE is_admin AND status='active' LIMIT 1`)).rows[0].e;
+  const nonAdmin = 'sub@x.vn';
+
+  const asAdmin = await call(h.handleVoucherSummary, { callerEmail: admin, isAdmin: 'true' });
+  assert.ok(asAdmin.data.globalStats, 'real admin gets global stats');
+  assert.ok(asAdmin.data.recent.some((r) => r.voucherNumber === no));
+
+  const spoof = await call(h.handleVoucherSummary, { callerEmail: 'nobody@x.vn', isAdmin: 'true' });
+  assert.equal(spoof.data.globalStats, null, 'isAdmin from the page is not trusted');
+  assert.equal(spoof.data.total, 0);
+
+  const own = await call(h.handleVoucherSummary, { callerEmail: nonAdmin });
+  const mine = own.data.recent.find((r) => r.voucherNumber === no);
+  assert.equal(mine.meta.companyApprovers.approvalProgress, '1/3');
+  assert.equal(mine.meta.companyApprovers.currentApprover, 'legalRep');
+
+  const asLegal = await call(h.handleVoucherSummary, { callerEmail: people.legal });
+  assert.ok(asLegal.data.recent.some((r) => r.voucherNumber === no), 'approver in the flow sees it');
+
+  const hist = await call(h.handleVoucherHistory, { voucherNumber: no });
+  assert.equal(hist.data.length, 2);
+  assert.match(hist.data[0].action, /^Duyệt bởi /, 'newest first');
+  assert.equal(hist.data[hist.data.length - 1].action, 'Đã nộp phiếu', 'oldest last');
+  assert.equal(hist.data[0].meta.companyApprovers.approvalProgress, '1/3');
+
+  const st = await call(h.handleVoucherApprovalStatus, { voucherNumber: no });
+  assert.equal(st.data.approvalProgress, '1/3');
+  assert.equal(st.data.currentApprover, 'legalRep');
+  assert.equal(st.data.approvers.accountant.status, 'approved');
+  assert.equal(st.data.approvalPlan.steps.length, 3);
+  assert.match((await call(h.handleVoucherApprovalStatus, { voucherNumber: 'NOPE' })).message, /Không tìm thấy phiếu/);
+});

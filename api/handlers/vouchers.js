@@ -15,6 +15,7 @@ import { buildPlan, applyApproval, applyRejection, pendingStep } from '../lib/ap
 import { getActiveFlow } from '../lib/approval/flows-repo.js';
 import { legacyCompanyApprovers, statusText, STATUS } from '../lib/vouchers/compat.js';
 import { approvalRequest, progressUpdate, finalApproved, rejected, acknowledged, batchRequest, baseUrl } from '../lib/vouchers/emails.js';
+import { summarize } from '../lib/vouchers/summary.js';
 import {
   toAmount, findCompany, employeesByEmail, lockVoucher, planOf, voucherView, saveState, appendHistory, audit,
 } from '../lib/vouchers/repo.js';
@@ -431,4 +432,102 @@ export async function handleVoucherAcknowledge(req, res) {
   await queueMail(acknowledged(view, plan, { requesterName: b.requesterName, requesterEmail: b.requesterEmail, at }));
   await publishEvent('voucher:acknowledged', { voucherNumber, status: STATUS.received });
   return res.json({ success: true, message: 'Đã xác nhận nhận tiền thành công. Quy trình phiếu hoàn tất.' });
+}
+
+// ── Reads ────────────────────────────────────────────────────
+
+/**
+ * getVoucherSummary { callerEmail|userEmail|email, isAdmin } — GAS shape.
+ * Hardening: isAdmin from the page is honoured only when that email is an
+ * active admin in Master Data (GAS trusted the flag as sent).
+ */
+export async function handleVoucherSummary(req, res) {
+  const src = { ...(req.query || {}), ...(req.body || {}) };
+  const email = lower(src.callerEmail || src.userEmail || src.email);
+  const wantsAdmin = src.isAdmin === true || src.isAdmin === 'true';
+  try {
+    const [admin, roles] = await Promise.all([
+      email && wantsAdmin
+        ? pool.query(`SELECT 1 FROM employees WHERE LOWER(email) = $1 AND status = 'active' AND is_admin`, [email]).then((r) => r.rows.length > 0)
+        : false,
+      email
+        ? pool.query(`SELECT
+            bool_or(LOWER(accountant_email) = $1) AS accountant,
+            bool_or(LOWER(legal_rep_email) = $1)  AS legal,
+            bool_or(LOWER(treasurer_email) = $1)  AS treasurer
+           FROM companies`, [email]).then((r) => r.rows[0])
+        : {},
+    ]);
+    const callerApproverRole = roles.accountant ? 'accountant' : roles.legal ? 'legalRep' : roles.treasurer ? 'treasurer' : 'submitter';
+    const cols = `voucher_number, voucher_type, company_name, employee_name, requestor_email, amount, status, last_action,
+                  updated_at, progress_done, progress_total, approver_emails, current_approver`;
+    const { rows } = admin
+      ? await pool.query(`SELECT ${cols} FROM vouchers`)
+      : await pool.query(`SELECT ${cols} FROM vouchers WHERE LOWER(requestor_email) = $1 OR $1 = ANY(approver_emails)`, [email]);
+    return res.json({ success: true, message: 'Thành công', data: summarize(rows, { email, isAdmin: admin }, callerApproverRole) });
+  } catch (err) {
+    console.error('[Vouchers] summary error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi: ' + err.message });
+  }
+}
+
+/** getVoucherHistory { voucherNumber } — every sheet-style row, newest first (GAS: data is the array). */
+export async function handleVoucherHistory(req, res) {
+  const src = { ...(req.query || {}), ...(req.body || {}) };
+  const no = String(src.voucherNumber || '').trim();
+  if (!no) return fail(res, 'Thiếu voucher number');
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM voucher_history WHERE voucher_number = $1 ORDER BY submitted_at DESC, id DESC`, [no]);
+    return res.json({
+      success: true,
+      message: 'Thành công',
+      data: rows.map((h) => ({
+        voucherNumber: h.voucher_number, voucherType: h.voucher_type, company: h.company, companyKey: h.company_key,
+        employee: h.employee, requestorEmail: h.requestor_email, submittedBy: h.submitted_by, timestamp: h.submitted_at,
+        amount: Number(h.amount), status: h.status, dueDate: h.due_date, action: h.action, attachments: h.attachments,
+        description: h.description, note: h.note, meta: h.metadata || {}, approverEmail: h.approver_email,
+        approvedAt: h.approved_at || '',
+      })),
+    });
+  } catch (err) {
+    console.error('[Vouchers] history error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi: ' + err.message });
+  }
+}
+
+/** getApprovalStatus { voucherNumber } — GAS shape, plus approvalPlan for step-aware pages. */
+export async function handleVoucherApprovalStatus(req, res) {
+  const src = { ...(req.query || {}), ...(req.body || {}) };
+  const no = String(src.voucherNumber || '').trim();
+  if (!no) return fail(res, msg(src.lang, 'missingVoucherNo'));
+  try {
+    const { rows } = await pool.query(`SELECT * FROM vouchers WHERE voucher_number = $1`, [no]);
+    const row = rows[0];
+    if (!row) return fail(res, msg(src.lang, 'voucherNotFound') + no);
+    const plan = planOf(row);
+    const ca = legacyCompanyApprovers(plan);
+    const current = ca.currentApprover ? ca.approvers[ca.currentApprover] : null;
+    return res.json({
+      success: true,
+      message: 'Thành công',
+      data: {
+        voucherNumber: no,
+        overallStatus: ca.overallStatus,
+        displayStatus: ca.displayStatus,
+        approvalProgress: ca.approvalProgress,
+        currentApprover: ca.currentApprover,
+        currentApproverName: current ? current.name : null,
+        approvers: ca.approvers,
+        requesterEmail: row.requestor_email || '',
+        submittedAt: row.submitted_at || row.created_at,
+        lastUpdatedAt: new Date().toISOString(),
+        approvalPlan: plan,
+        acknowledged: !!(row.metadata && row.metadata.acknowledgedSignature),
+      },
+    });
+  } catch (err) {
+    console.error('[Vouchers] status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi: ' + err.message });
+  }
 }
