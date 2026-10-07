@@ -21,6 +21,7 @@ import {
   toAmount, findCompany, employeesByEmail, lockVoucher, planOf, voucherView, saveState, appendHistory, audit,
 } from '../lib/vouchers/repo.js';
 import { enqueue } from '../lib/sheets/outbox.js';
+import { signatureProblem, sampleSignatureFor, NO_SAMPLE } from '../lib/approval/signature-check.js';
 import {
   historyRecord, currentRecord, voucherSpreadsheetId, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
 } from '../lib/sheets/voucher-records.js';
@@ -35,9 +36,6 @@ const MSG = {
     approverInfoNotFound: 'Không tìm thấy thông tin người phê duyệt.',
     alreadyApprovedByYouCash: 'Bạn đã phê duyệt phiếu này rồi.',
     voucherRejectedCannotApprove: 'Phiếu này đã bị từ chối. Không thể phê duyệt.',
-    needApproveSignature: 'Vui lòng tải lên chữ ký trước khi phê duyệt',
-    missingSigAuthAdmin: 'Thiếu dữ liệu xác thực chữ ký. Vui lòng thử lại hoặc liên hệ quản trị viên.',
-    missingSigAuthRetry: 'Thiếu dữ liệu xác thực chữ ký. Vui lòng thử lại.',
     needRejectReason: 'Vui lòng nhập lý do từ chối',
     rejecterInfoNotFound: 'Không tìm thấy thông tin người từ chối.',
     alreadyRejected: 'Phiếu này đã được từ chối trước đó.',
@@ -58,9 +56,6 @@ const MSG = {
     approverInfoNotFound: 'Approver information not found.',
     alreadyApprovedByYouCash: 'You have already approved this voucher.',
     voucherRejectedCannotApprove: 'This voucher was rejected and cannot be approved.',
-    needApproveSignature: 'Please upload your signature before approving',
-    missingSigAuthAdmin: 'Missing signature verification data. Please try again or contact an administrator.',
-    missingSigAuthRetry: 'Missing signature verification data. Please try again.',
     needRejectReason: 'Please enter a rejection reason',
     rejecterInfoNotFound: 'Rejecter information not found.',
     alreadyRejected: 'This voucher has already been rejected.',
@@ -102,16 +97,6 @@ async function mirrorVoucher(client, h, { at, submittedAt, progressDone }) {
     record: currentRecord(h, { submittedAt, progressDone, at }) });
 }
 
-/** GAS approve/bulk signature checks. Returns an error message or ''. */
-function signatureProblem(lang, signature, verification, bulk = false) {
-  if (!signature || !String(signature).trim()) return msg(lang, 'needApproveSignature');
-  if (!verification || typeof verification !== 'object') return msg(lang, bulk ? 'missingSigAuthRetry' : 'missingSigAuthAdmin');
-  if (verification.verified !== true) {
-    return 'Chữ ký không hợp lệ. Lý do: ' + (verification.reason || 'unknown') + '. ' +
-      (verification.similarity ? 'Độ tương đồng: ' + verification.similarity + '% (yêu cầu: 75%)' : 'Vui lòng sử dụng chữ ký mẫu đã đăng ký.');
-  }
-  return '';
-}
 
 /** "file.pdf (1.20 MB)\nhttps://…" lines, as GAS wrote them into the attachments column. */
 function attachmentLines(files) {
@@ -122,30 +107,6 @@ function attachmentLines(files) {
   }).join('\n\n');
 }
 
-// Role → Master Company signature column (the sample each role holder signs against)
-const ROLE_SAMPLE = { chief_accountant: 'accountant_sig_url', legal_rep: 'legal_rep_sig_url', treasurer: 'treasurer_sig_url' };
-const EMPLOYEE_SAMPLE_HEADERS = ['Signature', 'Chữ ký', 'Chu_ky', 'employee_signature', 'Signature_URL'];
-
-/**
- * The sample signature an approver must match: their role's sample on the
- * voucher's company (Master Company), else a Signature column on their Master
- * Employee row. { url, from } — url '' when none is registered.
- */
-async function sampleSignatureFor(db, companyId, entries, email) {
-  const company = companyId ? (await db.query(`SELECT * FROM companies WHERE id = $1`, [companyId])).rows[0] : null;
-  for (const a of entries) {
-    const col = ROLE_SAMPLE[a.role];
-    if (company && col && company[col]) return { url: company[col], from: a.label };
-  }
-  const emp = (await db.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [email])).rows[0];
-  const extra = (emp && emp.extra) || {};
-  const hit = EMPLOYEE_SAMPLE_HEADERS.find((h) => String(extra[h] || '').trim());
-  return hit ? { url: String(extra[hit]).trim(), from: 'Master Employee' } : { url: '', from: '' };
-}
-const NO_SAMPLE = {
-  vi: 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).',
-  en: 'No sample signature is registered for you. Ask an administrator to add it in Master Data (Employees › Signature).',
-};
 
 /**
  * The acting user: the login token's user when present (the email in the body
