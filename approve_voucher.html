@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phê duyệt Phiếu</title>
     <script src="i18n.js"></script>
+    <script src="voucher-steps.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -174,6 +175,8 @@
             <div id="voucher-info" class="voucher-info">
                 <!-- Voucher info will be populated from URL params -->
             </div>
+            <!-- Approval flow steps (filled when vouchers run on Postgres) -->
+            <div id="flow-steps" style="display: none; margin: 16px 0; flex-direction: column; gap: 6px;"></div>
 
             <div class="approval-hint" id="approval-hint">
                 <span data-i18n="avNotifyNote">Hệ thống sẽ tự gửi thông báo tới người đề nghị sau khi bước duyệt này hoàn tất.</span>
@@ -226,7 +229,9 @@
         const employee = urlParams.get('employee') || 'N/A';
         const amount = urlParams.get('amount') || 'N/A';
         const requestorEmail = urlParams.get('requestorEmail') || '';
-        const approverEmail = urlParams.get('approverEmail') || '';
+        // On Postgres the approver is the signed-in user (initPgContext), not this link parameter
+        let approverEmail = urlParams.get('approverEmail') || '';
+        let pgContext = null;
 
         // Debug: Log all URL parameters
         console.log('=== APPROVE VOUCHER PAGE LOADED ===');
@@ -581,7 +586,50 @@
         // ============ END SIGNATURE CACHE ============
 
         // Initialize: Fetch company approvers when page loads, then restore cached signature
-        fetchCompanyApprovers().then(() => loadCachedSignature()).catch(() => loadCachedSignature());
+        /**
+         * Vouchers on Postgres: ask the server whether the signed-in user may
+         * approve now, and against which sample. Returns false when vouchers
+         * still run on GAS (the action does not exist there), so the page
+         * keeps its original behaviour.
+         */
+        async function initPgContext() {
+            let res, json;
+            try {
+                res = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'getApprovalContext', voucherNumber: voucherNumber })
+                });
+                json = await res.json();
+            } catch (e) { return false; }
+            if (res.status === 401) {
+                // Postgres mode, not signed in: sign in, then come straight back here
+                const next = encodeURIComponent(location.pathname + location.search);
+                showMessage('Vui lòng đăng nhập để phê duyệt phiếu này.', 'error');
+                const box = document.getElementById('message');
+                box.insertAdjacentHTML('beforeend', `<div style="margin-top:10px;"><a href="index.html?next=${next}" style="display:inline-block;padding:8px 16px;background:#007AFF;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Đăng nhập</a></div>`);
+                document.querySelector('.button-group').style.display = 'none';
+                return true;
+            }
+            if (!json || !json.success || !json.data) {
+                if (json && /Action không hợp lệ|Invalid action|invalidAction/i.test(json.message || '')) return false; // GAS mode
+                if (json && res.status === 403) { showMessage(json.message, 'error'); document.querySelector('.button-group').style.display = 'none'; return true; }
+                return false;
+            }
+            pgContext = json.data;
+            approverEmail = pgContext.me.email;
+            const steps = document.getElementById('flow-steps');
+            steps.innerHTML = VoucherSteps.stepsHtml(pgContext.approvalPlan);
+            steps.style.display = 'flex';
+            if (!pgContext.canApprove) {
+                showMessage(pgContext.reason, 'error');
+                document.getElementById('approve-btn').disabled = true;
+            }
+            return true;
+        }
+
+        initPgContext()
+            .then((pg) => (pg ? loadCachedSignature() : fetchCompanyApprovers().then(() => loadCachedSignature())))
+            .catch(() => loadCachedSignature());
 
         // Handle signature upload
         document.getElementById('signature-upload-input').addEventListener('change', async (e) => {
@@ -691,8 +739,10 @@
                 // CRITICAL FIX: Default to fail-closed (verified: false)
                 let verificationResult = { verified: false, reason: 'no_sample_required', similarity: '0' };
 
-                // Get sample signature URL based on approver role
-                if (companyApproversData && currentApproverRole) {
+                // Get sample signature URL: from the server on Postgres, else by approver role
+                if (pgContext) {
+                    sampleSignatureUrl = pgContext.sampleSignatureUrl;
+                } else if (companyApproversData && currentApproverRole) {
                     if (currentApproverRole === 'accountant' && companyApproversData.accountant) {
                         sampleSignatureUrl = companyApproversData.accountant.signature;
                     } else if (currentApproverRole === 'legalRep' && companyApproversData.legalRep) {

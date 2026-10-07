@@ -225,7 +225,8 @@
         const employee = urlParams.get('employee') || 'N/A';
         const amount = urlParams.get('amount') || 'N/A';
         const requestorEmail = urlParams.get('requestorEmail') || '';
-        const approverEmail = urlParams.get('approverEmail') || '';
+        // On Postgres the person rejecting is the signed-in user (see initPgReject), not this link parameter
+        let approverEmail = urlParams.get('approverEmail') || '';
 
         // Debug: Log all URL parameters
         console.log('=== REJECT VOUCHER PAGE LOADED ===');
@@ -401,6 +402,41 @@
                 document.getElementById('reject-form').style.display = 'block';
             }
         });
+
+        /**
+         * Vouchers on Postgres: act as the signed-in user; sign in first if
+         * needed; explain when this voucher cannot be rejected by you. On GAS
+         * the action does not exist and the page keeps its original behaviour.
+         */
+        (async function initPgReject() {
+            let res, json;
+            try {
+                res = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'getApprovalContext', voucherNumber: voucherNumber })
+                });
+                json = await res.json();
+            } catch (e) { return; }
+            const buttons = document.querySelector('.button-group');
+            if (res.status === 401) {
+                const next = encodeURIComponent(location.pathname + location.search);
+                showMessage('Vui lòng đăng nhập để trả lại phiếu này.', 'error');
+                document.getElementById('message').insertAdjacentHTML('beforeend', `<div style="margin-top:10px;"><a href="index.html?next=${next}" style="display:inline-block;padding:8px 16px;background:#007AFF;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Đăng nhập</a></div>`);
+                if (buttons) buttons.style.display = 'none';
+                return;
+            }
+            if (!json || !json.success || !json.data) {
+                if (json && res.status === 403) { showMessage(json.message, 'error'); if (buttons) buttons.style.display = 'none'; }
+                return; // GAS mode (unknown action) or a transient error: leave the page as it was
+            }
+            approverEmail = json.data.me.email;
+            if (!json.data.canReject) {
+                showMessage(json.data.approvalPlan.status === 'approved' ? 'Phiếu đã được duyệt hoàn toàn, không thể trả lại.'
+                    : json.data.approvalPlan.status === 'rejected' ? 'Phiếu này đã được từ chối trước đó.'
+                    : 'Bạn không có trong quy trình duyệt của phiếu này.', 'error');
+                if (buttons) buttons.style.display = 'none';
+            }
+        })();
 
         function showMessage(message, type) {
             const messageDiv = document.getElementById('message');

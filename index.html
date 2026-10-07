@@ -4900,6 +4900,9 @@
                     }
 
                     resetLoginFailures();
+                    // Came from an approve / reject link (?next=/approve_voucher.html?...): go straight back
+                    const nextPage = safeNextPath(new URLSearchParams(location.search).get('next'));
+                    if (nextPage) { location.href = nextPage; return; }
                     // Show success toast
                     showToast('Login successful! Welcome, ' + currentUser.name, 'success');
 
@@ -5213,6 +5216,16 @@
             return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
             }[ch]));
+        }
+
+        /** A same-site page path from ?next= (e.g. "/approve_voucher.html?voucherNumber=…"), else ''. */
+        function safeNextPath(next) {
+            if (!next) return '';
+            try {
+                const u = new URL(next, location.origin);
+                if (u.origin !== location.origin || !/^\/[\w-]+\.html$/.test(u.pathname)) return '';
+                return u.pathname + u.search;
+            } catch (e) { return ''; }
         }
 
         /** Confirmation gate for admin changes: resolves true only on an explicit confirm. */
