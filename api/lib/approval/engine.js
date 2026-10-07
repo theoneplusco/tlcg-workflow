@@ -120,10 +120,23 @@ export function applyApproval(plan, email, { at, signature = '' } = {}) {
   return { plan: next, stepDone, finished };
 }
 
-/** Reject on the current step; only that step's approvers may reject. */
-export function applyRejection(plan, email, { at, reason = '' } = {}) {
+/**
+ * Reject the document. By default only the current step's approvers may
+ * reject; with anyApprover, anyone in the plan may (GAS voucher behaviour:
+ * any of the voucher's approvers can stop it while it is open).
+ */
+export function applyRejection(plan, email, { at, reason = '', anyApprover = false } = {}) {
   const next = structuredClone(plan);
-  const { who } = openStepFor(next, email);
+  let who;
+  if (anyApprover) {
+    if (next.status === 'approved' || next.status === 'rejected') throw engineError('CLOSED', 'Phiếu đã kết thúc quy trình duyệt.');
+    who = String(email || '').trim().toLowerCase();
+    if (!next.steps.some((s) => s.approvers.some((a) => a.email === who))) {
+      throw engineError('NOT_IN_PLAN', 'Bạn không có trong quy trình duyệt của phiếu này.');
+    }
+  } else {
+    ({ who } = openStepFor(next, email));
+  }
   next.status = 'rejected';
   next.rejectedBy = { email: who, at, reason };
   return next;

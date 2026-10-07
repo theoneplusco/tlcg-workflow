@@ -112,3 +112,12 @@ test('a plan is a snapshot: later company changes do not alter it, inputs are no
   applyApproval(p, 'nhanh@x.vn', { at: AT });
   assert.equal(JSON.stringify(p), before);
 });
+
+test('anyApprover: anyone in the plan may reject while open; outsiders and closed plans may not', () => {
+  const p = plan(DEFAULT_STEPS.voucher);
+  const r = applyRejection(p, 'linh@x.vn', { at: AT, reason: 'x', anyApprover: true });
+  assert.equal(r.status, 'rejected');
+  assert.equal(r.rejectedBy.email, 'linh@x.vn');
+  assert.throws(() => applyRejection(p, 'stranger@x.vn', { at: AT, anyApprover: true }), { code: 'NOT_IN_PLAN' });
+  assert.throws(() => applyRejection(r, 'nhanh@x.vn', { at: AT, anyApprover: true }), { code: 'CLOSED' });
+});
