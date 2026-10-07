@@ -21,6 +21,25 @@ export async function queueEmail(toEmail, subject, bodyHtml = '', bodyText = '')
 }
 
 /**
+ * Queue one email with several recipients / CC / reply-to.
+ * to and cc: comma-separated or arrays. Never throws (email must not break a workflow).
+ */
+export async function queueMail({ to, cc = '', replyTo = '', subject, html = '', text = '' }, db = pool) {
+  const list = (v) => (Array.isArray(v) ? v : String(v || '').split(',')).map((s) => s.trim()).filter(Boolean).join(',');
+  const toList = list(to);
+  if (!toList || !subject) return;
+  try {
+    await db.query(
+      `INSERT INTO email_queue (to_email, cc, reply_to, subject, body_html, body_text, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
+      [toList, list(cc), String(replyTo || '').trim(), subject, html, text]
+    );
+  } catch (err) {
+    console.error('[EmailQueue] Failed to queue email (non-fatal):', err.message);
+  }
+}
+
+/**
  * Queue multiple emails at once.
  */
 export async function queueEmails(emails) {
@@ -98,7 +117,9 @@ async function sendViaResend(email) {
     },
     body: JSON.stringify({
       from: process.env.EMAIL_FROM || 'TLC Group Workflow <noreply@tl-c.us>',
-      to: [email.to_email],
+      to: String(email.to_email).split(',').map((s) => s.trim()).filter(Boolean),
+      ...(email.cc ? { cc: String(email.cc).split(',').map((s) => s.trim()).filter(Boolean) } : {}),
+      ...(email.reply_to ? { reply_to: email.reply_to } : {}),
       subject: email.subject,
       html: email.body_html,
       text: email.body_text || '',

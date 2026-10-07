@@ -25,4 +25,8 @@ ALTER TABLE voucher_history ADD COLUMN IF NOT EXISTS signature_url    TEXT DEFAU
 ALTER TABLE voucher_history ADD COLUMN IF NOT EXISTS rejection_reason TEXT DEFAULT '';
 ALTER TABLE voucher_history ADD COLUMN IF NOT EXISTS sheet_row        INT;
 CREATE INDEX IF NOT EXISTS voucher_history_number_time_idx ON voucher_history (voucher_number, submitted_at);
+
+-- Email queue: several recipients, CC and reply-to (voucher emails need them)
+ALTER TABLE email_queue ADD COLUMN IF NOT EXISTS cc       TEXT DEFAULT '';
+ALTER TABLE email_queue ADD COLUMN IF NOT EXISTS reply_to TEXT DEFAULT '';
 COMMIT;
