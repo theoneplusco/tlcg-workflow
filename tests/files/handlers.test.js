@@ -230,3 +230,37 @@ test('voucher-file: no response twice when the request already answered during t
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(calls, 0);
 });
+
+// ── Round 3 ──
+test('presigned PUT signs Content-Type too (pdf and xlsx), so the browser cannot swap in text/html', async () => {
+  const s3 = await presignS3();
+  for (const [mimeType, want] of [['application/pdf', 'content-type;host'],
+    ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition;content-type;host']]) {
+    const res = mkRes();
+    await handleCreateVoucherUploadSession({ body: { fileName: 'a', fileSize: 10, mimeType }, headers: {} }, res, s3);
+    const q = new URL(res.body.data.uploadUrl).searchParams;
+    assert.equal(q.get('X-Amz-SignedHeaders'), want, mimeType);
+    assert.ok(![...q.keys()].some((k) => /^x-amz-(checksum|sdk-checksum-algorithm)/i.test(k)));
+  }
+});
+test('finalize: an object stored with a refused type is deleted and rejected', async () => {
+  const sent = [];
+  const s3 = { send: async (c) => { sent.push(c.constructor.name); return { ContentLength: 5, ContentType: 'text/html; charset=utf-8' }; } };
+  const res = mkRes();
+  await handleFinalizeVoucherUpload({ body: { key: KEY }, headers: {} }, res, s3);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.message, 'Loại file không được hỗ trợ');
+  assert.deepEqual(sent, ['HeadObjectCommand', 'DeleteObjectCommand']);
+  const okRes = mkRes();
+  await handleFinalizeVoucherUpload({ body: { key: KEY }, headers: {} }, okRes, { send: async () => ({ ContentLength: 5, ContentType: 'application/pdf' }) });
+  assert.equal(okRes.body.success, true);
+});
+test('voucher-file: login is checked before the R2 configuration', async () => {
+  await withLogin(async () => {
+    const res = mkRes();
+    const done = finished(res);
+    handleVoucherFileUpload(multipart('a.pdf', 'application/pdf', 'x'), res, () => {}, { s3: null });
+    await done;
+    assert.equal(res.code, 401);
+  });
+});

@@ -167,6 +167,9 @@ if (schemaProblem) {
   console.error(`[server] FATAL: ${schemaProblem}`);
   process.exit(1);
 }
+if (postgresWorkflows.includes('vouchers') && !process.env.VOUCHER_SPREADSHEET_ID) {
+  console.warn('[server] Sheet copy disabled: VOUCHER_SPREADSHEET_ID not set');
+}
 // No dev default in production: logins are refused until JWT_SECRET is set (GAS proxy keeps working).
 if (!jwtSecret()) console.error('[server] JWT_SECRET is not set (NODE_ENV=production): login and token checks are refused');
 
