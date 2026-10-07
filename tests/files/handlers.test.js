@@ -103,10 +103,8 @@ const withLogin = async (fn) => {
 };
 const s3ok = { send: async () => ({ ContentLength: 5 }) };
 const fakeSigner = { config: { credentials: async () => ({ accessKeyId: 'a', secretAccessKey: 'b' }), region: async () => 'auto' } };
-const presignS3 = () => {
-  // a real client with fake credentials: presigning works offline
-  return import('@aws-sdk/client-s3').then(({ S3Client }) => new S3Client({ region: 'auto', endpoint: 'https://acct.r2.cloudflarestorage.com', credentials: { accessKeyId: 'a', secretAccessKey: 'b' } }));
-};
+// the app's own client config with dummy credentials: presigning works offline
+const presignS3 = async () => (await import('../../api/lib/files/r2.js')).createS3Client({ accountId: 'acct', accessKeyId: 'a', secretAccessKey: 'b' });
 
 test('auth: no token → 401 on create/finalize/signature when login is required', async () => {
   await withLogin(async () => {
@@ -152,10 +150,29 @@ test('createSession: html/svg refused; non-pdf types are signed as downloads', a
   const xls = mkRes();
   await handleCreateVoucherUploadSession({ body: { fileName: 'a.xlsx', fileSize: 10, mimeType: 'application/vnd.ms-excel' }, headers: {} }, xls, s3);
   assert.match(new URL(xls.body.data.uploadUrl).searchParams.get('X-Amz-SignedHeaders'), /content-disposition/);
-  assert.deepEqual(xls.body.data.uploadHeaders, { 'Content-Type': 'application/vnd.ms-excel', 'Content-Disposition': 'attachment' });
+  assert.deepEqual(xls.body.data.headers, { 'Content-Type': 'application/vnd.ms-excel', 'Content-Disposition': 'attachment' });
   const pdf = mkRes();
   await handleCreateVoucherUploadSession({ body: { fileName: 'a.pdf', fileSize: 10, mimeType: 'application/pdf' }, headers: {} }, pdf, s3);
   assert.doesNotMatch(new URL(pdf.body.data.uploadUrl).searchParams.get('X-Amz-SignedHeaders'), /content-disposition/);
+  assert.deepEqual(pdf.body.data.headers, { 'Content-Type': 'application/pdf' });
+});
+test('createSession: headers are the normalised signed values (type with params, empty type)', async () => {
+  const s3 = await presignS3();
+  const res = mkRes();
+  await handleCreateVoucherUploadSession({ body: { fileName: 'a.txt', fileSize: 10, mimeType: 'Text/Plain; charset=UTF-8' }, headers: {} }, res, s3);
+  assert.deepEqual(res.body.data.headers, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment' });
+  const none = mkRes();
+  await handleCreateVoucherUploadSession({ body: { fileName: 'a.bin', fileSize: 10 }, headers: {} }, none, s3);
+  assert.deepEqual(none.body.data.headers, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment' });
+});
+test('presigned PUT URL carries no checksum parameters (R2 would check them against the real body)', async () => {
+  const s3 = await presignS3();
+  for (const mimeType of ['application/pdf', 'text/csv']) {
+    const res = mkRes();
+    await handleCreateVoucherUploadSession({ body: { fileName: 'a', fileSize: 10, mimeType }, headers: {} }, res, s3);
+    const q = new URL(res.body.data.uploadUrl).searchParams;
+    assert.deepEqual([...q.keys()].filter((k) => /^x-amz-(checksum|sdk-checksum-algorithm)/i.test(k)), [], res.body.data.uploadUrl);
+  }
 });
 
 // multipart helper: a fake request stream carrying one file

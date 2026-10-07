@@ -4730,9 +4730,10 @@
                     voucherNumber: voucherNumber || ''
                 });
                 if (!session.uploadUrl) throw new Error('Không tạo được phiên tải lên Drive');
+                // R2 (Mini) returns the exact headers it signed (e.g. Content-Disposition); Drive does not
                 const put = await fetch(session.uploadUrl, {
                     method: 'PUT',
-                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                    headers: (session.key && session.headers) ? session.headers : { 'Content-Type': file.type || 'application/octet-stream' },
                     body: file,
                     signal: httpTimeoutSignal(VOUCHER_SUBMIT_FETCH_TIMEOUT_MS)
                 });

@@ -2,7 +2,7 @@
 import { PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import busboy from 'busboy';
-import { getS3, R2_BUCKET, R2_PUBLIC_URL, attachmentKey, validateUpload, contentDisposition, MAX_ATTACHMENT_BYTES } from '../lib/files/r2.js';
+import { getS3, R2_BUCKET, R2_PUBLIC_URL, attachmentKey, validateUpload, contentDisposition, baseType, MAX_ATTACHMENT_BYTES } from '../lib/files/r2.js';
 import { driveDownloadUrl, isAllowedImageUrl, MAX_IMAGE_BYTES } from '../lib/files/signature-fetch.js';
 import { callerFromRequest, requireLogin } from '../lib/auth-caller.js';
 
@@ -29,16 +29,15 @@ export async function handleCreateVoucherUploadSession(req, res, s3 = getS3(), w
   if (bad) return fail(res, bad);
   if (!s3) return fail(res, 'Không tạo được phiên tải lên (R2 chưa cấu hình)');
   const key = attachmentKey(b.voucherNumber, b.fileName);
-  const contentType = b.mimeType || 'application/octet-stream';
+  const contentType = baseType(b.mimeType); // normalised once: signed and sent exactly as returned
   const disposition = contentDisposition(contentType);
   try {
-    // Content-Disposition is a signed header: the PUT must send it (uploadHeaders), else R2 refuses
-    // the PUT and the page falls back to /api/voucher-file, which sets it server side.
+    // Content-Disposition is a signed header: the browser must PUT with exactly `headers`.
     const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
       Bucket: R2_BUCKET, Key: key, ContentType: contentType, ContentDisposition: disposition,
     }), { expiresIn: 3600 });
-    const uploadHeaders = { 'Content-Type': contentType, ...(disposition ? { 'Content-Disposition': disposition } : {}) };
-    return ok(res, 'ok', { uploadUrl, uploadHeaders, key, fileUrl: `${R2_PUBLIC_URL}/${key}` });
+    const headers = { 'Content-Type': contentType, ...(disposition ? { 'Content-Disposition': disposition } : {}) };
+    return ok(res, 'ok', { uploadUrl, headers, key, fileUrl: `${R2_PUBLIC_URL}/${key}` });
   } catch (e) {
     return fail(res, 'Không tạo được phiên tải lên: ' + e.message);
   }
