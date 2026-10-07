@@ -88,3 +88,19 @@ test('consecutive appends for one tab are sent as a single batch', async () => {
   assert.equal(fake.calls.append.length, 1);
   assert.equal(fake.calls.append[0].length, 3);
 });
+
+test('deadline: stops starting groups and releases the rest untouched', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const tabs = { C: [['voucher_number', 'status']] };
+  const fake = fakeSheets(tabs);
+  let late = false;
+  const origAppend = fake.append;
+  fake.append = async (...a) => { await origAppend(...a); late = true; };
+  for (const n of ['1', '2', '3']) await enqueue(db, { spreadsheetId: 's', tab: 'C', mode: 'upsert', keyColumn: 'voucher_number', record: { voucher_number: n, status: 'x' } });
+  const r = await runSheetMirrorOnce(fake, db, { now: () => (late ? 1e9 : 0), deadlineMs: 1000 });
+  assert.deepEqual(r, { done: 1, failed: 0 });
+  assert.equal(tabs.C.length, 2);
+  const { rows } = await db.query('SELECT attempts, done_at IS NULL AS pending, next_try_at <= NOW() AS due FROM sheet_outbox WHERE done_at IS NULL');
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((x) => x.attempts === 0 && x.pending && x.due));
+});

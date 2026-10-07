@@ -8,7 +8,7 @@ import { runSheetMirrorOnce } from '../lib/sheets/mirror-run.js';
 
 const q = (tab) => `'${String(tab).replace(/'/g, "''")}'`;
 
-const T = { timeout: 30000 };
+const T = { timeout: 30000, retry: false }; // bounded per call: the run must stay inside its lease
 const colLetter = (n) => { let s = ''; for (let x = n + 1; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s; return s; };
 
 /** Real Sheets API with the mirror service account (SHEETS_MIRROR_KEY_FILE). */

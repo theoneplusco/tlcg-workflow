@@ -31,7 +31,9 @@ async function claim(db, limit) {
   } finally { c.release(); }
 }
 
-export async function runSheetMirrorOnce(sheets, db, limit = 50) {
+// deadlineMs keeps a run inside its 5-minute claim lease: no new group starts after it, the rest is released.
+export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 240000, now = Date.now } = {}) {
+  const t0 = now();
   const items = await claim(db, limit);
   const byTab = new Map();
   for (const it of items) {
@@ -54,6 +56,7 @@ export async function runSheetMirrorOnce(sheets, db, limit = 50) {
     let header = null;
     let i = 0;
     for (; i < list.length; i++) {
+      if (now() - t0 >= deadlineMs) break;
       const it = list[i];
       let group = [it];
       try {

@@ -4,7 +4,8 @@ export const norm = (h) => String(h || '').trim().toLowerCase();
 // Written with USER_ENTERED (so dates stay dates); stop strings becoming formulas.
 function cell(v) {
   if (v == null) return '';
-  if (typeof v === 'string') return /^[=+\-@]/.test(v) ? `'${v}` : v;
+  // formulas, leading zeros and >15-digit ids would be mangled by USER_ENTERED
+  if (typeof v === 'string') return /^[=+\-@]|^0\d|^\d{16,}$/.test(v) ? `'${v}` : v;
   if (typeof v === 'object') return cell(JSON.stringify(v));
   return v;
 }
