@@ -3,7 +3,7 @@
  * scripts/import-vouchers.js — Import vouchers from the Google Sheet into Postgres.
  *
  *   node scripts/import-vouchers.js --dir ./sheets          # Voucher_Current.csv + Voucher_History.csv
- *   node scripts/import-vouchers.js --live                  # read the sheet with GOOGLE_SHEETS_MIRROR_KEY
+ *   node scripts/import-vouchers.js --live                  # read the sheet with SHEETS_MIRROR_KEY_FILE (old name GOOGLE_SHEETS_MIRROR_KEY also works)
  *   node scripts/import-vouchers.js --dir ./sheets --dry-run
  *
  * - voucher_history: every sheet row, exactly as written (sheet_row kept).
@@ -58,7 +58,7 @@ async function readTab(name) {
     grid = parseCsv(fs.readFileSync(path.join(DIR, `${name}.csv`), 'utf-8').replace(/^﻿/, ''));
   } else {
     const { google } = await import('googleapis');
-    const auth = new google.auth.GoogleAuth({ keyFile: process.env.GOOGLE_SHEETS_MIRROR_KEY || 'secrets/sheets-mirror.json',
+    const auth = new google.auth.GoogleAuth({ keyFile: process.env.SHEETS_MIRROR_KEY_FILE || process.env.GOOGLE_SHEETS_MIRROR_KEY || 'secrets/sheets-mirror.json',
       scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
     const r = await google.sheets({ version: 'v4', auth }).spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: name });
     grid = (r.data.values || []).map((row) => row.map((v) => (v == null ? '' : String(v))));
