@@ -28,6 +28,7 @@ import { handlePresign } from './api/handlers/presign.js';
 import { handleHealth } from './api/handlers/health.js';
 import { startEmailWorker } from './api/handlers/email-queue.js';
 import { startVoucherReminderJob } from './api/jobs/voucher-reminders.js';
+import { startSheetMirrorJob } from './api/jobs/sheet-mirror.js';
 import { rateLimit } from './api/middleware/rate-limiter.js';
 import { unwrapPayload } from './api/middleware/unwrap-payload.js';
 
@@ -165,6 +166,8 @@ const server = app.listen(PORT, HOST, () => {
   startEmailWorker();
   // Reminders for vouchers on Postgres only — while vouchers run on GAS, its trigger sends them
   if (postgresWorkflows.includes('vouchers')) startVoucherReminderJob();
+  // One-way Postgres → Google Sheet copy (self-gates on SHEETS_MIRROR=on)
+  startSheetMirrorJob();
 
   // Warn about missing env vars
   const required = ['DATABASE_URL', 'REDIS_URL'];

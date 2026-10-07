@@ -39,6 +39,14 @@ export async function handleHealth(req, res) {
     checks.emailQueueDepth = 'unknown';
   }
 
+  // Sheet mirror outbox depth (null if the table is missing)
+  try {
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM sheet_outbox WHERE done_at IS NULL');
+    checks.sheetOutboxDepth = rows[0].n;
+  } catch {
+    checks.sheetOutboxDepth = null;
+  }
+
   const allOk = checks.db === 'ok' && checks.redis === 'ok';
   const httpStatus = allOk ? 200 : 503;
 
