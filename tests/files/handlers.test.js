@@ -43,3 +43,48 @@ test('fetchSignatureImage: disallowed URL (127.0.0.1) is rejected', async () => 
   assert.equal(res.body.success, false);
   assert.equal(res.body.message, 'URL hình ảnh không được phép');
 });
+test('fetchSignatureImage: redirect to disallowed host is rejected', async () => {
+  const saved = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url.includes('drive.google.com')) {
+        return {
+          status: 302,
+          ok: false,
+          headers: new Map([['location', 'https://127.0.0.1/x']]),
+        };
+      }
+      throw new Error('unexpected fetch: ' + url);
+    };
+    const res = mkRes();
+    await handleFetchSignatureImage({ body: { imageUrl: 'https://drive.google.com/file/d/abc/view' } }, res);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.message, 'URL hình ảnh không được phép');
+  } finally {
+    globalThis.fetch = saved;
+  }
+});
+test('fetchSignatureImage: successful fetch with stub returns imageBase64', async () => {
+  const saved = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => {
+      const body = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG header
+      return {
+        status: 200,
+        ok: true,
+        headers: new Map([
+          ['content-type', 'image/png'],
+          ['content-length', String(body.length)],
+        ]),
+        arrayBuffer: async () => body.buffer,
+      };
+    };
+    const res = mkRes();
+    await handleFetchSignatureImage({ body: { imageUrl: 'https://drive.google.com/file/d/abc/view' } }, res);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.message, 'Success');
+    assert.ok(res.body.data.imageBase64.startsWith('data:image/png;base64,'));
+  } finally {
+    globalThis.fetch = saved;
+  }
+});

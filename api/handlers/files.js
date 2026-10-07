@@ -79,8 +79,19 @@ export async function handleFetchSignatureImage(req, res) {
   if (!url) return fail(res, 'Thiếu URL hình ảnh');
   if (!isAllowedImageUrl(url)) return fail(res, 'URL hình ảnh không được phép');
   try {
-    const r = await fetch(driveDownloadUrl(url), { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    let target = driveDownloadUrl(url);
+    let r;
+    for (let hop = 0; ; hop += 1) {
+      r = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
+      if (r.status < 300 || r.status >= 400) break;
+      const next = r.headers.get('location');
+      if (!next || hop >= 4) return fail(res, 'Không tải được hình ảnh (chuyển hướng quá nhiều)');
+      target = new URL(next, target).toString();
+      if (!isAllowedImageUrl(target)) return fail(res, 'URL hình ảnh không được phép');
+    }
     if (!r.ok) return fail(res, `Không tải được hình ảnh (HTTP ${r.status})`);
+    const contentLength = Number(r.headers.get('content-length'));
+    if (contentLength > MAX_IMAGE_BYTES) return fail(res, 'Hình ảnh quá lớn');
     const buf = Buffer.from(await r.arrayBuffer());
     if (buf.length > MAX_IMAGE_BYTES) return fail(res, 'Hình ảnh quá lớn');
     const mime = (r.headers.get('content-type') || 'image/png').split(';')[0];
