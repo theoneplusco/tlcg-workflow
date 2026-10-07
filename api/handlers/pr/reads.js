@@ -143,7 +143,10 @@ export async function handleValidatePRForDirectPayment(req, res, d) {
   if (!canView(caller, row)) return fail(res, NO_ACCESS_MSG, 403);
   const problem = directPaymentProblem(row);
   if (problem) return fail(res, problem);
-  const open = (await paymentsForPR(db, prNo)).filter((p) => !['Rejected', 'Từ chối'].includes(p.status));
+  let open;
+  try {
+    open = (await paymentsForPR(db, prNo)).filter((p) => !['Rejected', 'Từ chối'].includes(p.status));
+  } catch (e) { return systemError(res, 'validatePRForDirectPayment', e); }
   if (open.length) return fail(res, 'Đã tồn tại đề nghị thanh toán cho PR này.');
   return ok(res, 'OK', { prNo: row.pr_no, vendorName: row.vendor_name || '', department: row.department || '',
     grandTotal: Number(row.grand_total) || 0, requesterName: row.requester_name || '', purchaseType: row.purchase_type || 'goods',

@@ -122,13 +122,24 @@ test('validatePRForDirectPayment: GAS messages; vendorName from the PR (B9); ope
   assert.equal((await call(r.handleValidatePRForDirectPayment, { prNo: 'X-1' }, as('x@x.vn', { isAdmin: true }))).message, 'Không tìm thấy PR: X-1');
   assert.equal((await v({ prNo: mine })).message, 'PR chưa được phê duyệt hoàn tất.');
   await pool.query(`UPDATE purchase_requests SET status = 'Hoàn thành', vendor_name = 'NCC A' WHERE pr_no = $1`, [mine]);
-  const okr = await v({ prNo: mine });
+  const none = { paymentsForPR: async () => [] };
+  const okr = await v({ prNo: mine }, none);
   assert.deepEqual([okr.success, okr.vendorName, okr.p2pBranch, okr.data.prNo], [true, 'NCC A', 'simplified', mine]);
   const stranger = await call(r.handleValidatePRForDirectPayment, { prNo: mine }, as('b@pr-test.vn'));
   assert.deepEqual([stranger.code, stranger.message], [403, 'Bạn không có quyền xem đề nghị này.'], 'completed PR, not visible');
   const busy = await v({ prNo: mine }, { paymentsForPR: async () => [{ status: 'Đang duyệt' }] });
   assert.equal(busy.message, 'Đã tồn tại đề nghị thanh toán cho PR này.');
   assert.equal((await v({ prNo: mine }, { paymentsForPR: async () => [{ status: 'Rejected' }] })).success, true);
+});
+
+test('validatePRForDirectPayment: the default payment lookup fails closed until Plan 6 (generic error, never OK)', { skip }, async () => {
+  await pool.query(`UPDATE purchase_requests SET status = 'Hoàn thành' WHERE pr_no = $1`, [mine]);
+  const { error } = console;
+  console.error = () => {};
+  try {
+    const out = await call(r.handleValidatePRForDirectPayment, { prNo: mine }, as('a@pr-test.vn'));
+    assert.deepEqual([out.success, out.message], [false, 'Lỗi hệ thống, vui lòng thử lại.']);
+  } finally { console.error = error; }
 });
 
 test('detail: the pending approver gets their own registered sample (mySampleSignatureUrl, "" = none); others get null', { skip }, async () => {

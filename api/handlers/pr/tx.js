@@ -10,7 +10,8 @@ import { ok, fail } from '../../lib/purchase-requests/respond.js';
 
 /**
  * Handlers take `d` (tests) over these defaults. paymentsForPR(db, prNo) → [{status}] is the payment
- * side of validatePRForDirectPayment; Plan 6 replaces it when payments move to Postgres.
+ * side of validatePRForDirectPayment; Plan 6 replaces it when payments move to Postgres. Until then
+ * the default throws, so the check fails closed (never approves a duplicate payment).
  */
 export function prDeps(d = {}) {
   const db = d.db ?? pool;
@@ -18,7 +19,7 @@ export function prDeps(d = {}) {
     db,
     s3: Object.hasOwn(d, 's3') ? d.s3 : getS3(), // lazy; an explicit null means "no R2" (tests)
     who: (req) => callerFromRequest(req, db), // the login check reads the same database as the handler
-    now: () => new Date(), gasProxy, paymentsForPR: async () => [],
+    now: () => new Date(), gasProxy, paymentsForPR: async () => { throw new Error('paymentsForPR not implemented (Plan 6)'); },
     ...d,
   };
 }
