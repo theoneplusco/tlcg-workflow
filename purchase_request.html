@@ -5285,16 +5285,43 @@
 
         // Restore company selection → triggers seedApproversFromCompany to populate the approver selects
         const companySel = document.getElementById('company_code');
-        if (companySel && pr.company) {
-            companySel.value = pr.company;
+        // Options read "NAME (KEY)" and several companies share a name, so match the saved
+        // option text (metadata.companyCode) first, then the company key, then the name.
+        if (companySel && (pr.company || meta.companyCode || meta.companyKey)) {
+            const opts = Array.from(companySel.options).filter(o => o.value);
+            const savedKey = String(meta.companyKey || pr.companyKey || '').trim();
+            const match = (meta.companyCode && opts.find(o => o.value === meta.companyCode))
+                || (savedKey && (opts.find(o => o.dataset.key === savedKey && o.dataset.name === pr.company)
+                              || opts.find(o => o.dataset.key === savedKey)))
+                || opts.find(o => o.value === pr.company)
+                || opts.find(o => o.dataset.name === pr.company);
+            companySel.value = match ? match.value : '';
             onCompanyChange();
         }
 
-        // Now set the previously-chosen approver values (options are now present)
-        _sv('budget_approver',     pr.budgetApprover     || '');
-        _sv('supplier_approver',   pr.supplierApprover   || '');
-        _sv('contract_approver',   pr.contractApprover   || '');
-        _sv('purchasing_approver', pr.purchasingApprover || '');
+        // Now set the previously-chosen approver values (options are now present).
+        // Emails are matched case-insensitively; a saved approver missing from the
+        // company list is added so the resubmit keeps the PR's own pick.
+        const _selApprover = (id, email) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const want = String(email || '').trim().toLowerCase();
+            if (!want) { el.value = ''; return; }
+            let opt = Array.from(el.options).find(o => String(o.value).trim().toLowerCase() === want);
+            if (!opt) {
+                if (!want.includes('@')) { el.value = ''; return; }
+                const emp = (_allEmployees || []).find(e => String(e.employee_email || e['Email'] || '').trim().toLowerCase() === want);
+                opt = document.createElement('option');
+                opt.value = String(email).trim();
+                opt.textContent = (emp && (emp.full_name || emp['Họ và tên'])) || opt.value;
+                el.appendChild(opt);
+            }
+            el.value = opt.value;
+        };
+        _selApprover('budget_approver',     pr.budgetApprover     || pr.budgetApproverEmail);
+        _selApprover('supplier_approver',   pr.supplierApprover   || pr.supplierApproverEmail);
+        _selApprover('contract_approver',   pr.contractApprover   || pr.contractApproverEmail);
+        _selApprover('purchasing_approver', pr.purchasingApprover || pr.purchasingApproverEmail);
 
         // Priority
         const priorityRaw = (pr.priority || 'binh_thuong').toLowerCase().replace(/ /g, '_');
