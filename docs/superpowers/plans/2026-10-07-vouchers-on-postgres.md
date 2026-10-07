@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Status 2026-10-07:** Tasks 1–5 built and tested (64 tests). Task 6 (shadow comparison against live GAS) in progress. Extra work found on the way: `api/middleware/unwrap-payload.js` (wrapped `data={json}` / multipart payloads now reach Postgres handlers); renamed companies matched by unique key; isAdmin from the page verified against Master Data.
+> **Status 2026-10-07:** Tasks 1–5 built and tested (64 tests). Task 6 done — compared with live GAS: 450/450 vouchers, identical admin stats, 19/19 sampled histories and approval statuses identical, timestamps equal (449/450; 1 differs by a minute). Intentional differences: GAS reports 447 finished vouchers as "0/3, waiting for accountant" (corrupt Voucher_Current progress column) — Postgres says 3/3; requestor emails stored lowercase. Sheet times are GMT (GAS displays Vietnam time). Extra work found on the way: `api/middleware/unwrap-payload.js` (wrapped `data={json}` / multipart payloads now reach Postgres handlers); renamed companies matched by unique key; isAdmin from the page verified against Master Data.
 
 **Goal:** Every voucher action the pages use runs on Postgres with the same request/response contract as GAS, approvals follow the approval-matrix engine, and the 450 existing vouchers + history are imported — all behind `PG_WORKFLOWS=vouchers`, so production stays on GAS until Plan 3 verifies and switches.
 

@@ -67,14 +67,19 @@ async function readTab(name) {
     .filter((r) => Object.keys(r).some((k) => k !== 'sheetRow' && r[k]));
 }
 
-/** "3/27/2026 16:13:27" / "3/27/2026" (sheet, Vietnam time) or ISO → ISO UTC; null if empty/unknown. */
+/**
+ * "3/27/2026 16:13:27" / "3/27/2026" or ISO → ISO UTC; null if empty/unknown.
+ * The spreadsheet's time zone is GMT (the GAS script displays in Vietnam time):
+ * sheet "8/28/2026 3:48:37" is shown by GAS as 10:48. Verified against live GAS.
+ */
+const SHEET_UTC_OFFSET_HOURS = 0;
 export function sheetTime(s) {
   const v = String(s || '').trim();
   if (!v) return null;
   const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (m) {
     const [, mo, d, y, h = '0', mi = '0', se = '0'] = m;
-    return new Date(Date.UTC(+y, +mo - 1, +d, +h - 7, +mi, +se)).toISOString(); // UTC+7
+    return new Date(Date.UTC(+y, +mo - 1, +d, +h - SHEET_UTC_OFFSET_HOURS, +mi, +se)).toISOString();
   }
   const t = new Date(v);
   return Number.isNaN(t.getTime()) ? null : t.toISOString();
