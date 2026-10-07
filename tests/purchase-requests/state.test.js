@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STATUS, computeBranch, approvalState, pendingEmails, approverEmails, applyApprove, applyReject,
-  sendBackInputError, applySendBack, approverPickError, directPaymentProblem,
+  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, SELF_APPROVAL_ERROR, MISSING_REQUESTER_ERROR,
 } from '../../api/lib/purchase-requests/state.js';
 
 const AT = '2026-10-07T03:00:00.000Z';
@@ -119,11 +119,11 @@ test('pendingEmails / approverEmails', () => {
 test('approverPickError: server check of the requester picks (S3)', () => {
   const cands = { companyEmails: new Set(['linh@x.vn', 'kt@x.vn']), purchasingEmails: new Set(['tlc.ap@x.vn']) };
   const ok = { budget: 'linh@x.vn', supplier: 'linh@x.vn', contract: 'kt@x.vn', purchasing: 'tlc.ap@x.vn' };
-  assert.equal(approverPickError(ok, cands, 'full'), null);
-  assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full'), /^Người phê duyệt ngân sách \(me@x\.vn\) không thuộc danh sách/);
-  assert.equal(approverPickError({ ...ok, contract: 'me@x.vn' }, cands, 'simplified'), null, 'contract not used on simplified');
-  assert.match(approverPickError({ ...ok, purchasing: 'linh@x.vn' }, cands, 'full'), /không thuộc phòng Kế Toán Chi/);
-  assert.equal(approverPickError({ ...ok, purchasing: '' }, cands, 'full'), null, 'purchasing optional');
+  assert.equal(approverPickError(ok, cands, 'full', 'req@x.vn'), null);
+  assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'req@x.vn'), /^Người phê duyệt ngân sách \(me@x\.vn\) không thuộc danh sách/);
+  assert.equal(approverPickError({ ...ok, contract: 'me@x.vn' }, cands, 'simplified', 'req@x.vn'), null, 'contract not used on simplified');
+  assert.match(approverPickError({ ...ok, purchasing: 'linh@x.vn' }, cands, 'full', 'req@x.vn'), /không thuộc phòng Kế Toán Chi/);
+  assert.equal(approverPickError({ ...ok, purchasing: '' }, cands, 'full', 'req@x.vn'), null, 'purchasing optional');
 });
 
 test('approverPickError: refuses self-approval (decision #3), checked before candidate lists', () => {
@@ -138,7 +138,37 @@ test('approverPickError: refuses self-approval (decision #3), checked before can
   // requester not picked → existing behaviour
   assert.equal(approverPickError(ok, cands, 'full', 'req@x.vn'), null);
   assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'req@x.vn'), /không thuộc danh sách/);
-  assert.equal(approverPickError(ok, cands, 'full'), null, 'requester omitted → no self check');
+  assert.equal(approverPickError(ok, cands, 'full'), 'Thiếu thông tin người đề nghị.', 'requester omitted → fail closed');
+  assert.equal(approverPickError(ok, cands, 'full', '  '), MISSING_REQUESTER_ERROR);
+  // contract is not used on simplified: picking oneself there is not self-approval
+  assert.equal(approverPickError({ ...ok, contract: 'kt@x.vn' }, cands, 'simplified', 'kt@x.vn'), null);
+  assert.equal(approverPickError({ ...ok, contract: 'kt@x.vn' }, cands, 'full', 'kt@x.vn'), MSG);
+});
+
+test('applyApprove refuses the requester (defence in depth)', () => {
+  const p = pr({ requester_email: 'Linh@x.vn' });
+  assert.equal(applyApprove(p, meta(), { email: 'linh@x.vn', role: 'budget', at: AT }).error, SELF_APPROVAL_ERROR);
+  assert.equal(applyApprove(pr({ requester_email: '' }), meta({ requesterEmail: 'LINH@x.vn' }), { email: 'linh@x.vn', role: 'budget', at: AT }).error, SELF_APPROVAL_ERROR);
+});
+
+test('approve: budget+purchasing person in the parallel stage fills only parallel slots', () => {
+  const p = pr({ purchasing_approver_email: 'linh@x.vn' });
+  const r = applyApprove(p, meta(), { email: 'linh@x.vn', role: 'budget', at: AT });
+  assert.deepEqual(r.roles, ['budget', 'supplier']);
+  assert.equal(r.meta.purchasingStatus, 'Pending');
+  assert.equal(r.status, STATUS.PURCHASING);
+  const only = pr({ supplier_approver_email: 'ncc@x.vn', purchasing_approver_email: 'linh@x.vn' });
+  assert.deepEqual(applyApprove(only, meta(), { email: 'linh@x.vn', role: 'budget', at: AT }).roles, ['budget']);
+});
+
+test('pendingEmails: distinct budget/supplier after one approved lists only the other', () => {
+  const two = pr({ supplier_approver_email: 'ncc@x.vn' });
+  assert.deepEqual(pendingEmails(two, meta({ budgetStatus: 'Approved' }), STATUS.PARALLEL), ['ncc@x.vn']);
+});
+
+test('applySendBack tolerates a missing note on step 2 (history keeps empty string)', () => {
+  const r = applySendBack(pr(), meta(), { email: 'linh@x.vn', role: 'budget', targetStep: 1, at: AT });
+  assert.equal(r.meta.sentBackHistory[0].note, '');
 });
 
 test('directPaymentProblem: GAS validatePRForDirectPayment rules', () => {

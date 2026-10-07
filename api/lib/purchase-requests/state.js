@@ -21,6 +21,8 @@ const ROLE_STAGE = { budget: 'parallel', supplier: 'parallel', contract: 'contra
 const STAGE_LABEL = { parallel: 'duyệt ngân sách & NCC', contract: 'thẩm định hợp đồng', purchasing: 'mua hàng', complete: 'complete' };
 const COL = { budget: 'budget_approver_email', supplier: 'supplier_approver_email', contract: 'contract_approver_email', purchasing: 'purchasing_approver_email' };
 
+export const SELF_APPROVAL_ERROR = 'Bạn không thể tự phê duyệt đề nghị của chính mình.';
+export const MISSING_REQUESTER_ERROR = 'Thiếu thông tin người đề nghị.';
 const lower = (s) => String(s || '').trim().toLowerCase();
 export const isRole = (r) => ROLES.includes(lower(r));
 export const isRejected = (s) => s === STATUS.REJECTED || s === 'Rejected';
@@ -74,6 +76,7 @@ export function applyApprove(pr, meta = {}, { email, role, note = '', signature 
   const r = lower(role);
   const me = lower(email);
   if (!isRole(r)) return { error: BAD_ROLE };
+  if (me && me === lower(pr.requester_email || meta.requesterEmail)) return { error: SELF_APPROVAL_ERROR };
   if (isRejected(pr.status)) return { error: 'Đề nghị này đã bị từ chối, không thể duyệt.' };
   if (isComplete(pr.status)) return { error: 'Đề nghị này đã được duyệt rồi.' };
   if (isReturned(pr.status)) return { error: 'Phiếu đang chờ người đề nghị bổ sung thông tin, không thể duyệt.' };
@@ -129,7 +132,7 @@ export function applySendBack(pr, meta = {}, { email, role, targetStep, note, at
   if (emailOf(pr, r) !== lower(email)) return { error: `Bạn không được phân công vai trò "${r}" cho đề nghị này.` };
   if (step > MAX_SEND_BACK[r]) return { error: 'Bước trả lại không hợp lệ với vai trò của bạn.' };
   const history = Array.isArray(meta.sentBackHistory) ? meta.sentBackHistory : [];
-  const next = { ...meta, sentBackHistory: [...history, { targetStep: step, by: lower(email), byRole: r, at, note: String(note).trim() }] };
+  const next = { ...meta, sentBackHistory: [...history, { targetStep: step, by: lower(email), byRole: r, at, note: String(note || '').trim() }] };
   if (step === 1) return { meta: next, status: STATUS.RETURNED };
   for (const x of ROLES) {
     if (next[`${x}Status`] && next[`${x}Status`] !== 'N/A') {
@@ -142,14 +145,14 @@ export function applySendBack(pr, meta = {}, { email, role, targetStep, note, at
 }
 
 const PICK_LABEL = { budget: 'Người phê duyệt ngân sách', supplier: 'Người phê duyệt NCC', contract: 'Người thẩm định hợp đồng' };
-export const SELF_APPROVAL_ERROR = 'Bạn không thể tự phê duyệt đề nghị của chính mình.';
 /**
  * The requester's picks must come from the lists the page offers (GAS trusted any email, S3).
- * requesterEmail (4th arg) enables the self-approval refusal, checked before the candidate lists.
+ * requesterEmail (4th arg) is required (fail closed); self-approval is refused before the candidate lists.
  */
 export function approverPickError(picks, { companyEmails, purchasingEmails }, branch, requesterEmail = '') {
   const me = lower(requesterEmail);
-  if (me && ROLES.some((r) => lower(picks[r]) === me)) return SELF_APPROVAL_ERROR;
+  if (!me) return MISSING_REQUESTER_ERROR;
+  if (ROLES.some((r) => (r !== 'contract' || branch === 'full') && lower(picks[r]) === me)) return SELF_APPROVAL_ERROR;
   for (const r of ['budget', 'supplier', 'contract']) {
     const e = lower(picks[r]);
     if (r === 'contract' && (branch !== 'full' || !e)) continue;
