@@ -4736,14 +4736,18 @@
                     body: file,
                     signal: httpTimeoutSignal(VOUCHER_SUBMIT_FETCH_TIMEOUT_MS)
                 });
-                const putText = await put.text();
-                let created = {};
-                try { created = JSON.parse(putText); } catch (e) { created = {}; }
-                if (!put.ok || !created.id) throw new Error('Drive từ chối file');
-                uploaded = await voucherApi({
-                    action: 'finalizeVoucherUpload',
-                    fileId: created.id
-                });
+                if (session.key) {
+                    // R2 (Mini): empty 200 body; the server checks the object exists
+                    if (!put.ok) throw new Error('R2 từ chối file');
+                    uploaded = await voucherApi({ action: 'finalizeVoucherUpload', key: session.key, fileName: file.name });
+                } else {
+                    // Drive (GAS): JSON body with the file id
+                    const putText = await put.text();
+                    let created = {};
+                    try { created = JSON.parse(putText); } catch (e) { created = {}; }
+                    if (!put.ok || !created.id) throw new Error('Drive từ chối file');
+                    uploaded = await voucherApi({ action: 'finalizeVoucherUpload', fileId: created.id });
+                }
             } catch (directError) {
                 console.warn('Direct Drive upload failed, using the server:', directError);
                 uploaded = await uploadViaServer(file, voucherNumber);

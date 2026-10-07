@@ -9,6 +9,7 @@ import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApp
 import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
 import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
+import { handleCreateVoucherUploadSession, handleFinalizeVoucherUpload } from './handlers/files.js';
 
 // ── New handlers (Postgres) ──────────────────────────────────
 const NEW_HANDLERS = {
@@ -65,6 +66,9 @@ const NEW_HANDLERS = {
   adminApprovalFlowGet:        handleAdminApprovalFlowGet,
   adminApprovalFlowSave:       handleAdminApprovalFlowSave,
   adminApprovalFlowPreview:    handleAdminApprovalFlowPreview,
+  // Voucher attachments on R2 (workflow key: files)
+  createVoucherUploadSession:  handleCreateVoucherUploadSession,
+  finalizeVoucherUpload:       handleFinalizeVoucherUpload,
 };
 
 // ── Which workflows run on Postgres ──────────────────────────
@@ -76,6 +80,7 @@ const WORKFLOW_ACTIONS = {
   cash: ['getCashBook', 'getCashCount', 'getCashBookSummary', 'getRecentCashCounts', 'saveCashCount', 'signCashCount'],
   vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'bulkApprove',
     'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext'],
+  files: ['createVoucherUploadSession', 'finalizeVoucherUpload'],
   p2p: ['purchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'getPurchaseRequestHistory', 'getPurchaseRequest'],
 };
 const PG_WORKFLOWS = new Set(String(process.env.PG_WORKFLOWS || '').split(',').map((s) => s.trim()).filter(Boolean));

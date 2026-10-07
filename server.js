@@ -22,6 +22,7 @@ import configHandler from './api/config.js';
 
 // New handlers (Postgres)
 import { routeNewAction, migratedActions, postgresWorkflows } from './api/router.js';
+import { handleVoucherFileUpload } from './api/handlers/files.js';
 import { handleSSE } from './api/handlers/sse.js';
 import { handlePresign } from './api/handlers/presign.js';
 import { handleHealth } from './api/handlers/health.js';
@@ -44,7 +45,7 @@ app.disable('x-powered-by');
    1. Multipart upload — MUST be before body parser.
    ───────────────────────────────────────────────────────────── */
 app.post('/api/drive-upload', driveUploadHandler);
-app.post('/api/voucher-file', voucherFileHandler);
+app.post('/api/voucher-file', postgresWorkflows.includes('files') ? handleVoucherFileUpload : voucherFileHandler);
 
 /* ─────────────────────────────────────────────────────────────
    2. Body parsing.

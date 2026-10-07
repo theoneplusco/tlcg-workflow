@@ -1,29 +1,8 @@
 // api/handlers/presign.js — R2 presigned URL for direct file upload
 // The browser uploads directly to R2 — the Mac Mini never touches the file bytes.
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
-const R2_BUCKET = process.env.R2_BUCKET_NAME || 'tlcg-attachments';
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://attachments.tl-c.us';
-
-let s3Client = null;
-
-function getS3() {
-  if (s3Client) return s3Client;
-  if (!R2_ACCOUNT_ID || !process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY) {
-    return null; // R2 not configured — caller handles null
-  }
-  s3Client = new S3Client({
-    region: 'auto',
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-    },
-  });
-  return s3Client;
-}
+import { getS3, R2_BUCKET, R2_PUBLIC_URL } from '../lib/files/r2.js';
 
 export async function handlePresign(req, res) {
   if (req.method !== 'POST') {
