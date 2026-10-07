@@ -1,0 +1,148 @@
+// tests/purchase-requests/state.test.js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  STATUS, computeBranch, approvalState, pendingEmails, approverEmails, applyApprove, applyReject,
+  sendBackInputError, applySendBack, approverPickError, directPaymentProblem,
+} from '../../api/lib/purchase-requests/state.js';
+
+const AT = '2026-10-07T03:00:00.000Z';
+const pr = (over = {}) => ({
+  pr_no: 'EV-PR20261007000001', status: STATUS.PARALLEL, requester_email: 'req@x.vn',
+  budget_approver_email: 'linh@x.vn', supplier_approver_email: 'Linh@x.vn', contract_approver_email: '',
+  purchasing_approver_email: 'Tlc.ap@x.vn', p2p_branch: 'simplified', ...over,
+});
+const meta = (over = {}) => ({ budgetStatus: 'Pending', supplierStatus: 'Pending', contractStatus: 'N/A', purchasingStatus: 'Pending', p2pBranch: 'simplified', ...over });
+
+test('computeBranch: services or ≥ 2,000,000 → full', () => {
+  assert.equal(computeBranch('services', 10), 'full');
+  assert.equal(computeBranch('goods', 2000000), 'full');
+  assert.equal(computeBranch('goods', 1999999), 'simplified');
+  assert.equal(computeBranch('', 0), 'simplified');
+});
+
+test('approvalState: GAS chain (contract stage skipped on both branches)', () => {
+  assert.equal(approvalState(pr(), meta()).statusLabel, STATUS.PARALLEL);
+  assert.equal(approvalState(pr(), meta({ budgetStatus: 'Approved' })).stage, 'parallel');
+  assert.equal(approvalState(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' })).statusLabel, STATUS.PURCHASING);
+  assert.equal(approvalState(pr({ purchasing_approver_email: '' }), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' })).statusLabel, STATUS.DONE);
+  const full = pr({ p2p_branch: 'full', contract_approver_email: 'kt@x.vn' });
+  assert.equal(approvalState(full, meta({ p2pBranch: 'full', budgetStatus: 'Approved', supplierStatus: 'Approved' })).stage, 'purchasing');
+});
+
+test('approve: same person on budget + supplier → one approval covers both (decision 2026-10-07)', () => {
+  const r = applyApprove(pr(), meta(), { email: 'LINH@x.vn', role: 'budget', note: '', signature: 'data:sig', verification: '{"verified":true,"similarity":99.6}', at: AT });
+  assert.deepEqual(r.roles, ['budget', 'supplier']);
+  assert.equal(r.status, STATUS.PURCHASING);
+  assert.equal(r.before.stage, 'parallel');
+  assert.equal(r.after.stage, 'purchasing');
+  assert.equal(r.meta.supplierApprovedAt, AT);
+  assert.equal(r.meta.supplierSignature, 'data:sig');
+  assert.deepEqual(r.meta.budgetSignatureVerification, { verified: true, similarity: 99.6 });
+});
+
+test('approve: distinct people approve separately; legacy half-approved PR finishes with the open slot', () => {
+  const two = pr({ supplier_approver_email: 'ncc@x.vn' });
+  const r = applyApprove(two, meta(), { email: 'linh@x.vn', role: 'budget', at: AT });
+  assert.deepEqual(r.roles, ['budget']);
+  assert.equal(r.status, STATUS.PARALLEL);
+  const half = applyApprove(pr(), meta({ budgetStatus: 'Approved' }), { email: 'linh@x.vn', role: 'supplier', at: AT });
+  assert.deepEqual(half.roles, ['supplier']);
+  assert.equal(half.status, STATUS.PURCHASING);
+  assert.deepEqual(applyApprove(pr(), meta(), { email: 'linh@x.vn', role: 'budget', verification: 'not json', at: AT }).meta.budgetSignatureVerification, { raw: 'not json' });
+});
+
+test('approve: GAS checks in GAS order with GAS wording', () => {
+  const a = (p, m, email, role) => applyApprove(p, m, { email, role, at: AT }).error;
+  assert.equal(a(pr({ status: STATUS.REJECTED }), meta(), 'linh@x.vn', 'budget'), 'Đề nghị này đã bị từ chối, không thể duyệt.');
+  assert.equal(a(pr({ status: 'Approved' }), meta(), 'linh@x.vn', 'budget'), 'Đề nghị này đã được duyệt rồi.');
+  assert.equal(a(pr({ status: STATUS.RETURNED }), meta(), 'linh@x.vn', 'budget'), 'Phiếu đang chờ người đề nghị bổ sung thông tin, không thể duyệt.');
+  assert.equal(a(pr(), meta(), 'linh@x.vn', 'contract'), 'Vai trò "contract" chưa được phân công cho đề nghị này.');
+  assert.equal(a(pr(), meta(), 'x@x.vn', 'budget'), 'Bạn không được phân công là người duyệt "budget" cho đề nghị này.');
+  assert.equal(a(pr(), meta(), 'tlc.ap@x.vn', 'purchasing'), 'Chưa đến lượt duyệt của bạn. Giai đoạn hiện tại: duyệt ngân sách & NCC.');
+  const twoPeople = pr({ supplier_approver_email: 'ncc@x.vn' });
+  assert.equal(a(twoPeople, meta({ budgetStatus: 'Approved' }), 'linh@x.vn', 'budget'), 'Bạn đã duyệt đề nghị này rồi.');
+});
+
+test('reject: permission, then turn, then status; picks the slot of the active stage', () => {
+  const j = (p, m, email) => applyReject(p, m, { email, note: 'Sai giá', at: AT });
+  assert.equal(j(pr(), meta(), 'x@x.vn').error, 'Bạn không có quyền từ chối đề nghị này.');
+  assert.equal(j(pr(), meta(), 'tlc.ap@x.vn').error, 'Chưa đến lượt của bạn trong quy trình phê duyệt.');
+  // GAS let the later role win (purchasing) and refused; we use the caller's slot in the open stage
+  const ok = j(pr({ purchasing_approver_email: 'linh@x.vn' }), meta(), 'linh@x.vn');
+  assert.equal(ok.role, 'budget');
+  assert.equal(ok.status, STATUS.REJECTED);
+  assert.equal(ok.meta.rejectedBy, 'linh@x.vn');
+  assert.equal(ok.meta.rejectionNote, 'Sai giá');
+  assert.equal(j(pr({ status: STATUS.REJECTED }), meta(), 'linh@x.vn').error, 'Đề nghị này đã bị từ chối rồi.');
+  assert.equal(j(pr({ status: STATUS.RETURNED }), meta(), 'linh@x.vn').error, 'Phiếu đang chờ người đề nghị bổ sung thông tin, không thể từ chối.');
+});
+
+test('send back: input checks before lookup', () => {
+  assert.equal(sendBackInputError({ sentBackNote: ' ', targetStep: 1, approverRole: 'budget' }), 'Vui lòng nhập lý do trả lại.');
+  assert.equal(sendBackInputError({ sentBackNote: 'x', targetStep: 4, approverRole: 'budget' }), 'Bước trả lại không hợp lệ.');
+  assert.equal(sendBackInputError({ sentBackNote: 'x', targetStep: '2', approverRole: 'boss' }), 'Vai trò không hợp lệ.');
+  assert.equal(sendBackInputError({ sentBackNote: 'x', targetStep: '2', approverRole: 'purchasing' }), null);
+});
+
+test('send back step 1 → Trả lại bổ sung, history pushed, approvals kept (GAS)', () => {
+  const r = applySendBack(pr(), meta({ budgetStatus: 'Approved' }), { email: 'linh@x.vn', role: 'supplier', targetStep: 1, note: ' Thiếu báo giá ', at: AT });
+  assert.equal(r.status, STATUS.RETURNED);
+  assert.equal(r.meta.budgetStatus, 'Approved');
+  assert.deepEqual(r.meta.sentBackHistory, [{ targetStep: 1, by: 'linh@x.vn', byRole: 'supplier', at: AT, note: 'Thiếu báo giá' }]);
+});
+
+test('send back step 2 by purchasing resets the chain; step 3 is refused (B3); GAS check order', () => {
+  const m = meta({ budgetStatus: 'Approved', budgetApprovedAt: AT, budgetNote: 'ok', budgetSignature: 'data:s', supplierStatus: 'Approved' });
+  const p = pr({ status: STATUS.PURCHASING });
+  const r = applySendBack(p, m, { email: 'tlc.ap@x.vn', role: 'purchasing', targetStep: 2, note: 'Sai NCC', at: AT });
+  assert.equal(r.status, STATUS.PARALLEL);
+  assert.equal(r.meta.budgetStatus, 'Pending');
+  assert.equal(r.meta.purchasingStatus, 'Pending');
+  assert.equal(r.meta.contractStatus, 'N/A');
+  assert.equal(r.meta.budgetApprovedAt, undefined);
+  assert.equal(r.meta.budgetSignature, 'data:s', 'signatures stay (GAS)');
+  assert.equal(applySendBack(p, m, { email: 'tlc.ap@x.vn', role: 'purchasing', targetStep: 3, note: 'x', at: AT }).error, 'Bước trả lại không hợp lệ với vai trò của bạn.');
+  assert.equal(applySendBack(p, m, { email: 'x@x.vn', role: 'budget', targetStep: 1, note: 'x', at: AT }).error, 'Chưa đến lượt của bạn trong quy trình phê duyệt.', 'turn before assignment');
+  assert.equal(applySendBack(p, m, { email: 'x@x.vn', role: 'purchasing', targetStep: 1, note: 'x', at: AT }).error, 'Bạn không được phân công vai trò "purchasing" cho đề nghị này.');
+  assert.equal(applySendBack(pr({ status: STATUS.RETURNED }), meta(), { email: 'linh@x.vn', role: 'budget', targetStep: 1, note: 'x', at: AT }).error, 'Đề nghị này đã được trả lại rồi, đang chờ người đề nghị cập nhật.');
+});
+
+test('pendingEmails / approverEmails', () => {
+  assert.deepEqual(pendingEmails(pr(), meta(), STATUS.PARALLEL), ['linh@x.vn']);
+  assert.deepEqual(pendingEmails(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' }), STATUS.PURCHASING), ['tlc.ap@x.vn']);
+  assert.deepEqual(pendingEmails(pr(), meta(), STATUS.RETURNED), ['req@x.vn']);
+  assert.deepEqual(pendingEmails(pr(), meta(), STATUS.DONE), []);
+  assert.deepEqual(approverEmails(pr({ contract_approver_email: 'KT@x.vn' })), ['linh@x.vn', 'kt@x.vn', 'tlc.ap@x.vn']);
+});
+
+test('approverPickError: server check of the requester picks (S3)', () => {
+  const cands = { companyEmails: new Set(['linh@x.vn', 'kt@x.vn']), purchasingEmails: new Set(['tlc.ap@x.vn']) };
+  const ok = { budget: 'linh@x.vn', supplier: 'linh@x.vn', contract: 'kt@x.vn', purchasing: 'tlc.ap@x.vn' };
+  assert.equal(approverPickError(ok, cands, 'full'), null);
+  assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full'), /^Người phê duyệt ngân sách \(me@x\.vn\) không thuộc danh sách/);
+  assert.equal(approverPickError({ ...ok, contract: 'me@x.vn' }, cands, 'simplified'), null, 'contract not used on simplified');
+  assert.match(approverPickError({ ...ok, purchasing: 'linh@x.vn' }, cands, 'full'), /không thuộc phòng Kế Toán Chi/);
+  assert.equal(approverPickError({ ...ok, purchasing: '' }, cands, 'full'), null, 'purchasing optional');
+});
+
+test('approverPickError: refuses self-approval (decision #3), checked before candidate lists', () => {
+  const cands = { companyEmails: new Set(['linh@x.vn', 'kt@x.vn']), purchasingEmails: new Set(['tlc.ap@x.vn']) };
+  const ok = { budget: 'linh@x.vn', supplier: 'linh@x.vn', contract: 'kt@x.vn', purchasing: 'tlc.ap@x.vn' };
+  const MSG = 'Bạn không thể tự phê duyệt đề nghị của chính mình.';
+  assert.equal(approverPickError({ ...ok, budget: 'linh@x.vn' }, cands, 'full', 'linh@x.vn'), MSG);
+  assert.equal(approverPickError({ ...ok, budget: 'Linh@X.vn ' }, cands, 'full', ' LINH@x.vn'), MSG, 'mixed case / whitespace');
+  assert.equal(approverPickError({ ...ok, purchasing: 'tlc.ap@x.vn' }, cands, 'full', 'TLC.AP@x.vn'), MSG);
+  // self pick wins over the candidate-list message (requester not in the list)
+  assert.equal(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'me@x.vn'), MSG);
+  // requester not picked → existing behaviour
+  assert.equal(approverPickError(ok, cands, 'full', 'req@x.vn'), null);
+  assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'req@x.vn'), /không thuộc danh sách/);
+  assert.equal(approverPickError(ok, cands, 'full'), null, 'requester omitted → no self check');
+});
+
+test('directPaymentProblem: GAS validatePRForDirectPayment rules', () => {
+  assert.equal(directPaymentProblem({ status: STATUS.PURCHASING, p2p_branch: 'simplified' }), 'PR chưa được phê duyệt hoàn tất.');
+  assert.equal(directPaymentProblem({ status: STATUS.DONE, p2p_branch: 'full' }), 'PR này thuộc quy trình đầy đủ — cần tạo Biên bản nghiệm thu trước khi thanh toán.');
+  assert.equal(directPaymentProblem({ status: STATUS.DONE, p2p_branch: 'simplified' }), null);
+});
