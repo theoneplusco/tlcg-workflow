@@ -18,6 +18,6 @@ test('rowForHeader: escapes formula-looking strings, stringifies objects', () =>
     ["'=SUM(1)", '{"a":1}', "'-x", 'ok']);
 });
 test('rowForHeader: protects leading zeros and long digit strings, leaves dates', () => {
-  assert.deepEqual(rowForHeader(['a', 'b', 'c', 'd'], { a: '00123', b: '1234567890123456', c: '2026-10-07 03:21:09', d: '0' }),
-    ["'00123", "'1234567890123456", '2026-10-07 03:21:09', '0']);
+  assert.deepEqual(rowForHeader(['a', 'b', 'c', 'd', 'e', 'f'], { a: '00123', b: '1234567890123456', c: '2026-10-07 03:21:09', d: '0', e: '07/10/2026', f: '08:30' }),
+    ["'00123", "'1234567890123456", '2026-10-07 03:21:09', '0', '07/10/2026', '08:30']);
 });

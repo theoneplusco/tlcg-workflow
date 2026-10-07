@@ -7,7 +7,7 @@ import { rowForHeader, backoffSeconds, norm } from './rows.js';
 // Older items that are due are fine (claimed in the same statement); older items that are
 // backing off or already claimed (next_try_at in the future) block the tab.
 const CLAIM_SQL = `
-  UPDATE sheet_outbox SET next_try_at = NOW() + interval '5 minutes'
+  UPDATE sheet_outbox SET next_try_at = NOW() + interval '10 minutes'
   WHERE id IN (
     SELECT o.id FROM sheet_outbox o
     WHERE o.done_at IS NULL AND o.next_try_at <= NOW()
@@ -31,8 +31,8 @@ async function claim(db, limit) {
   } finally { c.release(); }
 }
 
-// deadlineMs keeps a run inside its 5-minute claim lease: no new group starts after it, the rest is released.
-export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 240000, now = Date.now } = {}) {
+// deadlineMs keeps a run inside its 10-minute claim lease: no new group starts after it, the rest is released.
+export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 120000, now = Date.now } = {}) {
   const t0 = now();
   const items = await claim(db, limit);
   const byTab = new Map();

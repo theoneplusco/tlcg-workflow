@@ -17,6 +17,7 @@ export function googleSheets() {
   const auth = new google.auth.JWT({ email: key.client_email, key: key.private_key, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
   const api = google.sheets({ version: 'v4', auth });
   return {
+    authorize: () => auth.authorize(),
     async getHeader(id, tab) {
       return ((await api.spreadsheets.values.get({ spreadsheetId: id, range: `${q(tab)}!1:1` }, T)).data.values || [[]])[0] || [];
     },
@@ -48,7 +49,9 @@ export function startSheetMirrorJob() {
     const token = randomUUID();
     let locked = false;
     try {
-      locked = !!(await redis.set('lock:sheet-mirror', token, 'EX', 300, 'NX'));
+      // Bounded auth pre-warm: a hung token fetch must not hold a claim; skip the tick instead.
+      await Promise.race([sheets.authorize(), new Promise((_, rej) => setTimeout(() => rej(new Error('Google auth timeout')), 20000).unref())]);
+      locked = !!(await redis.set('lock:sheet-mirror', token, 'EX', 600, 'NX'));
       if (!locked) return;
       const r = await runSheetMirrorOnce(sheets, pool);
       if (r.done || r.failed) console.log(`[sheet-mirror] done=${r.done} failed=${r.failed}`);

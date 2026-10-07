@@ -5,7 +5,7 @@ export const norm = (h) => String(h || '').trim().toLowerCase();
 function cell(v) {
   if (v == null) return '';
   // formulas, leading zeros and >15-digit ids would be mangled by USER_ENTERED
-  if (typeof v === 'string') return /^[=+\-@]|^0\d|^\d{16,}$/.test(v) ? `'${v}` : v;
+  if (typeof v === 'string') return /^[=+\-@]|^0\d+$|^\d{16,}$/.test(v) ? `'${v}` : v;
   if (typeof v === 'object') return cell(JSON.stringify(v));
   return v;
 }
