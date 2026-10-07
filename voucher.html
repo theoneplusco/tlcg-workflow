@@ -3233,7 +3233,7 @@
         const GOOGLE_APPS_SCRIPT_WEB_APP_URL = '/api/voucher'; // Voucher operations proxy
 
         /** JSON call to /api/voucher (the login token is added by i18n.js). Postgres-only actions. */
-        async function voucherApi(action, body) {
+        async function pgApi(action, body) {
             const res = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(Object.assign({ action: action }, body || {}))
@@ -6170,7 +6170,7 @@
                     const ready = [];
                     const skipped = [];
                     for (const no of voucherNumbers.slice()) {
-                        const c = await voucherApi('getApprovalContext', { voucherNumber: no });
+                        const c = await pgApi('getApprovalContext', { voucherNumber: no });
                         if (c.success && c.data.canApprove) { ready.push(no); if (!sampleSignatureUrl) sampleSignatureUrl = c.data.sampleSignatureUrl; }
                         else skipped.push(no + ': ' + ((c.data && c.data.reason) || c.message));
                     }
@@ -7117,7 +7117,7 @@
                 let pgContext = null;
                 if (window.__vouchersOnPostgres || VoucherSteps.onPostgres(currentModalVoucher)) {
                     // Postgres: the server says whether it is my turn and which sample to check
-                    const ctxRes = await voucherApi('getApprovalContext', { voucherNumber: currentModalVoucher.voucherNumber });
+                    const ctxRes = await pgApi('getApprovalContext', { voucherNumber: currentModalVoucher.voucherNumber });
                     pgContext = ctxRes.success ? ctxRes.data : null;
                     if (!pgContext || !pgContext.canApprove) {
                         alert('❌ ' + ((pgContext && pgContext.reason) || ctxRes.message || 'Không thể phê duyệt phiếu này.'));
