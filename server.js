@@ -31,7 +31,7 @@ import { startVoucherReminderJob } from './api/jobs/voucher-reminders.js';
 import { startSheetMirrorJob } from './api/jobs/sheet-mirror.js';
 import { rateLimit } from './api/middleware/rate-limiter.js';
 import { unwrapPayload } from './api/middleware/unwrap-payload.js';
-import { missingVoucherSchema } from './api/lib/startup-checks.js';
+import { missingVoucherSchema, missingP2PSchema } from './api/lib/startup-checks.js';
 import { jwtSecret } from './api/handlers/auth.js';
 import pool from './db/pool.js';
 
@@ -169,6 +169,14 @@ if (schemaProblem) {
 }
 if (postgresWorkflows.includes('vouchers') && !process.env.VOUCHER_SPREADSHEET_ID) {
   console.warn('[server] Sheet copy disabled: VOUCHER_SPREADSHEET_ID not set');
+}
+const p2pProblem = await missingP2PSchema(postgresWorkflows, pool);
+if (p2pProblem) {
+  console.error(`[server] FATAL: ${p2pProblem}`);
+  process.exit(1);
+}
+if (postgresWorkflows.includes('p2p') && !process.env.P2P_SPREADSHEET_ID) {
+  console.warn('[server] PR Sheet copy disabled: P2P_SPREADSHEET_ID not set');
 }
 // No dev default in production: logins are refused until JWT_SECRET is set (GAS proxy keeps working).
 if (!jwtSecret()) console.error('[server] JWT_SECRET is not set (NODE_ENV=production): login and token checks are refused');

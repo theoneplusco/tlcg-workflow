@@ -17,3 +17,18 @@ export async function missingVoucherSchema(workflows, db) {
     return null;
   }
 }
+
+/** p2p on Postgres needs migration 007 (and 006 for its Sheet copy). Message when missing, else null. */
+export async function missingP2PSchema(workflows, db) {
+  if (!workflows.includes('p2p')) return null;
+  try {
+    const { rows } = await db.query(`SELECT to_regclass('public.purchase_order_types') AS t, to_regclass('public.sheet_outbox') AS o`);
+    const r = rows[0] || {};
+    if (!r.t) return 'PG_WORKFLOWS includes p2p but migration 007 is missing: run db/migrations/007_purchase_requests.sql';
+    if (!r.o) return 'PG_WORKFLOWS includes p2p but table sheet_outbox does not exist: run db/migrations/006_sheet_outbox.sql';
+    return null;
+  } catch (e) {
+    console.error('[server] could not check the p2p schema (database unreachable?):', e.message);
+    return null;
+  }
+}

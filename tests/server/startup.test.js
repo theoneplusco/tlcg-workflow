@@ -2,7 +2,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
-import { missingVoucherSchema } from '../../api/lib/startup-checks.js';
+import { missingVoucherSchema, missingP2PSchema } from '../../api/lib/startup-checks.js';
 import { jwtSecret, decodeToken } from '../../api/handlers/auth.js';
 import redis from '../../db/redis.js';
 
@@ -30,6 +30,20 @@ test('missingVoucherSchema: real test database has migration 006', { skip: !proc
   const pg = (await import('pg')).default;
   const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
   try { assert.equal(await missingVoucherSchema(['vouchers'], db), null); } finally { await db.end(); }
+});
+
+const fakeDb2 = (t, o) => ({ query: async () => ({ rows: [{ t, o }] }) });
+test('missingP2PSchema: p2p off → not checked', async () => {
+  assert.equal(await missingP2PSchema(['vouchers'], fakeDb2(null, null)), null);
+});
+test('missingP2PSchema: p2p on without migration 007 → names the file', async () => {
+  assert.match(await missingP2PSchema(['p2p'], fakeDb2(null, 'sheet_outbox')), /007_purchase_requests\.sql/);
+  assert.match(await missingP2PSchema(['p2p'], fakeDb2('purchase_order_types', null)), /006_sheet_outbox\.sql/);
+});
+test('missingP2PSchema: real test database has migrations 006 and 007', { skip: !process.env.TEST_DATABASE_URL && 'needs TEST_DATABASE_URL' }, async () => {
+  const pg = (await import('pg')).default;
+  const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
+  try { assert.equal(await missingP2PSchema(['p2p'], db), null); } finally { await db.end(); }
 });
 
 test('jwtSecret: env wins; dev default outside production; none in production', () => {
