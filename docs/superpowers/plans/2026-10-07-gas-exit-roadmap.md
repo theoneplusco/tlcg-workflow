@@ -29,7 +29,7 @@ GAS also uses these Google services:
    - Signature images are fetched by the Mini.
    - `syncToSheets` is replaced.
    - The generic Sheet copy engine is built, then used for vouchers first.
-2. **Plan 5: Purchase requests at GAS parity.**
+2. ✅ **Plan 5: Purchase requests at GAS parity** (`2026-10-07-purchase-requests-on-postgres.md`). Done 2026-10-07: e2e with every GAS URL dead passed after two page bug fixes; zero PR calls to GAS (acceptance-minutes history still GAS → Plan 7); GAS-mode regression 11/11.
    - Check each existing handler against GAS.
    - Add the 8 missing actions.
    - Add an importer for Purchase_Request_History and Purchase_Request_Archive.
