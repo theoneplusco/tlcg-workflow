@@ -52,5 +52,7 @@ test('goodsRecord / supplierExtra / likePattern', () => {
   const known = new Set(['Vendor_Full_Name', 'Vendor Type', 'Tax ID', 'Address', 'Active']);
   assert.deepEqual(supplierExtra({ name: ' NCC B ', taxCode: '0312', address: 'HCM', phone: '09' }, known),
     { Vendor_Full_Name: 'NCC B', 'Vendor Type': 'Others', 'Tax ID': '0312', Address: 'HCM', Active: 'Yes' });
+  assert.equal(supplierExtra({ name: 'A', companyType: ' individual ' }, known)['Vendor Type'], 'Individual');
+  assert.equal(supplierExtra({ name: 'A', companyType: 'Công ty lạ' }, known)['Vendor Type'], 'Others');
   assert.equal(likePattern('50%_a\\'), '%50\\%\\_a\\\\%');
 });

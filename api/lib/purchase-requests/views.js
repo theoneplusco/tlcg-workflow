@@ -1,6 +1,6 @@
 // api/lib/purchase-requests/views.js — Postgres rows → the shapes the PR pages read (pure).
 import { approvalState, isComplete, isRejected } from './state.js';
-import { coreCellValue } from '../master-registry.js';
+import { coreCellValue, MASTER_TABLES } from '../master-registry.js';
 
 const iso = (t) => (t ? new Date(t).toISOString() : '');
 const lower = (s) => String(s || '').trim().toLowerCase();
@@ -52,9 +52,13 @@ export function goodsRecord(headers, row, core) {
 }
 
 /** GAS addSupplier values, keyed by the Master Vendor headers that exist (others are dropped). */
+const VENDOR_TYPES = MASTER_TABLES.vendors.rules['Vendor Type'].values;
+/** A value the Master Vendor 'Vendor Type' rule allows (case-insensitive match), else 'Others'. */
+const vendorType = (t) => VENDOR_TYPES.find((v) => v.toLowerCase() === lower(t)) || 'Others';
+
 export function supplierExtra(b, known) {
   const s = (k) => String(b[k] ?? '').trim();
-  const all = { Vendor_Full_Name: s('name'), 'Vendor Type': s('companyType') || 'Others', 'Tax ID': s('taxCode'), Address: s('address'),
+  const all = { Vendor_Full_Name: s('name'), 'Vendor Type': vendorType(s('companyType')), 'Tax ID': s('taxCode'), Address: s('address'),
     'Payment Currency': 'VND', Contact_phone: s('phone'), Email_lien_he: s('email'), Dia_chi_lien_he: s('address'), Active: 'Yes' };
   return Object.fromEntries(Object.entries(all).filter(([k]) => known.has(k)));
 }

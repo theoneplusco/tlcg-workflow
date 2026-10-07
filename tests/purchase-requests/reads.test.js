@@ -96,16 +96,36 @@ test('addSupplier: Master Vendor, duplicate refused, login needed', { skip }, as
   assert.equal((await call(r.handleAddSupplier, { name: name.toUpperCase() }, as('a@pr-test.vn'))).message, `Supplier "${name.toUpperCase()}" already exists`);
   assert.equal((await call(r.handleAddSupplier, { name: '' }, as('a@pr-test.vn'))).message, 'Supplier name is required');
   assert.equal((await call(r.handleAddSupplier, { name }, null)).code, 401);
+  const long = await call(r.handleAddSupplier, { name: `NCC Plan5 long ${Date.now()}`, address: 'x'.repeat(201) }, as('a@pr-test.vn'));
+  assert.deepEqual([long.success, long.message], [false, 'Thông tin nhà cung cấp quá dài.']);
+  const typed = `NCC Plan5 typed ${Date.now()}`;
+  await call(r.handleAddSupplier, { name: typed, companyType: 'vietnam COMPANY' }, as('a@pr-test.vn'));
+  assert.equal((await pool.query(`SELECT extra FROM master_vendors WHERE extra->>'Vendor_Full_Name' = $1`, [typed])).rows[0].extra['Vendor Type'], 'Vietnam company');
+  const noCol = await call(r.handleAddSupplier, { name: `NCC Plan5 nocol ${Date.now()}` }, as('a@pr-test.vn'), {
+    db: { connect: async () => ({ query: async (q) => (q.includes('master_columns') ? { rows: [{ name: 'Address' }] } : { rows: [] }), release() {} }) } });
+  assert.deepEqual([noCol.success, noCol.message], [false, 'Lỗi hệ thống, vui lòng thử lại.'], 'no Vendor_Full_Name column: not a fake success');
+});
+
+test('catalog and supplier errors: generic message, details only in the server log', { skip }, async () => {
+  const boom = { query: async () => { throw new Error('relation secret_table does not exist'); }, connect: async () => ({ query: async () => { throw new Error('secret'); }, release() {} }) };
+  for (const [fn, caller] of [[r.handleGoodsCatalog, null], [r.handlePurchaseOrderTypes, null], [r.handleAddSupplier, as('a@pr-test.vn')]]) {
+    const out = await call(fn, { name: 'NCC Plan5 boom' }, caller, { db: boom });
+    assert.deepEqual([out.success, out.message], [false, 'Lỗi hệ thống, vui lòng thử lại.'], fn.name);
+  }
 });
 
 test('validatePRForDirectPayment: GAS messages; vendorName from the PR (B9); open payment refused', { skip }, async () => {
   const v = (body, extra) => call(r.handleValidatePRForDirectPayment, body, as('a@pr-test.vn'), extra);
   assert.equal((await v({})).message, 'Thiếu số PR.');
-  assert.equal((await v({ prNo: 'X-1' })).message, 'Không tìm thấy PR: X-1');
+  const unknown = await v({ prNo: 'X-1' });
+  assert.deepEqual([unknown.code, unknown.message], [403, 'Bạn không có quyền xem đề nghị này.'], 'unknown number hidden from non-admins');
+  assert.equal((await call(r.handleValidatePRForDirectPayment, { prNo: 'X-1' }, as('x@x.vn', { isAdmin: true }))).message, 'Không tìm thấy PR: X-1');
   assert.equal((await v({ prNo: mine })).message, 'PR chưa được phê duyệt hoàn tất.');
   await pool.query(`UPDATE purchase_requests SET status = 'Hoàn thành', vendor_name = 'NCC A' WHERE pr_no = $1`, [mine]);
   const okr = await v({ prNo: mine });
   assert.deepEqual([okr.success, okr.vendorName, okr.p2pBranch, okr.data.prNo], [true, 'NCC A', 'simplified', mine]);
+  const stranger = await call(r.handleValidatePRForDirectPayment, { prNo: mine }, as('b@pr-test.vn'));
+  assert.deepEqual([stranger.code, stranger.message], [403, 'Bạn không có quyền xem đề nghị này.'], 'completed PR, not visible');
   const busy = await v({ prNo: mine }, { paymentsForPR: async () => [{ status: 'Đang duyệt' }] });
   assert.equal(busy.message, 'Đã tồn tại đề nghị thanh toán cho PR này.');
   assert.equal((await v({ prNo: mine }, { paymentsForPR: async () => [{ status: 'Rejected' }] })).success, true);
