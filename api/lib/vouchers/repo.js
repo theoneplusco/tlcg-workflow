@@ -18,10 +18,16 @@ export async function findCompany(db, name, key) {
   const { rows } = k
     ? await db.query(`SELECT * FROM companies WHERE company_name = $1 AND company_key = $2 LIMIT 1`, [n, k])
     : await db.query(`SELECT * FROM companies WHERE company_name = $1 ORDER BY id LIMIT 1`, [n]);
-  if (rows[0] || !k) return rows[0] || null;
-  // Key typed differently on old vouchers: fall back to the name
-  const byName = await db.query(`SELECT * FROM companies WHERE company_name = $1 ORDER BY id LIMIT 1`, [n]);
-  return byName.rows[0] || null;
+  if (rows[0]) return rows[0];
+  if (k) {
+    // Key typed differently on old vouchers: try the name alone
+    const byName = await db.query(`SELECT * FROM companies WHERE company_name = $1 ORDER BY id LIMIT 1`, [n]);
+    if (byName.rows[0]) return byName.rows[0];
+  }
+  // Company renamed in Master Data since (e.g. RIOT's full legal name): the key, if it is unique
+  if (!k) return null;
+  const byKey = await db.query(`SELECT * FROM companies WHERE company_key = $1 LIMIT 2`, [k]);
+  return byKey.rows.length === 1 ? byKey.rows[0] : null;
 }
 
 export async function employeesByEmail(db) {

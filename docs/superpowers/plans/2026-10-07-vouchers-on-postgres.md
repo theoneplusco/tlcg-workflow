@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status 2026-10-07:** Tasks 1–5 built and tested (64 tests). Task 6 (shadow comparison against live GAS) in progress. Extra work found on the way: `api/middleware/unwrap-payload.js` (wrapped `data={json}` / multipart payloads now reach Postgres handlers); renamed companies matched by unique key; isAdmin from the page verified against Master Data.
+
 **Goal:** Every voucher action the pages use runs on Postgres with the same request/response contract as GAS, approvals follow the approval-matrix engine, and the 450 existing vouchers + history are imported — all behind `PG_WORKFLOWS=vouchers`, so production stays on GAS until Plan 3 verifies and switches.
 
 **Architecture:** `vouchers` = one row per voucher (current state, like the Voucher_Current sheet) holding the engine plan snapshot in `metadata.approvalPlan`; `voucher_history` = append-only rows exactly like the Voucher_History sheet. A thin compatibility layer projects the plan into the legacy `meta.companyApprovers` (accountant / legalRep / treasurer, "N/3") so today's voucher.html keeps working for 3-step flows; Plan 3 teaches the UI N-step plans. Emails go through the existing Resend queue. Drive uploads and signature-image fetches stay on GAS (they store files, not workflow state).
