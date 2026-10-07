@@ -116,7 +116,7 @@ async function sendViaResend(email) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM || 'TLC Group Workflow <noreply@tl-c.us>',
+      from: process.env.EMAIL_FROM || 'TLC Group Workflow <hello@tl-c.us>',
       to: String(email.to_email).split(',').map((s) => s.trim()).filter(Boolean),
       ...(email.cc ? { cc: String(email.cc).split(',').map((s) => s.trim()).filter(Boolean) } : {}),
       ...(email.reply_to ? { reply_to: email.reply_to } : {}),
