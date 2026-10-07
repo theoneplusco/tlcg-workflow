@@ -1,8 +1,9 @@
-// api/handlers/files.js — voucher attachments on R2 (replaces GAS/Drive).
+// api/handlers/files.js — voucher attachments on R2 + signature images (replaces GAS/Drive).
 import { PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import busboy from 'busboy';
 import { getS3, R2_BUCKET, R2_PUBLIC_URL, attachmentKey, validateUpload, MAX_ATTACHMENT_BYTES } from '../lib/files/r2.js';
+import { driveDownloadUrl, isAllowedImageUrl, MAX_IMAGE_BYTES } from '../lib/files/signature-fetch.js';
 
 const ok = (res, message, data) => res.json({ success: true, message, data });
 const fail = (res, message, status = 200) => res.status(status).json({ success: false, message });
@@ -71,4 +72,19 @@ export function handleVoucherFileUpload(req, res) {
     } catch (e) { return fail(res, 'Không lưu được file: ' + e.message, 502); }
   });
   req.pipe(bb);
+}
+
+export async function handleFetchSignatureImage(req, res) {
+  const url = String((req.body || {}).imageUrl || '');
+  if (!url) return fail(res, 'Thiếu URL hình ảnh');
+  if (!isAllowedImageUrl(url)) return fail(res, 'URL hình ảnh không được phép');
+  try {
+    const r = await fetch(driveDownloadUrl(url), { redirect: 'follow', signal: AbortSignal.timeout(15000) });
+    if (!r.ok) return fail(res, `Không tải được hình ảnh (HTTP ${r.status})`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > MAX_IMAGE_BYTES) return fail(res, 'Hình ảnh quá lớn');
+    const mime = (r.headers.get('content-type') || 'image/png').split(';')[0];
+    if (!/^image\//.test(mime)) return fail(res, 'Tệp không phải hình ảnh');
+    return ok(res, 'Success', { imageBase64: `data:${mime};base64,${buf.toString('base64')}` });
+  } catch (e) { return fail(res, 'Lỗi: ' + e.message); }
 }

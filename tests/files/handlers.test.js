@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleCreateVoucherUploadSession, handleFinalizeVoucherUpload } from '../../api/handlers/files.js';
+import { handleCreateVoucherUploadSession, handleFinalizeVoucherUpload, handleFetchSignatureImage } from '../../api/handlers/files.js';
 
 const mkRes = () => {
   const r = { status(c) { r.code = c; return r; }, json(b) { r.body = b; return r; } };
@@ -30,4 +30,16 @@ test('createSession: signing error answers instead of throwing', async () => {
   await handleCreateVoucherUploadSession({ body: { fileName: 'a.pdf', fileSize: 10 } }, res, s3);
   assert.equal(res.body.success, false);
   assert.match(res.body.message, /^Không tạo được phiên tải lên: /);
+});
+test('fetchSignatureImage: missing imageUrl is rejected', async () => {
+  const res = mkRes();
+  await handleFetchSignatureImage({ body: {} }, res);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.message, 'Thiếu URL hình ảnh');
+});
+test('fetchSignatureImage: disallowed URL (127.0.0.1) is rejected', async () => {
+  const res = mkRes();
+  await handleFetchSignatureImage({ body: { imageUrl: 'https://127.0.0.1/x' } }, res);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.message, 'URL hình ảnh không được phép');
 });
