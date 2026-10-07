@@ -1,5 +1,5 @@
 // api/handlers/files.js — voucher attachments on R2 (replaces GAS/Drive).
-import { PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import busboy from 'busboy';
 import { getS3, R2_BUCKET, R2_PUBLIC_URL, attachmentKey, validateUpload, MAX_ATTACHMENT_BYTES } from '../lib/files/r2.js';
@@ -7,27 +7,34 @@ import { getS3, R2_BUCKET, R2_PUBLIC_URL, attachmentKey, validateUpload, MAX_ATT
 const ok = (res, message, data) => res.json({ success: true, message, data });
 const fail = (res, message, status = 200) => res.status(status).json({ success: false, message });
 
-export async function handleCreateVoucherUploadSession(req, res) {
+export async function handleCreateVoucherUploadSession(req, res, s3 = getS3()) {
   const b = req.body || {};
   const bad = validateUpload(b);
   if (bad) return fail(res, bad);
-  const s3 = getS3();
   if (!s3) return fail(res, 'Không tạo được phiên tải lên (R2 chưa cấu hình)');
   const key = attachmentKey(b.voucherNumber, b.fileName);
-  const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
-    Bucket: R2_BUCKET, Key: key, ContentType: b.mimeType || 'application/octet-stream',
-  }), { expiresIn: 3600 });
-  return ok(res, 'ok', { uploadUrl, key, fileUrl: `${R2_PUBLIC_URL}/${key}` });
+  try {
+    const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
+      Bucket: R2_BUCKET, Key: key, ContentType: b.mimeType || 'application/octet-stream',
+    }), { expiresIn: 3600 });
+    return ok(res, 'ok', { uploadUrl, key, fileUrl: `${R2_PUBLIC_URL}/${key}` });
+  } catch (e) {
+    return fail(res, 'Không tạo được phiên tải lên: ' + e.message);
+  }
 }
 
-export async function handleFinalizeVoucherUpload(req, res) {
+export async function handleFinalizeVoucherUpload(req, res, s3 = getS3()) {
   const b = req.body || {};
   const key = String(b.key || '');
   if (!/^vouchers\/[A-Za-z0-9._-]+\/[0-9a-f]{32}-[A-Za-z0-9._-]+$/.test(key)) return fail(res, 'fileId không hợp lệ');
-  const s3 = getS3();
   if (!s3) return fail(res, 'Không lưu được file: R2 chưa cấu hình');
   try {
     const head = await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    if (head.ContentLength > MAX_ATTACHMENT_BYTES) {
+      // presigned PUT cannot cap size, so enforce it here and drop the object
+      try { await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key })); } catch { /* ignore */ }
+      return fail(res, 'File vượt quá 10 MB');
+    }
     return ok(res, 'Đã tải file', { fileName: b.fileName || key.split('/').pop().slice(33), fileUrl: `${R2_PUBLIC_URL}/${key}`, fileSize: head.ContentLength });
   } catch (e) {
     return fail(res, 'Không lưu được file: ' + (e.name === 'NotFound' ? 'file chưa được tải lên' : e.message));
@@ -40,7 +47,11 @@ export function handleVoucherFileUpload(req, res) {
   if (!s3) return fail(res, 'R2 chưa cấu hình', 503);
   const fields = {};
   let upload = null;
+  const abort = () => { if (!res.headersSent) fail(res, 'Không tải được file', 400); };
   const bb = busboy({ headers: req.headers, limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES + 1 } });
+  bb.on('error', abort);
+  req.on('aborted', abort);
+  req.on('error', abort);
   bb.on('field', (n, v) => { fields[n] = v; });
   bb.on('file', (_n, stream, info) => {
     const chunks = [];
@@ -49,6 +60,7 @@ export function handleVoucherFileUpload(req, res) {
     stream.on('end', () => { upload = { name: info.filename, mime: info.mimeType, size, body: Buffer.concat(chunks), truncated: stream.truncated }; });
   });
   bb.on('close', async () => {
+    if (res.headersSent) return;
     if (!upload || upload.truncated) return fail(res, upload ? 'File vượt quá 10 MB' : 'Thiếu dữ liệu file');
     const bad = validateUpload({ fileSize: upload.size, fileName: upload.name });
     if (bad) return fail(res, bad);
