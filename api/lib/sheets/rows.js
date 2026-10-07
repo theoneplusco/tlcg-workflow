@@ -14,10 +14,17 @@ function cell(v) {
   return v;
 }
 
+/** A repeated header (Purchase_Request_History repeats row_type/event_* 5×) gets the value in its first column only. */
 export function rowForHeader(header, record) {
   const byKey = {};
   for (const [k, v] of Object.entries(record || {})) byKey[norm(k)] = v;
-  return header.map((h) => cell(byKey[norm(h)]));
+  const seen = new Set();
+  return header.map((h) => {
+    const k = norm(h);
+    if (seen.has(k)) return '';
+    seen.add(k);
+    return cell(byKey[k]);
+  });
 }
 
 export const backoffSeconds = (attempt) => Math.min(3600, 30 * 2 ** (attempt - 1));

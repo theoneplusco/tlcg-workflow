@@ -131,3 +131,20 @@ test('pruneOutbox: deletes items done over 30 days ago, at most once per claimed
   const left = (await db.query(`SELECT record->>'n' AS n FROM sheet_outbox ORDER BY id`)).rows.map((x) => x.n);
   assert.deepEqual(left, ['recent', 'pending']);
 });
+test('upsert with a compound key updates the matching submit row, not the event row of the same PR', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const tabs = { P: [['pr_no', 'status', 'row_type'], ['EV-1', '', 'event'], ['EV-1', 'old', 'submit']] };
+  await enqueue(db, { spreadsheetId: 's', tab: 'P', mode: 'upsert', keyColumn: 'pr_no,row_type', record: { pr_no: 'EV-1', status: 'new', row_type: 'submit' } });
+  await enqueue(db, { spreadsheetId: 's', tab: 'P', mode: 'upsert', keyColumn: 'pr_no,row_type', record: { pr_no: 'EV-2', status: 'x', row_type: 'submit' } });
+  assert.deepEqual(await runSheetMirrorOnce(fakeSheets(tabs), db), { done: 2, failed: 0 });
+  assert.deepEqual(tabs.P.slice(1), [['EV-1', '', 'event'], ['EV-1', 'new', 'submit'], ['EV-2', 'x', 'submit']]);
+});
+test('compound key: a key column missing from the header fails the item with a clear message', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const tabs = { P: [['pr_no', 'status']] };
+  await enqueue(db, { spreadsheetId: 's', tab: 'P', mode: 'upsert', keyColumn: 'pr_no,row_type', record: { pr_no: 'EV-1', row_type: 'submit' } });
+  assert.deepEqual(await runSheetMirrorOnce(fakeSheets(tabs), db), { done: 0, failed: 1 });
+  const { rows } = await db.query('SELECT last_error FROM sheet_outbox');
+  assert.match(rows[0].last_error, /Key column row_type not in P/);
+  assert.equal(tabs.P.length, 1, 'nothing written');
+});

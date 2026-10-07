@@ -26,3 +26,9 @@ test('rowForHeader: cuts strings over the 50,000-char cell limit', () => {
   assert.ok(a === 'x'.repeat(49000) + '…[cắt bớt]', `cut to 49,000 + marker (got ${a.length} chars)`);
   assert.ok(b === 'y'.repeat(49000), 'exactly 49,000 kept');
 });
+test('rowForHeader: a repeated header (any case) gets the value in its first column only', () => {
+  assert.deepEqual(rowForHeader(['a', 'row_type', 'b', 'Row_Type', 'ROW_TYPE '], { a: 1, row_type: 'submit', b: 2 }), [1, 'submit', 2, '', '']);
+});
+test('rowForHeader: headers without repeats are filled exactly as before (voucher tabs)', () => {
+  assert.deepEqual(rowForHeader(['voucherNumber', 'status', 'amount'], { voucherNumber: 'V1', status: 'x', amount: 5 }), ['V1', 'x', 5]);
+});

@@ -26,7 +26,7 @@ test('SHEETS_MIRROR off: not started', async () => {
   });
 });
 test('SHEETS_MIRROR=on without VOUCHER_SPREADSHEET_ID: refuses to start and says why', async () => {
-  await withEnv({ SHEETS_MIRROR: 'on', VOUCHER_SPREADSHEET_ID: undefined }, async () => {
+  await withEnv({ SHEETS_MIRROR: 'on', VOUCHER_SPREADSHEET_ID: undefined, P2P_SPREADSHEET_ID: undefined }, async () => {
     const { result, lines } = await capture(() => startSheetMirrorJob());
     assert.equal(result, false);
     assert.match(lines.join('\n'), /VOUCHER_SPREADSHEET_ID/);
@@ -39,5 +39,13 @@ test('SHEETS_MIRROR=on with a target: starts and logs the target id', async () =
     assert.equal(typeof result, 'object', 'returns the timer');
     clearInterval(result);
     assert.match(lines.join('\n'), /sheet-123/);
+  });
+});
+test('SHEETS_MIRROR=on with only P2P_SPREADSHEET_ID: starts', async () => {
+  await withEnv({ SHEETS_MIRROR: 'on', VOUCHER_SPREADSHEET_ID: undefined, P2P_SPREADSHEET_ID: 'p2p-456' }, async () => {
+    const { result, lines } = await capture(() => startSheetMirrorJob({ sheets: { authorize: async () => {} }, intervalMs: 3600000 }));
+    assert.equal(typeof result, 'object');
+    clearInterval(result);
+    assert.match(lines.join('\n'), /p2p-456/);
   });
 });

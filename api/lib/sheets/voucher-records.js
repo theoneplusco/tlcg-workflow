@@ -49,7 +49,7 @@ export function sheetTimeText(d) {
 const META_LIMIT = 45000;
 const STORED = '[đã lưu trong hệ thống]';
 const stripData = (v) => (typeof v === 'string' && v.startsWith('data:') ? STORED : v);
-function metadataJson(meta) {
+export function metadataJson(meta) {
   const full = JSON.stringify(meta || {});
   if (full.length <= META_LIMIT) return full; // verbatim when it fits, as GAS wrote it
   const stripped = JSON.stringify(meta, (k, v) => stripData(v));

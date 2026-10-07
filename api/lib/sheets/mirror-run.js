@@ -70,12 +70,20 @@ export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 
           while (i + 1 < list.length && list[i + 1].mode === 'append') group.push(list[++i]);
           await sheets.append(it.spreadsheet_id, it.tab, group.map((g) => rowForHeader(header, g.record)));
         } else {
-          const col = header.findIndex((h) => norm(h) === norm(it.key_column));
-          if (col < 0) throw new Error(`Key column ${it.key_column} not in ${it.tab}`);
-          const key = String(it.record[it.key_column] ?? it.record[norm(it.key_column)] ?? '');
-          const cells = await sheets.getColumn(it.spreadsheet_id, it.tab, col);
+          // key_column may list several columns ("pr_no,row_type"): the target row must match all of them
+          const keys = String(it.key_column).split(',').map((k) => k.trim()).filter(Boolean);
+          const cols = keys.map((k) => header.findIndex((h) => norm(h) === norm(k)));
+          const missing = keys.filter((_, j) => cols[j] < 0);
+          if (missing.length) throw new Error(`Key column ${missing.join(', ')} not in ${it.tab}`);
+          const want = keys.map((k) => String(it.record[k] ?? it.record[norm(k)] ?? ''));
+          const columns = [];
+          for (const c of cols) columns.push(await sheets.getColumn(it.spreadsheet_id, it.tab, c));
           const row = rowForHeader(header, it.record);
-          const target = cells.findIndex((c, n) => n > 0 && String(c ?? '') === key);
+          const height = Math.max(0, ...columns.map((c) => c.length));
+          let target = -1;
+          for (let n = 1; n < height && target < 0; n++) {
+            if (columns.every((c, j) => String(c[n] ?? '') === want[j])) target = n;
+          }
           if (target > 0) await sheets.update(it.spreadsheet_id, it.tab, target + 1, row);
           else await sheets.append(it.spreadsheet_id, it.tab, [row]);
         }

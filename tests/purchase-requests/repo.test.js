@@ -136,3 +136,18 @@ test('recordChange in one transaction: PR update and audit row commit or roll ba
   assert.equal(a.new_status, 'Hoàn thành');
   assert.equal(a.actor_email, 'ap@x.vn');
 });
+test('recordChange queues the Sheet copy (PR upsert + audit append) when P2P_SPREADSHEET_ID is set', { skip }, async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const row = await getPR(db, 'ZZ-PR20261007000001');
+  delete process.env.P2P_SPREADSHEET_ID;
+  await recordChange(db, row, { action: 'Approve', role: 'budget', actorEmail: 'linh@x.vn', at: '2026-10-07T04:00:00.000Z' });
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM sheet_outbox')).rows[0].n, 0, 'no target → nothing queued');
+  process.env.P2P_SPREADSHEET_ID = 'p2p-test';
+  try {
+    await recordChange(db, row, { action: 'Approve', role: 'budget', actorEmail: 'linh@x.vn', at: '2026-10-07T04:00:00.000Z' });
+  } finally { delete process.env.P2P_SPREADSHEET_ID; }
+  const ob = (await db.query('SELECT tab, mode, key_column, record FROM sheet_outbox ORDER BY id')).rows;
+  assert.deepEqual(ob.map((o) => [o.tab, o.mode, o.key_column]), [['Purchase_Request_History', 'upsert', 'pr_no,row_type'], ['PR_Audit_Log', 'append', null]]);
+  assert.equal(ob[0].record.row_type, 'submit');
+  assert.equal(ob[1].record.document_no, 'ZZ-PR20261007000001');
+});

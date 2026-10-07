@@ -2,6 +2,9 @@
 // RULE: handlers change PR state only via updatePR + recordChange (same transaction). appendAudit is for
 // recordChange and the importer only.
 // Takes the db or transaction client as an argument (no pool import): handlers, tests and the importer share it.
+import { enqueue } from '../sheets/outbox.js';
+import { p2pSpreadsheetId, PR_TAB, AUDIT_TAB, PR_KEY, prRecord, auditRecord } from '../sheets/pr-records.js';
+
 const lower = (s) => String(s || '').trim().toLowerCase();
 const JSON_COLS = new Set(['items', 'attachments', 'metadata']);
 export const WRITABLE = ['pr_no', 'company_id', 'company_name', 'company_key', 'department', 'requester_name',
@@ -52,12 +55,17 @@ export async function appendAudit(client, e) {
 }
 
 /**
- * Every PR state change goes through here, after the row is updated and in the same transaction.
+ * Every PR state change goes through here, after the row is updated and in the same transaction:
+ * audit row(s), then the Sheet copy (PR row upserted, audit rows appended) when P2P_SPREADSHEET_ID is set.
  * `row` is the row AFTER the change; entries are audit rows (docNo/company filled from the row).
  */
 export async function recordChange(client, row, entries) {
   const list = [].concat(entries).map((e) => ({ docNo: row.pr_no, company: row.company_name, ...e }));
   for (const e of list) await appendAudit(client, e);
+  const spreadsheetId = p2pSpreadsheetId();
+  if (!spreadsheetId) return;
+  await enqueue(client, { spreadsheetId, tab: PR_TAB, mode: 'upsert', keyColumn: PR_KEY, record: prRecord(row) });
+  for (const e of list) await enqueue(client, { spreadsheetId, tab: AUDIT_TAB, mode: 'append', record: auditRecord(e) });
 }
 
 export async function auditFor(db, prNo, limit = 200) {
