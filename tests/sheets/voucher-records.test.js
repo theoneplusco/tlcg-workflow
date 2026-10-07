@@ -81,3 +81,24 @@ test('rowForHeader lines up with the live headers (no provided field lost)', () 
   assert.deepEqual(CURRENT_HEADER.filter((_, i) => c[i] === ''), []);
   assert.equal(c[CURRENT_HEADER.indexOf('approvalProgress')], 0);
 });
+
+test('historyRecord: huge data: signature_url is replaced, short one and URLs kept', () => {
+  const big = 'data:image/png;base64,' + 'A'.repeat(45000);
+  assert.equal(historyRecord({ ...sample(), signatureUrl: big }).signature_url, '[đã lưu trong hệ thống]');
+  assert.equal(historyRecord({ ...sample(), signatureUrl: 'data:image/png;base64,AAAA' }).signature_url, 'data:image/png;base64,AAAA');
+  assert.equal(historyRecord({ ...sample(), signatureUrl: 'https://' + 'x'.repeat(46000) }).signature_url.length, 46008, 'only data: values are replaced');
+});
+
+test('historyRecord: metadata still too large after stripping → valid JSON with top-level scalars only', () => {
+  const items = Array.from({ length: 2000 }, (_, i) => ({ name: 'Văn phòng phẩm ' + i, amount: i * 1000 }));
+  const r = historyRecord({ ...sample(), meta: { reason: 'Mua VPP', voucherDate: '2026-10-07', count: 3, ok: true, none: null,
+    expenseItems: items, approvalPlan: { steps: [] }, sig: 'data:image/png;base64,' + 'A'.repeat(50000) } });
+  assert.ok(r.metadata_json.length <= 45000);
+  assert.deepEqual(JSON.parse(r.metadata_json),
+    { truncated: true, reason: 'Mua VPP', voucherDate: '2026-10-07', count: 3, ok: true, none: null, sig: '[đã lưu trong hệ thống]' });
+});
+
+test('currentRecord: a rejected voucher shows approvalProgress 0 (GAS progNum_)', () => {
+  const r = currentRecord({ ...sample(), status: 'Đã từ chối' }, { submittedAt: '2026-10-01T01:00:00Z', progressDone: 2, at: '2026-10-07T02:00:00Z' });
+  assert.equal(r.approvalProgress, 0);
+});

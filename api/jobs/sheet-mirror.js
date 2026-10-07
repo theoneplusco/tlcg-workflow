@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { google } from 'googleapis';
 import pool from '../../db/pool.js';
 import redis from '../../db/redis.js';
-import { runSheetMirrorOnce } from '../lib/sheets/mirror-run.js';
+import { runSheetMirrorOnce, pruneOutbox } from '../lib/sheets/mirror-run.js';
+import { voucherSpreadsheetId } from '../lib/sheets/voucher-records.js';
 
 const q = (tab) => `'${String(tab).replace(/'/g, "''")}'`;
 
@@ -37,13 +38,25 @@ export function googleSheets() {
 
 const RELEASE = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
 
-/** Every 20 s, one PM2 worker at a time (Redis lock), when SHEETS_MIRROR=on. */
-export function startSheetMirrorJob() {
-  if (process.env.SHEETS_MIRROR !== 'on') return;
-  let sheets;
-  try { sheets = googleSheets(); } catch (e) { console.error('[sheet-mirror] disabled:', e.message); return; }
+/**
+ * Every 20 s, one PM2 worker at a time (Redis lock), when SHEETS_MIRROR=on and VOUCHER_SPREADSHEET_ID
+ * names the target. Returns the timer, or false when not started (deps are for tests).
+ */
+export function startSheetMirrorJob({ sheets, intervalMs = 20000 } = {}) {
+  if (process.env.SHEETS_MIRROR !== 'on') return false;
+  const target = voucherSpreadsheetId();
+  if (!target) {
+    console.error('[sheet-mirror] NOT started: SHEETS_MIRROR=on but VOUCHER_SPREADSHEET_ID is not set (no default target)');
+    return false;
+  }
+  if (!sheets) {
+    try { sheets = googleSheets(); } catch (e) { console.error('[sheet-mirror] disabled:', e.message); return false; }
+  }
+  console.log(`[sheet-mirror] started: copying vouchers to spreadsheet ${target}`);
+  const logFailure = (it, e) => console.error(`[sheet-mirror] ${it.tab} item ${it.id} failed (attempt ${it.attempts}): ${e.message}`);
+  const claimDay = async () => !!(await redis.set('sheet-mirror:pruned', '1', 'EX', 86400, 'NX'));
   let running = false;
-  setInterval(async () => {
+  return setInterval(async () => {
     if (running) return;
     running = true;
     const token = randomUUID();
@@ -53,13 +66,15 @@ export function startSheetMirrorJob() {
       await Promise.race([sheets.authorize(), new Promise((_, rej) => setTimeout(() => rej(new Error('Google auth timeout')), 20000).unref())]);
       locked = !!(await redis.set('lock:sheet-mirror', token, 'EX', 600, 'NX'));
       if (!locked) return;
-      const r = await runSheetMirrorOnce(sheets, pool);
+      const r = await runSheetMirrorOnce(sheets, pool, { onError: logFailure });
       if (r.done || r.failed) console.log(`[sheet-mirror] done=${r.done} failed=${r.failed}`);
+      const pruned = await pruneOutbox(pool, claimDay);
+      if (pruned) console.log(`[sheet-mirror] pruned ${pruned} items copied over 30 days ago`);
     } catch (e) {
       console.error('[sheet-mirror]', e.message);
     } finally {
       if (locked) { try { await redis.eval(RELEASE, 1, 'lock:sheet-mirror', token); } catch (e) { console.error('[sheet-mirror] unlock:', e.message); } }
       running = false;
     }
-  }, 20000);
+  }, intervalMs);
 }

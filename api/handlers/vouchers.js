@@ -22,7 +22,7 @@ import {
 } from '../lib/vouchers/repo.js';
 import { enqueue } from '../lib/sheets/outbox.js';
 import {
-  historyRecord, currentRecord, VOUCHER_SPREADSHEET_ID, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
+  historyRecord, currentRecord, voucherSpreadsheetId, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
 } from '../lib/sheets/voucher-records.js';
 
 // ── Messages (GAS MSG_ table, vi / en) ───────────────────────
@@ -82,13 +82,23 @@ const fail = (res, message) => res.json({ success: false, message });
 const now = () => new Date().toISOString();
 const lower = (s) => String(s || '').trim().toLowerCase();
 
+/** When the voucher was submitted (older rows imported from the Sheet may only have created_at). */
+const submittedAtOf = (row) => row.submitted_at || row.created_at;
+
+let warnedNoSheet = false;
 /**
  * Queue the Google Sheet copy of one voucher change (same transaction, after the row is locked):
  * the Sheet can lag but never miss or invent a row. `h` is the object given to appendHistory.
+ * No VOUCHER_SPREADSHEET_ID → nothing is queued (logged once); there is no default target.
  */
 async function mirrorVoucher(client, h, { at, submittedAt, progressDone }) {
-  await enqueue(client, { spreadsheetId: VOUCHER_SPREADSHEET_ID, tab: HISTORY_TAB, mode: 'append', record: historyRecord(h, at) });
-  await enqueue(client, { spreadsheetId: VOUCHER_SPREADSHEET_ID, tab: CURRENT_TAB, mode: 'upsert', keyColumn: CURRENT_KEY,
+  const spreadsheetId = voucherSpreadsheetId();
+  if (!spreadsheetId) {
+    if (!warnedNoSheet) { warnedNoSheet = true; console.warn('[Vouchers] VOUCHER_SPREADSHEET_ID is not set: voucher changes are not queued for the Google Sheet copy'); }
+    return;
+  }
+  await enqueue(client, { spreadsheetId, tab: HISTORY_TAB, mode: 'append', record: historyRecord(h, at) });
+  await enqueue(client, { spreadsheetId, tab: CURRENT_TAB, mode: 'upsert', keyColumn: CURRENT_KEY,
     record: currentRecord(h, { submittedAt, progressDone, at }) });
 }
 
@@ -325,7 +335,7 @@ async function approveOne({ voucherNumber, approverEmail, approverName, signatur
       note: result.finished ? `Tất cả ${next.steps.length} bước phê duyệt đã duyệt` : `Đã duyệt bởi ${label} (${ca.approvalProgress})`,
     };
     await appendHistory(client, hist);
-    await mirrorVoucher(client, hist, { at, submittedAt: row.submitted_at || row.created_at, progressDone: idx.done });
+    await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: idx.done });
     await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Approve', role: key, actorEmail: email,
       actorName: name, prevStatus: row.status, newStatus: status, extra: { signatureUploaded: !!signature } });
     await client.query('COMMIT');
@@ -453,7 +463,7 @@ export async function handleVoucherReject(req, res) {
       note: `Từ chối bởi ${who.label || who.name || email}\nLý do: ${reason}`,
     };
     await appendHistory(client, hist);
-    await mirrorVoucher(client, hist, { at, submittedAt: row.submitted_at || row.created_at, progressDone: idx.done });
+    await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: idx.done });
     await audit(client, { docNo: v.voucherNumber, company: row.company_name, action: 'Reject', role: who.role || '',
       actorEmail: email, actorName: who.name, prevStatus: row.status, newStatus: STATUS.rejected, note: reason });
     await client.query('COMMIT');
@@ -516,7 +526,7 @@ export async function handleVoucherAcknowledge(req, res) {
     };
     await appendHistory(client, hist);
     // Acknowledging leaves the plan as it was: progress is the stored done count
-    await mirrorVoucher(client, hist, { at, submittedAt: row.submitted_at || row.created_at, progressDone: row.progress_done });
+    await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: row.progress_done });
     await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Acknowledge', role: 'requester',
       actorEmail: requesterEmail, actorName: b.requesterName, prevStatus: row.status, newStatus: STATUS.received });
     await client.query('COMMIT');
@@ -641,7 +651,7 @@ export async function handleVoucherApprovalStatus(req, res) {
         currentApproverName: current ? current.name : null,
         approvers: ca.approvers,
         requesterEmail: row.requestor_email || '',
-        submittedAt: row.submitted_at || row.created_at,
+        submittedAt: submittedAtOf(row),
         lastUpdatedAt: new Date().toISOString(),
         approvalPlan: plan,
         acknowledged: !!(row.metadata && row.metadata.acknowledgedSignature),

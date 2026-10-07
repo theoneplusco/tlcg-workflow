@@ -8,8 +8,13 @@
 //   Voucher_Current: voucherNumber,voucherType,company,companyKey,employee,requestorEmail,submittedBy,amount,status,
 //     action,submittedAt,dueDate,approvalProgress,lastUpdated
 import { toAmount } from '../vouchers/repo.js';
+import { STATUS } from '../vouchers/compat.js';
 
-export const VOUCHER_SPREADSHEET_ID = process.env.VOUCHER_SPREADSHEET_ID || '1ujmPbtEdkGLgEshfhvV8gRB6R0GLI31jsZM5rDOJS0g';
+/**
+ * Target spreadsheet for the voucher copy. No default: a missing VOUCHER_SPREADSHEET_ID must never
+ * write into production. Read at call time so tests and PM2 reloads see the current value.
+ */
+export const voucherSpreadsheetId = () => String(process.env.VOUCHER_SPREADSHEET_ID || '').trim();
 export const HISTORY_TAB = 'Voucher_History';
 export const CURRENT_TAB = 'Voucher_Current';
 export const CURRENT_KEY = 'voucherNumber';
@@ -43,11 +48,25 @@ export function sheetTimeText(d) {
 // Base64 signatures make metadata too big for one cell (50,000 chars); Postgres keeps them.
 const META_LIMIT = 45000;
 const STORED = '[đã lưu trong hệ thống]';
+const stripData = (v) => (typeof v === 'string' && v.startsWith('data:') ? STORED : v);
 function metadataJson(meta) {
   const full = JSON.stringify(meta || {});
   if (full.length <= META_LIMIT) return full; // verbatim when it fits, as GAS wrote it
-  return JSON.stringify(meta, (k, v) => (typeof v === 'string' && v.startsWith('data:') ? STORED : v));
+  const stripped = JSON.stringify(meta, (k, v) => stripData(v));
+  if (stripped.length <= META_LIMIT) return stripped;
+  // Still too big (long item lists): keep valid JSON — the top-level scalars only.
+  const top = { truncated: true };
+  for (const [k, v] of Object.entries(meta)) {
+    if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) top[k] = stripData(v);
+  }
+  const short = JSON.stringify(top);
+  return short.length <= META_LIMIT ? short : '{"truncated":true}';
 }
+/** A base64 signature over the cell limit is kept in Postgres only (a cut data: URL is garbage). */
+const signatureCell = (v) => {
+  const s = String(v || '');
+  return s.startsWith('data:') && s.length > META_LIMIT ? STORED : s;
+};
 
 /** One Voucher_History row. `at` = when this event happened (defaults to approvedAt / acknowledgedAt). */
 export function historyRecord(h, at = h.approvedAt || h.acknowledgedAt || new Date()) {
@@ -59,14 +78,14 @@ export function historyRecord(h, at = h.approvedAt || h.acknowledgedAt || new Da
     description: h.description || '', note: h.note || '', approver_email: h.approverEmail || '',
     approved_at: sheetTimeText(h.approvedAt), metadata_json: metadataJson(h.meta),
     acknowledged_at: sheetTimeText(h.acknowledgedAt), acknowledged_by: h.acknowledgedBy || '',
-    signature_url: h.signatureUrl || '', rejection_reason: h.rejectionReason || '',
+    signature_url: signatureCell(h.signatureUrl), rejection_reason: h.rejectionReason || '',
   };
 }
 
 /**
  * One Voucher_Current row (upserted by voucherNumber), as GAS upsertVoucherCurrent_ wrote it:
  * submittedAt = original submission, lastUpdated = this event, approvalProgress = done count (an
- * integer — "1/3" would become a date in Sheets).
+ * integer — "1/3" would become a date in Sheets). A rejected voucher shows 0, like GAS progNum_.
  */
 export function currentRecord(h, { submittedAt, progressDone, at }) {
   return {
@@ -74,6 +93,6 @@ export function currentRecord(h, { submittedAt, progressDone, at }) {
     companyKey: h.companyKey || '', employee: h.employee || '', requestorEmail: h.requestorEmail || '',
     submittedBy: h.submittedBy || h.employee || '', amount: toAmount(h.amount), status: h.status || '',
     action: h.action || '', submittedAt: sheetTimeText(submittedAt), dueDate: h.dueDate || '',
-    approvalProgress: Number(progressDone) || 0, lastUpdated: sheetTimeText(at),
+    approvalProgress: h.status === STATUS.rejected ? 0 : Number(progressDone) || 0, lastUpdated: sheetTimeText(at),
   };
 }

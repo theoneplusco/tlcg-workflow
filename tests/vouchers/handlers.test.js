@@ -34,6 +34,7 @@ before(async () => {
   if (!url) return;
   process.env.DATABASE_URL = url;
   process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379/15';
+  process.env.VOUCHER_SPREADSHEET_ID = 'test-voucher-sheet';
   h = await import('../../api/handlers/vouchers.js');
   pool = (await import('../../db/pool.js')).default;
   ({ saveVersion } = await import('../../api/lib/approval/flows-repo.js'));
@@ -133,6 +134,20 @@ test('full approval → final emails; acknowledge once; history like the sheet',
   assert.ok(subjects.includes(`[ĐÃ DUYỆT HOÀN TOÀN] Phiếu ${no}`));
   assert.ok(subjects.includes(`[XÁC NHẬN NHẬN TIỀN] Phiếu ${no}`));
   assert.ok(subjects.includes(`[ĐÃ NHẬN TIỀN] Phiếu ${no}`));
+});
+
+test('no VOUCHER_SPREADSHEET_ID: the voucher is saved, no Sheet copy is queued', { skip }, async () => {
+  const no = newNo();
+  delete process.env.VOUCHER_SPREADSHEET_ID;
+  try {
+    const r = await call(h.handleVoucherSubmit, submitBody(no));
+    assert.equal(r.success, true, r.message);
+    assert.ok(await voucher(no));
+    assert.deepEqual(await outbox(no), []);
+  } finally { process.env.VOUCHER_SPREADSHEET_ID = 'test-voucher-sheet'; }
+  await call(h.handleVoucherReject, { voucher: { voucherNumber: no, approverEmail: people.treasurer, rejectReason: 'r' } });
+  const ids = (await pool.query(`SELECT DISTINCT spreadsheet_id FROM sheet_outbox WHERE record->>'voucherNumber' = $1 OR record->>'voucher_number' = $1`, [no])).rows;
+  assert.deepEqual(ids, [{ spreadsheet_id: 'test-voucher-sheet' }], 'explicit target, never the production default');
 });
 
 test('reject: reason required; any approver in the flow may reject; everyone notified', { skip }, async () => {

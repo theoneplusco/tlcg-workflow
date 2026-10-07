@@ -32,7 +32,8 @@ async function claim(db, limit) {
 }
 
 // deadlineMs keeps a run inside its 10-minute claim lease: no new group starts after it, the rest is released.
-export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 120000, now = Date.now } = {}) {
+// onError(item, error) is called once per failed item (item.attempts already counts this failure).
+export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 120000, now = Date.now, onError = () => {} } = {}) {
   const t0 = now();
   const items = await claim(db, limit);
   const byTab = new Map();
@@ -49,6 +50,7 @@ export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 
       await db.query(
         `UPDATE sheet_outbox SET attempts = $2, last_error = $3, next_try_at = NOW() + ($4 || ' seconds')::interval WHERE id = $1`,
         [it.id, attempts, String(e.message).slice(0, 500), String(backoffSeconds(attempts))]);
+      try { onError({ ...it, attempts }, e); } catch { /* logging must not break the run */ }
     }
     failed += group.length;
   };
@@ -90,4 +92,15 @@ export async function runSheetMirrorOnce(sheets, db, { limit = 20, deadlineMs = 
     if (rest.length) await db.query('UPDATE sheet_outbox SET next_try_at = NOW() WHERE id = ANY($1)', [rest]);
   }
   return { done, failed };
+}
+
+/**
+ * Retention: delete items copied more than 30 days ago. `claimDay()` resolves true at most once a
+ * day across workers (the job uses a Redis SET NX EX key). Returns the number deleted, or null if
+ * this call did not win the day.
+ */
+export async function pruneOutbox(db, claimDay) {
+  if (!(await claimDay())) return null;
+  const r = await db.query(`DELETE FROM sheet_outbox WHERE done_at < NOW() - interval '30 days'`);
+  return r.rowCount;
 }

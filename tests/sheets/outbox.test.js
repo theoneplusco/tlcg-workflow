@@ -3,7 +3,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import { enqueue } from '../../api/lib/sheets/outbox.js';
-import { runSheetMirrorOnce } from '../../api/lib/sheets/mirror-run.js';
+import { runSheetMirrorOnce, pruneOutbox } from '../../api/lib/sheets/mirror-run.js';
 
 const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
 after(() => db.end());
@@ -103,4 +103,31 @@ test('deadline: stops starting groups and releases the rest untouched', async ()
   const { rows } = await db.query('SELECT attempts, done_at IS NULL AS pending, next_try_at <= NOW() AS due FROM sheet_outbox WHERE done_at IS NULL');
   assert.equal(rows.length, 2);
   assert.ok(rows.every((x) => x.attempts === 0 && x.pending && x.due));
+});
+
+test('onError reports each failed item with its error (the worker logs it; /api/health does not)', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  await enqueue(db, { spreadsheetId: 's', tab: 'Missing', mode: 'append', record: { voucher_number: 'X' } });
+  const seen = [];
+  const r = await runSheetMirrorOnce(fakeSheets({}), db, { onError: (it, e) => seen.push([it.tab, it.attempts, e.message]) });
+  assert.deepEqual(r, { done: 0, failed: 1 });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0][0], 'Missing');
+  assert.equal(seen[0][1], 1, 'attempt number after this failure');
+  assert.ok(seen[0][2]);
+});
+
+test('pruneOutbox: deletes items done over 30 days ago, at most once per claimed day', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  for (const n of ['old', 'recent', 'pending']) await enqueue(db, { spreadsheetId: 's', tab: 'H', mode: 'append', record: { n } });
+  await db.query(`UPDATE sheet_outbox SET done_at = NOW() - interval '31 days' WHERE record->>'n' = 'old'`);
+  await db.query(`UPDATE sheet_outbox SET done_at = NOW() - interval '29 days' WHERE record->>'n' = 'recent'`);
+  await db.query(`UPDATE sheet_outbox SET created_at = NOW() - interval '60 days' WHERE record->>'n' = 'pending'`);
+  let claims = 0;
+  const once = async () => (claims += 1) === 1; // first call wins the day, later ones are refused
+  assert.equal(await pruneOutbox(db, once), 1);
+  await db.query(`UPDATE sheet_outbox SET done_at = NOW() - interval '31 days' WHERE record->>'n' = 'recent'`);
+  assert.equal(await pruneOutbox(db, once), null, 'already ran today');
+  const left = (await db.query(`SELECT record->>'n' AS n FROM sheet_outbox ORDER BY id`)).rows.map((x) => x.n);
+  assert.deepEqual(left, ['recent', 'pending']);
 });

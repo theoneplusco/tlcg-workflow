@@ -39,20 +39,18 @@ export async function handleHealth(req, res) {
     checks.emailQueueDepth = 'unknown';
   }
 
-  // Sheet mirror outbox (null if the table is missing)
+  // Sheet mirror outbox (null if the table is missing). Error text stays in the worker log, not on this public endpoint.
   try {
     const { rows } = await pool.query(`
       SELECT count(*)::int AS pending,
              count(*) FILTER (WHERE attempts > 0)::int AS failing,
-             EXTRACT(EPOCH FROM (NOW() - min(created_at))) / 60 AS oldest,
-             (SELECT last_error FROM sheet_outbox WHERE done_at IS NULL AND last_error IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_error
+             EXTRACT(EPOCH FROM (NOW() - min(created_at))) / 60 AS oldest
       FROM sheet_outbox WHERE done_at IS NULL`);
     const r = rows[0];
     checks.sheetOutbox = {
       pending: r.pending,
       failing: r.failing,
       oldestPendingMinutes: r.oldest == null ? null : Math.round(Number(r.oldest)),
-      lastError: r.last_error,
     };
   } catch {
     checks.sheetOutbox = null;
