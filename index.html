@@ -5842,6 +5842,8 @@
             if (!el) return;
             // Filter: pending/in-progress vouchers where logged-in user is an approver
             const tasks = recent.filter(v => {
+                // Postgres rows say whether the voucher waits for me now (any flow, group steps)
+                if (typeof v.myTurn === 'boolean') return v.myTurn;
                 const status = (v.status || '').toLowerCase();
                 if (status.includes('approved') || status.includes('rejected') || status.includes('received')) return false;
                 const approvers = v.meta?.companyApprovers || {};
@@ -6339,18 +6341,20 @@
                 return result;
             }
 
+            // "done/total": approval flows on Postgres can have any number of steps (GAS: /3)
             const progress = statusData?.approvalProgress || '0/3';
             const progressNum = parseInt(progress.split('/')[0]) || 0;
+            const progressTotal = parseInt(String(progress).split('/')[1], 10) || 3;
 
             // If approvers is empty but we have currentApproverName, try to use it
             if (!statusData.approvers || Object.keys(statusData.approvers).length === 0) {
                 // Set status based on progress
                 if (progressNum === 0) {
-                    result.status = 'Chờ Duyệt (0/3)';
-                } else if (progressNum === 3) {
-                    result.status = 'Đã Duyệt (3/3)';
+                    result.status = `Chờ Duyệt (0/${progressTotal})`;
+                } else if (progressNum >= progressTotal) {
+                    result.status = `Đã Duyệt (${progressTotal}/${progressTotal})`;
                 } else {
-                    result.status = `Đang Duyệt (${progressNum}/3)`;
+                    result.status = `Đang Duyệt (${progressNum}/${progressTotal})`;
                 }
                 return result;
             }
@@ -6362,11 +6366,11 @@
 
             // Set status based on progress
             if (progressNum === 0) {
-                result.status = 'Chờ Duyệt (0/3)';
-            } else if (progressNum === 3) {
-                result.status = 'Đã Duyệt (3/3)';
+                result.status = `Chờ Duyệt (0/${progressTotal})`;
+            } else if (progressNum >= progressTotal) {
+                result.status = `Đã Duyệt (${progressTotal}/${progressTotal})`;
             } else {
-                result.status = `Đang Duyệt (${progressNum}/3)`;
+                result.status = `Đang Duyệt (${progressNum}/${progressTotal})`;
             }
 
             // Set detail based on who approved last
@@ -6405,6 +6409,7 @@
             const action = (voucher?.action || '').toString();
             const progressRaw = voucher?.meta?.companyApprovers?.approvalProgress || '0/3';
             const progressNum = parseInt(String(progressRaw).split('/')[0], 10) || 0;
+            const progressTotal = parseInt(String(progressRaw).split('/')[1], 10) || 3; // Postgres flows: any number of steps
 
             // Rejected — trumps everything else
             if (status === 'Rejected' || status === 'Đã từ chối' || action === 'Reject') {
@@ -6419,7 +6424,7 @@
             // Received (money paid / confirmed) — treat as fully complete
             if (status === 'Received' || status === 'Đã nhận') {
                 return {
-                    badgeText: 'Đã nhận (3/3)',
+                    badgeText: `Đã nhận (${progressTotal}/${progressTotal})`,
                     statusClass: 'bg-emerald-100 text-emerald-700',
                     statusIcon: 'fa-check-double',
                     detail: ''
@@ -6427,10 +6432,10 @@
             }
 
             // Fully approved
-            if (progressNum >= 3 || status === 'Approved' || status === 'Đã duyệt' ||
+            if (progressNum >= progressTotal || status === 'Approved' || status === 'Đã duyệt' ||
                 status === 'Fully Approved') {
                 return {
-                    badgeText: 'Đã Duyệt (3/3)',
+                    badgeText: `Đã Duyệt (${progressTotal}/${progressTotal})`,
                     statusClass: 'bg-emerald-100 text-emerald-700',
                     statusIcon: 'fa-check-circle',
                     detail: ''
@@ -6440,7 +6445,7 @@
             // Partially approved
             if (progressNum > 0) {
                 return {
-                    badgeText: `Đang Duyệt (${progressNum}/3)`,
+                    badgeText: `Đang Duyệt (${progressNum}/${progressTotal})`,
                     statusClass: 'bg-blue-100 text-blue-700',
                     statusIcon: 'fa-clock',
                     detail: ''
@@ -6449,7 +6454,7 @@
 
             // Default — awaiting first approver
             return {
-                badgeText: 'Chờ Duyệt (0/3)',
+                badgeText: `Chờ Duyệt (0/${progressTotal})`,
                 statusClass: 'bg-amber-100 text-amber-700',
                 statusIcon: 'fa-paper-plane',
                 detail: ''
