@@ -364,7 +364,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     - `applyReject(pr, meta, {email, note, at}) → { role, meta, status }`.
     - `sendBackInputError({sentBackNote, targetStep, approverRole}) → string|null`.
     - `applySendBack(pr, meta, {email, role, targetStep, note, at}) → { meta, status }`.
-  - `approverPickError(picks, candidates, branch) → string|null`.
+  - `approverPickError(picks, candidates, branch, requesterEmail) → string|null`. requesterEmail is required (fails closed with MISSING_REQUESTER_ERROR); refuses self-picks with SELF_APPROVAL_ERROR (decision #3).
   - `directPaymentProblem(row) → string|null`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1598,7 +1598,7 @@ export async function prepareSubmission(db, b) {
   if (sub.error) return sub;
   const company = await findCompany(db, b.companyName, b.companyKey);
   if (!company) return { error: 'Không tìm thấy công ty trong Dữ liệu gốc: ' + str(b.companyName) };
-  const pickError = approverPickError(sub.picks, await approverCandidates(db, company), sub.branch);
+  const pickError = approverPickError(sub.picks, await approverCandidates(db, company), sub.branch, caller.email); // 4th arg required (self-approval, decision #3)
   return pickError ? { error: pickError } : { company, sub };
 }
 
