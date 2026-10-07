@@ -4998,7 +4998,16 @@
 
         // Signature verification — compare against registered sample if available
         let verificationResult = { verified: true, reason: 'no_sample', similarity: '0' };
-        const sampleUrl = _prCompanyApprovers
+        // Postgres only (GAS never sends mySampleSignatureUrl): the server names the sample it requires, for every role incl. purchasing
+        const pgSample = (_prDetail && _prDetail.prNo === prNo && 'mySampleSignatureUrl' in _prDetail) ? String(_prDetail.mySampleSignatureUrl || '').trim() : null;
+        if (pgSample === '') {
+            alert(
+                `❌ KHÔNG THỂ PHÊ DUYỆT: Thiếu chữ ký mẫu\n\n` +
+                `Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).`
+            );
+            return;
+        }
+        const sampleUrl = pgSample !== null ? pgSample : _prCompanyApprovers
             ? (_prCompanyApprovers.legalRep?.email  === myEmail ? _prCompanyApprovers.legalRep.signature
             :  _prCompanyApprovers.accountant?.email === myEmail ? _prCompanyApprovers.accountant.signature
             :  _prCompanyApprovers.treasurer?.email  === myEmail ? _prCompanyApprovers.treasurer.signature
@@ -5018,6 +5027,16 @@
                 }
             } catch(e) {
                 console.warn('⚠️ Signature verification error (proceeding):', e);
+                if (pgSample) verificationResult = { verified: false, reason: 'fetch_failed', similarity: '0' };
+            }
+            // Postgres: a sample that could not be loaded or compared is never reported as verified
+            if (pgSample && (verificationResult.verified !== true || verificationResult.reason === 'no_sample')) {
+                alert(
+                    `❌ KHÔNG THỂ PHÊ DUYỆT: Không xác thực được chữ ký\n\n` +
+                    `Lý do: ${verificationResult.reason === 'no_sample' ? 'fetch_failed' : (verificationResult.reason || 'unknown')}\n\n` +
+                    `Vui lòng thử lại hoặc liên hệ quản trị viên.`
+                );
+                return;
             }
         }
 
@@ -5114,7 +5133,9 @@
 
         // Build target options based on role
         const roleMaxTarget = { budget: 1, supplier: 1, contract: 2, purchasing: 3 };
-        const maxTarget = roleMaxTarget[role] || 1;
+        // Decision #2 (Postgres only — GAS still offers step 3): purchasing sends back to step 1 or 2
+        const onPg = !!(_prDetail && _prDetail.prNo === prNo && 'mySampleSignatureUrl' in _prDetail);
+        const maxTarget = (onPg && role === 'purchasing') ? 2 : (roleMaxTarget[role] || 1);
         const targetLabels = {
             1: 'Bước 1 — Trả về Người đề nghị (yêu cầu chỉnh sửa & gửi lại)',
             2: 'Bước 2 — Trả về Duyệt ngân sách & NCC (đặt lại trạng thái)',

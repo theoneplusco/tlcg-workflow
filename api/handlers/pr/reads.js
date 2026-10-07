@@ -4,6 +4,7 @@ import { TERMINAL_STATUSES, directPaymentProblem } from '../../lib/purchase-requ
 import { cardFromRow, fullFromRow, historyEntry, goodsRecord, supplierExtra, likePattern } from '../../lib/purchase-requests/views.js';
 import { ok, fail, signedInCaller, NO_ACCESS_MSG } from '../../lib/purchase-requests/respond.js';
 import { MASTER_TABLES } from '../../lib/master-registry.js';
+import { sampleSignatureFor } from '../../lib/approval/signature-check.js';
 import { prDeps } from './tx.js';
 
 const src = (req) => ({ ...(req.query || {}), ...(req.body || {}) });
@@ -38,7 +39,10 @@ export async function handlePRDetail(req, res, d) {
   const row = await getPR(db, prNo); // archived rows included
   if (!row) return fail(res, `Không tìm thấy đề nghị: ${prNo}`);
   if (!canView(caller, row)) return fail(res, NO_ACCESS_MSG, 403);
-  return ok(res, 'Thành công', { request: fullFromRow(row) });
+  // The page compares the approver's signature with this sample (the same one handlePRApprove requires); '' = none / not their turn
+  const pending = (row.pending_emails || []).map((e) => String(e).toLowerCase()).includes(caller.email.toLowerCase());
+  const mySampleSignatureUrl = pending ? (await sampleSignatureFor(db, row.company_id, null, caller.email)).url : '';
+  return ok(res, 'Thành công', { request: { ...fullFromRow(row), mySampleSignatureUrl } });
 }
 
 export async function handlePRSearch(req, res, d) {
