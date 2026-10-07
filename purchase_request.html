@@ -2087,6 +2087,10 @@
                     const canvas = document.createElement('canvas');
                     canvas.width = size; canvas.height = size;
                     const ctx = canvas.getContext('2d');
+                    // Flatten on white, exactly as compressImageSignature does for the upload,
+                    // so a transparent PNG sample does not hash its background as black.
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, size, size);
                     ctx.drawImage(img, 0, 0, size, size);
                     const pixels = ctx.getImageData(0, 0, size, size).data;
                     const grayscale = [];
