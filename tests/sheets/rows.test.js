@@ -13,3 +13,7 @@ test('rowForHeader: numbers stay numbers, null → empty', () => {
 test('backoffSeconds: 30s doubling, capped at 1h', () => {
   assert.deepEqual([1, 2, 3, 10].map(backoffSeconds), [30, 60, 120, 3600]);
 });
+test('rowForHeader: escapes formula-looking strings, stringifies objects', () => {
+  assert.deepEqual(rowForHeader(['a', 'b', 'c', 'd'], { a: '=SUM(1)', b: { a: 1 }, c: '-x', d: 'ok' }),
+    ["'=SUM(1)", '{"a":1}', "'-x", 'ok']);
+});

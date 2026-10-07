@@ -8,12 +8,25 @@ import { runSheetMirrorOnce } from '../../api/lib/sheets/mirror-run.js';
 const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
 after(() => db.end());
 
-function fakeSheets(tabs) {
+function fakeSheets(tabs, opts = {}) {
   // tabs: { 'Voucher_Current': [[header…], [row…]] }
+  const calls = { append: [] };
   return {
-    async getValues(_id, tab) { return tabs[tab].map((r) => [...r]); },
-    async append(_id, tab, row) { tabs[tab].push(row); },
-    async update(_id, tab, rowNumber, row) { tabs[tab][rowNumber - 1] = row; },
+    calls,
+    async getHeader(_id, tab) { return [...tabs[tab][0]]; },
+    async getColumn(_id, tab, col) { return tabs[tab].map((r) => r[col]); },
+    async append(_id, tab, rows) {
+      calls.append.push(rows);
+      await new Promise((r) => setTimeout(r, 20));
+      for (const row of rows) tabs[tab].push(row);
+    },
+    async update(_id, tab, rowNumber, row) {
+      if (opts.failUpdateOnce && row[1] === opts.failUpdateOnce.status && !opts.failUpdateOnce.done) {
+        opts.failUpdateOnce.done = true;
+        throw new Error('boom');
+      }
+      tabs[tab][rowNumber - 1] = row;
+    },
   };
 }
 
@@ -39,4 +52,39 @@ test('a failing item is retried later and does not stop the others', async () =>
   const { rows } = await db.query('SELECT attempts, next_try_at > NOW() AS later FROM sheet_outbox WHERE tab = $1', ['Missing']);
   assert.equal(rows[0].attempts, 1);
   assert.equal(rows[0].later, true);
+});
+
+test('FIFO per tab: failing head blocks later items until it succeeds', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const tabs = { C: [['voucher_number', 'status'], ['V1', 'old']] };
+  const fake = fakeSheets(tabs, { failUpdateOnce: { status: 'A' } });
+  const rec = (status) => ({ spreadsheetId: 's', tab: 'C', mode: 'upsert', keyColumn: 'voucher_number', record: { voucher_number: 'V1', status } });
+  await enqueue(db, rec('A'));
+  await enqueue(db, rec('B'));
+  assert.deepEqual(await runSheetMirrorOnce(fake, db), { done: 0, failed: 1 });
+  assert.deepEqual(tabs.C[1], ['V1', 'old']);
+  assert.deepEqual(await runSheetMirrorOnce(fake, db), { done: 0, failed: 0 }); // head backing off
+  await db.query('UPDATE sheet_outbox SET next_try_at = NOW() WHERE done_at IS NULL');
+  assert.deepEqual(await runSheetMirrorOnce(fake, db), { done: 2, failed: 0 });
+  assert.deepEqual(tabs.C[1], ['V1', 'B']);
+});
+
+test('two concurrent runs append each row exactly once', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const tabs = { H: [['voucher_number']] };
+  const fake = fakeSheets(tabs);
+  for (const n of ['1', '2', '3', '4']) await enqueue(db, { spreadsheetId: 's', tab: 'H', mode: 'append', record: { voucher_number: n } });
+  const rs = await Promise.all([runSheetMirrorOnce(fake, db), runSheetMirrorOnce(fake, db)]);
+  assert.equal(rs[0].done + rs[1].done, 4);
+  assert.deepEqual(tabs.H.slice(1).map((r) => r[0]).sort(), ['1', '2', '3', '4']);
+});
+
+test('consecutive appends for one tab are sent as a single batch', async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const tabs = { H: [['voucher_number']] };
+  const fake = fakeSheets(tabs);
+  for (const n of ['a', 'b', 'c']) await enqueue(db, { spreadsheetId: 's', tab: 'H', mode: 'append', record: { voucher_number: n } });
+  assert.deepEqual(await runSheetMirrorOnce(fake, db), { done: 3, failed: 0 });
+  assert.equal(fake.calls.append.length, 1);
+  assert.equal(fake.calls.append[0].length, 3);
 });

@@ -11,8 +11,9 @@ try {
   console.log('READ ok:', meta.data.properties.title, '—', meta.data.sheets.map((s) => s.properties.title).join(', '));
   // A no-op write: rewrite A1 of the first tab with its current value
   const tab = meta.data.sheets[0].properties.title;
-  const a1 = (await api.spreadsheets.values.get({ spreadsheetId: id, range: `'${tab}'!A1` })).data.values || [['']];
-  await api.spreadsheets.values.update({ spreadsheetId: id, range: `'${tab}'!A1`, valueInputOption: 'RAW', requestBody: { values: a1 } });
+  const q = `'${tab.replace(/'/g, "''")}'!A1`;
+  const a1 = (await api.spreadsheets.values.get({ spreadsheetId: id, range: q, valueRenderOption: 'FORMULA' })).data.values || [['']];
+  await api.spreadsheets.values.update({ spreadsheetId: id, range: q, valueInputOption: 'USER_ENTERED', requestBody: { values: a1 } });
   console.log('WRITE ok (Editor access confirmed for', key.client_email + ')');
 } catch (e) {
   console.log('FAILED:', e.code || '', e.message, '\n→ Share the spreadsheet with', key.client_email, 'as Editor');

@@ -39,12 +39,23 @@ export async function handleHealth(req, res) {
     checks.emailQueueDepth = 'unknown';
   }
 
-  // Sheet mirror outbox depth (null if the table is missing)
+  // Sheet mirror outbox (null if the table is missing)
   try {
-    const { rows } = await pool.query('SELECT count(*)::int AS n FROM sheet_outbox WHERE done_at IS NULL');
-    checks.sheetOutboxDepth = rows[0].n;
+    const { rows } = await pool.query(`
+      SELECT count(*)::int AS pending,
+             count(*) FILTER (WHERE attempts > 0)::int AS failing,
+             EXTRACT(EPOCH FROM (NOW() - min(created_at))) / 60 AS oldest,
+             (SELECT last_error FROM sheet_outbox WHERE done_at IS NULL AND last_error IS NOT NULL ORDER BY id DESC LIMIT 1) AS last_error
+      FROM sheet_outbox WHERE done_at IS NULL`);
+    const r = rows[0];
+    checks.sheetOutbox = {
+      pending: r.pending,
+      failing: r.failing,
+      oldestPendingMinutes: r.oldest == null ? null : Math.round(Number(r.oldest)),
+      lastError: r.last_error,
+    };
   } catch {
-    checks.sheetOutboxDepth = null;
+    checks.sheetOutbox = null;
   }
 
   const allOk = checks.db === 'ok' && checks.redis === 'ok';
