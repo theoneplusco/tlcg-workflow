@@ -50,3 +50,20 @@ test('auditRecord lands positionally under the live PR_Audit_Log header', () => 
   const cells = rowForHeader(header, auditRecord({ docNo: 'EV-1', action: 'Reject', role: 'budget', actorEmail: ' Linh@X.vn ', at: '2026-10-07T02:00:00.000Z', note: 'thiếu' }));
   assert.deepEqual(cells, ['EV-1', 'PR', '', 'Reject', 'budget', 'linh@x.vn', '', '', '', '2026-10-07T02:00:00.000Z', 'thiếu', '']);
 });
+test('items_json stays valid JSON under 45,000 chars: long note/desc cut first, then a summary', () => {
+  const long = (n) => Array.from({ length: n }, (_, i) => ({ desc: 'D'.repeat(1000), note: 'N'.repeat(1000), qty: '1', price: '10', total: 10, section: 's' + i }));
+  const small = JSON.parse(prRecord({ ...row, items: long(2) }).items_json);
+  assert.equal(small[0].desc.length, 1000, 'verbatim when it fits');
+  const cut = prRecord({ ...row, items: long(40) }).items_json; // ~80k verbatim
+  assert.ok(cut.length <= 45000, `cut: ${cut.length}`);
+  const c = JSON.parse(cut);
+  assert.equal(c.length, 40);
+  assert.equal(c[0].desc, 'D'.repeat(200) + '…');
+  assert.equal(c[0].note, 'N'.repeat(200) + '…');
+  assert.equal(c[39].section, 's39');
+  const huge = prRecord({ ...row, items: long(200).map((it) => ({ ...it, unit: 'U'.repeat(1000) })) }).items_json; // still too big after cutting
+  assert.ok(huge.length <= 45000);
+  assert.deepEqual(JSON.parse(huge), [{ truncated: true, count: 200, grandTotal: 149500 }]);
+  const cells = rowForHeader(HEADER, prRecord({ ...row, items: long(200) }));
+  assert.doesNotThrow(() => JSON.parse(cells[12]), 'the cell itself parses (never cut by the 49k cap)');
+});

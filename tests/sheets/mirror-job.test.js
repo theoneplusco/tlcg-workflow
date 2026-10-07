@@ -30,6 +30,7 @@ test('SHEETS_MIRROR=on without VOUCHER_SPREADSHEET_ID: refuses to start and says
     const { result, lines } = await capture(() => startSheetMirrorJob());
     assert.equal(result, false);
     assert.match(lines.join('\n'), /VOUCHER_SPREADSHEET_ID/);
+    assert.match(lines.join('\n'), /P2P_SPREADSHEET_ID/);
   });
 });
 test('SHEETS_MIRROR=on with a target: starts and logs the target id', async () => {

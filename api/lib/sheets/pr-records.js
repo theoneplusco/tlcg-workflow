@@ -3,6 +3,7 @@
 // group is ever read; rowForHeader fills first occurrences only). PR rows are upserted on pr_no + row_type,
 // so legacy event rows of the same PR are never overwritten. Times are ISO text, as GAS wrote them.
 import { metadataJson } from './voucher-records.js';
+import { attachmentUrls } from '../purchase-requests/views.js';
 
 /** Target spreadsheet for the PR copy. No default; read at call time. */
 export const p2pSpreadsheetId = () => String(process.env.P2P_SPREADSHEET_ID || '').trim();
@@ -13,20 +14,35 @@ export const PR_KEY = 'pr_no,row_type';
 // Never throws (a bad date must not fail the action); a Date or ISO string → ISO text.
 const iso = (t) => { const d = t ? new Date(t) : null; return d && !Number.isNaN(d.getTime()) ? d.toISOString() : ''; };
 
+// Up to 200 items × 1000-char fields fit the validator but not a cell (50,000; rows.js cuts at 49,000, which
+// would leave invalid JSON). Verbatim when it fits; else long desc/note cut to 200 chars; else a valid summary.
+const ITEMS_LIMIT = 45000;
+const CUT = 200;
+const cutText = (v) => (typeof v === 'string' && v.length > CUT ? v.slice(0, CUT) + '…' : v);
+export function itemsJson(items, grandTotal) {
+  const list = Array.isArray(items) ? items : [];
+  const full = JSON.stringify(list);
+  if (full.length <= ITEMS_LIMIT) return full;
+  const cut = JSON.stringify(list.map((it) => (it && typeof it === 'object' ? { ...it, desc: cutText(it.desc), note: cutText(it.note) } : it)));
+  if (cut.length <= ITEMS_LIMIT) return cut;
+  return JSON.stringify([{ truncated: true, count: list.length, grandTotal: Number(grandTotal) || 0 }]);
+}
+
 export function prRecord(row) {
   return {
     pr_no: row.pr_no, company_name: row.company_name || '', company_key: row.company_key || '', department: row.department || '',
     requester_name: row.requester_name || '', required_date: row.required_date || '', priority: row.priority || '',
     purpose: row.purpose || '', suggested_vendor: row.vendor_name || '', budget_code: row.budget_code || '',
     budget_approver_email: row.budget_approver_email || '', supplier_approver_email: row.supplier_approver_email || '',
-    items_json: JSON.stringify(row.items || []), grand_total: Number(row.grand_total) || 0, status: row.status || '',
+    items_json: itemsJson(row.items, row.grand_total), grand_total: Number(row.grand_total) || 0, status: row.status || '',
     submitted_at: iso(row.submitted_at), metadata_json: metadataJson(row.metadata || {}),
     contract_approver_email: row.contract_approver_email || '', purchasing_approver_email: row.purchasing_approver_email || '',
-    attachment_urls: (row.attachments || []).filter((a) => a && a.fileUrl).map((a) => a.fileUrl).join(', '),
+    attachment_urls: attachmentUrls(row.attachments),
     row_type: 'submit',
   };
 }
 
+// Handlers always pass `at` (the same time as the Postgres audit row); the fallback is for direct callers only.
 export function auditRecord(e) {
   return {
     document_no: e.docNo, flow: 'PR', company_name: e.company || '', action: e.action, role: e.role || '',

@@ -7,6 +7,7 @@ import {
 } from '../../api/lib/purchase-requests/repo.js';
 
 const url = process.env.TEST_DATABASE_URL;
+const restoreEnv = (v) => { if (v === undefined) delete process.env.P2P_SPREADSHEET_ID; else process.env.P2P_SPREADSHEET_ID = v; };
 const skip = !url && 'set TEST_DATABASE_URL to run';
 const db = url ? new pg.Pool({ connectionString: url }) : null;
 before(async () => { if (db) await db.query('TRUNCATE purchase_requests, pr_audit_log, sheet_outbox'); });
@@ -139,15 +140,32 @@ test('recordChange in one transaction: PR update and audit row commit or roll ba
 test('recordChange queues the Sheet copy (PR upsert + audit append) when P2P_SPREADSHEET_ID is set', { skip }, async () => {
   await db.query('TRUNCATE sheet_outbox');
   const row = await getPR(db, 'ZZ-PR20261007000001');
-  delete process.env.P2P_SPREADSHEET_ID;
-  await recordChange(db, row, { action: 'Approve', role: 'budget', actorEmail: 'linh@x.vn', at: '2026-10-07T04:00:00.000Z' });
-  assert.equal((await db.query('SELECT count(*)::int AS n FROM sheet_outbox')).rows[0].n, 0, 'no target → nothing queued');
-  process.env.P2P_SPREADSHEET_ID = 'p2p-test';
+  const saved = process.env.P2P_SPREADSHEET_ID;
   try {
+    delete process.env.P2P_SPREADSHEET_ID;
     await recordChange(db, row, { action: 'Approve', role: 'budget', actorEmail: 'linh@x.vn', at: '2026-10-07T04:00:00.000Z' });
-  } finally { delete process.env.P2P_SPREADSHEET_ID; }
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM sheet_outbox')).rows[0].n, 0, 'no target → nothing queued');
+    process.env.P2P_SPREADSHEET_ID = 'p2p-test';
+    await recordChange(db, row, { action: 'Approve', role: 'budget', actorEmail: 'linh@x.vn', at: '2026-10-07T04:00:00.000Z' });
+  } finally { restoreEnv(saved); }
   const ob = (await db.query('SELECT tab, mode, key_column, record FROM sheet_outbox ORDER BY id')).rows;
   assert.deepEqual(ob.map((o) => [o.tab, o.mode, o.key_column]), [['Purchase_Request_History', 'upsert', 'pr_no,row_type'], ['PR_Audit_Log', 'append', null]]);
   assert.equal(ob[0].record.row_type, 'submit');
   assert.equal(ob[1].record.document_no, 'ZZ-PR20261007000001');
+});
+test('recordChange: the queued Sheet copy rolls back with the PR transaction', { skip }, async () => {
+  await db.query('TRUNCATE sheet_outbox');
+  const saved = process.env.P2P_SPREADSHEET_ID;
+  process.env.P2P_SPREADSHEET_ID = 'p2p-test';
+  const c = await db.connect();
+  try {
+    await c.query('BEGIN');
+    const row = await lockPR(c, 'ZZ-PR20261007000001');
+    const after = await updatePR(c, row.id, { status: 'Đã từ chối' });
+    await recordChange(c, after, { action: 'Reject', role: 'budget', actorEmail: 'linh@x.vn' });
+    assert.equal((await c.query('SELECT count(*)::int AS n FROM sheet_outbox')).rows[0].n, 2, 'queued inside the transaction');
+    await c.query('ROLLBACK');
+  } finally { c.release(); restoreEnv(saved); }
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM sheet_outbox')).rows[0].n, 0);
+  assert.notEqual((await getPR(db, 'ZZ-PR20261007000001')).status, 'Đã từ chối');
 });

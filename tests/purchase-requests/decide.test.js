@@ -235,3 +235,19 @@ test('resubmit: no submittedAt anywhere on the row → the current time, not 197
   assert.equal(r.success, true, r.message);
   assert.equal((await pr(no)).metadata.submittedAt, at.toISOString());
 });
+test('Sheet copy: one approval covering budget + supplier queues one PR upsert and two audit appends', { skip }, async () => {
+  const no = await submit();
+  const saved = process.env.P2P_SPREADSHEET_ID;
+  process.env.P2P_SPREADSHEET_ID = 'p2p-test';
+  try {
+    assert.equal((await approve(no, people.treasurer, 'budget')).success, true);
+  } finally { if (saved === undefined) delete process.env.P2P_SPREADSHEET_ID; else process.env.P2P_SPREADSHEET_ID = saved; }
+  const ob = (await pool.query(
+    `SELECT spreadsheet_id, tab, mode, key_column, record FROM sheet_outbox
+     WHERE record->>'pr_no' = $1 OR record->>'document_no' = $1 ORDER BY id`, [no])).rows;
+  assert.deepEqual(ob.map((o) => [o.spreadsheet_id, o.tab, o.mode, o.key_column]), [
+    ['p2p-test', 'Purchase_Request_History', 'upsert', 'pr_no,row_type'],
+    ['p2p-test', 'PR_Audit_Log', 'append', null], ['p2p-test', 'PR_Audit_Log', 'append', null]]);
+  assert.equal(ob[0].record.status, 'Mua hàng (5/5)');
+  assert.deepEqual(ob.slice(1).map((o) => [o.record.action, o.record.role]), [['Approve', 'budget'], ['Approve', 'supplier']]);
+});

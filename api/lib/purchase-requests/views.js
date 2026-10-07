@@ -29,12 +29,15 @@ export function cardFromRow(row) {
   };
 }
 
+/** "url1, url2" — the attachment_urls cell GAS wrote (also used by the Sheet copy). */
+export const attachmentUrls = (attachments) => (attachments || []).filter((a) => a && a.fileUrl).map((a) => a.fileUrl).join(', ');
+
 /** GAS prFullFromRow_: items and metadata are strings (purchase_request.html JSON.parses them). */
 export function fullFromRow(row) {
   return {
     ...cardFromRow(row),
     metadata: JSON.stringify(row.metadata || {}),
-    attachmentUrls: (row.attachments || []).filter((a) => a && a.fileUrl).map((a) => a.fileUrl).join(', '),
+    attachmentUrls: attachmentUrls(row.attachments),
     budgetCode: row.budget_code || '',
   };
 }
