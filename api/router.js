@@ -44,7 +44,9 @@ const NEW_HANDLERS = {
   getVoucherHistory:      handleVoucherHistory,
   getApprovalStatus:      handleVoucherApprovalStatus,
   getApprovalContext:     handleVoucherApprovalContext,
-  // The page's old "copy to Sheet" call: every voucher change already queued its Sheet copy (sheet_outbox)
+  // No-op kept for old clients. voucher.html's syncToSheets caller is dead code; the Voucher_History /
+  // Voucher_Current copy comes from sheet_outbox (queued by every voucher change). GAS's old target,
+  // the 'Phiếu Thu Chi' tab, is no longer written.
   syncToSheets:           (req, res) => res.json({ success: true, message: 'Đã đồng bộ (bản sao Google Sheet tự cập nhật)' }),
 
   // P2P (Phase 4)
