@@ -4,8 +4,9 @@
 import { handleGetMasterData, handleGetCompanies, handleGetCompanyApprovers, handleGetEmployees, handleGetSuppliers, handleGetVendorBanks } from './handlers/master-data.js';
 import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus, handleVoucherApprovalContext } from './handlers/vouchers.js';
-import { handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
-import { handlePRSubmit } from './handlers/pr/submit.js';
+import { handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
+import { handlePRSubmit, handlePRResubmit } from './handlers/pr/submit.js';
+import { handlePRApprove, handlePRReject, handlePRSendBack } from './handlers/pr/decide.js';
 import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
 import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
 import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
@@ -52,8 +53,10 @@ const NEW_HANDLERS = {
 
   // P2P (Phase 4)
   purchaseRequest:             handlePRSubmit,
+  resubmitPurchaseRequest:     handlePRResubmit,
   approvePurchaseRequest:      handlePRApprove,
   rejectPurchaseRequest:       handlePRReject,
+  sendBackPurchaseRequest:     handlePRSendBack,
   getPurchaseRequestHistory:   handlePRHistory,
   getPurchaseRequest:          handlePRDetail,
 
@@ -87,7 +90,8 @@ const WORKFLOW_ACTIONS = {
   vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'bulkApprove',
     'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext', 'syncToSheets'],
   files: ['createVoucherUploadSession', 'finalizeVoucherUpload', 'fetchSignatureImage'],
-  p2p: ['purchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'getPurchaseRequestHistory', 'getPurchaseRequest'],
+  p2p: ['purchaseRequest', 'resubmitPurchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'sendBackPurchaseRequest',
+    'getPurchaseRequestHistory', 'getPurchaseRequest'],
 };
 const PG_WORKFLOWS = new Set(String(process.env.PG_WORKFLOWS || '').split(',').map((s) => s.trim()).filter(Boolean));
 for (const [workflow, actions] of Object.entries(WORKFLOW_ACTIONS)) {
