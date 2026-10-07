@@ -2,14 +2,13 @@
 import { getPR, auditFor, visibility, canView } from '../../lib/purchase-requests/repo.js';
 import { TERMINAL_STATUSES, directPaymentProblem } from '../../lib/purchase-requests/state.js';
 import { cardFromRow, fullFromRow, historyEntry, goodsRecord, supplierExtra, likePattern } from '../../lib/purchase-requests/views.js';
-import { ok, fail, signedInCaller, NO_ACCESS_MSG } from '../../lib/purchase-requests/respond.js';
+import { ok, fail, signedInCaller, NO_ACCESS_MSG, SYSTEM_ERROR } from '../../lib/purchase-requests/respond.js';
 import { MASTER_TABLES } from '../../lib/master-registry.js';
 import { sampleSignatureFor } from '../../lib/approval/signature-check.js';
 import { prDeps } from './tx.js';
 
 const src = (req) => ({ ...(req.query || {}), ...(req.body || {}) });
 const str = (v) => String(v ?? '').trim();
-const SYSTEM_ERROR = 'Lỗi hệ thống, vui lòng thử lại.';
 const SUPPLIER_FIELDS = ['name', 'address', 'phone', 'email', 'taxCode', 'companyType'];
 const MAX_SUPPLIER_FIELD = 200;
 /** Log the real error on the server; the page only gets a generic message. */

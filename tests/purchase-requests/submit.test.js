@@ -165,6 +165,19 @@ test('tx: prDeps is lazy about R2 and checks the login against the injected db; 
       return { message: 'x' }; // no saved row
     });
   });
-  assert.equal(r.success, false);
+  assert.deepEqual([r.success, r.message], [false, 'Lỗi hệ thống, vui lòng thử lại.'], 'generic message, detail only in the log');
   assert.equal((await pr(made.prNo)).purpose, before, 'rolled back');
+});
+
+test('submit / resubmit: a database failure answers the generic system error, never the raw text', { skip }, async () => {
+  const boom = { query: async () => { throw new Error('relation secret_table does not exist'); },
+    connect: async () => ({ query: async () => { throw new Error('secret'); }, release() {} }) };
+  const { error } = console;
+  console.error = () => {};
+  try {
+    for (const fn of [h.handlePRSubmit, h.handlePRResubmit]) {
+      const out = await call(fn, submitBody(company, people, { prNo: 'EV-PR-X1' }), REQ, { db: boom });
+      assert.deepEqual([out.success, out.message], [false, 'Lỗi hệ thống, vui lòng thử lại.'], fn.name);
+    }
+  } finally { console.error = error; }
 });

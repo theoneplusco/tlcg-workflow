@@ -1,6 +1,8 @@
 // api/lib/purchase-requests/respond.js — PR response helpers (pure).
 export const LOGIN_MSG = 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.';
 export const NO_ACCESS_MSG = 'Bạn không có quyền xem đề nghị này.';
+/** What the page gets when something breaks on the server; the detail is only logged. */
+export const SYSTEM_ERROR = 'Lỗi hệ thống, vui lòng thử lại.';
 
 /** GAS spread its data into the top level; some pages read result.data.x (B8): send both. */
 export const ok = (res, message, fields = {}) => res.json({ success: true, message, ...fields, data: fields });

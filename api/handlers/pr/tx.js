@@ -6,7 +6,7 @@ import gasProxy from '../../voucher.js';
 import { queueMail } from '../email-queue.js';
 import { publishEvent } from '../sse.js';
 import { lockPR } from '../../lib/purchase-requests/repo.js';
-import { ok, fail } from '../../lib/purchase-requests/respond.js';
+import { ok, fail, SYSTEM_ERROR } from '../../lib/purchase-requests/respond.js';
 
 /**
  * Handlers take `d` (tests) over these defaults. paymentsForPR(db, prNo) → [{status}] is the payment
@@ -40,7 +40,7 @@ export async function withLockedPR(db, prNo, res, work) {
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('[PR] write failed:', e.message);
-    return fail(res, 'Lỗi: ' + e.message);
+    return fail(res, SYSTEM_ERROR);
   } finally { client.release(); }
   if (out.error) return fail(res, out.error);
   for (const m of (out.mails || []).filter(Boolean)) await queueMail(m, db);

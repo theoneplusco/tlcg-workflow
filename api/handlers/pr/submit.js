@@ -9,7 +9,7 @@ import { parseAttachmentList, storeAttachments } from '../../lib/purchase-reques
 import { allocatePRNo, prefixFor } from '../../lib/purchase-requests/numbering.js';
 import { insertPR, updatePR, getPR, recordChange, approverCandidates } from '../../lib/purchase-requests/repo.js';
 import { approvalRequests, submitConfirmation, resubmitNotices } from '../../lib/purchase-requests/emails.js';
-import { ok, fail, signedInCaller, claimProblem } from '../../lib/purchase-requests/respond.js';
+import { ok, fail, signedInCaller, claimProblem, SYSTEM_ERROR } from '../../lib/purchase-requests/respond.js';
 import { prDeps, withLockedPR } from './tx.js';
 
 const str = (v) => String(v ?? '').trim();
@@ -74,7 +74,7 @@ export async function handlePRSubmit(req, res, d) {
     return ok(res, 'Đề nghị mua hàng đã được gửi thành công.', { prNo: row.pr_no });
   } catch (err) {
     console.error('[PR] submit:', err.message);
-    return fail(res, 'Lỗi khi lưu đề nghị mua hàng: ' + err.message);
+    return fail(res, SYSTEM_ERROR);
   }
 }
 
@@ -129,6 +129,6 @@ export async function handlePRResubmit(req, res, d) {
     });
   } catch (err) {
     console.error('[PR] resubmit:', err.message);
-    return fail(res, 'Lỗi khi lưu đề nghị mua hàng: ' + err.message);
+    return fail(res, SYSTEM_ERROR);
   }
 }
