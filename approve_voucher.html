@@ -880,7 +880,9 @@
                 
                 if (result.success) {
                     saveCachedSignature(approverSignatureData);
-                    showMessage('Đã phê duyệt phiếu thành công! Email thông báo đã được gửi đến ' + requestorEmail + '.', 'success');
+                    // Postgres says what happens next (who is still waiting, or fully approved)
+                    showMessage(pgContext && result.message ? result.message
+                        : 'Đã phê duyệt phiếu thành công! Email thông báo đã được gửi đến ' + requestorEmail + '.', 'success');
                     
                     // Close window after 3 seconds
                     setTimeout(() => {
