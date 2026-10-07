@@ -71,3 +71,15 @@ GAS also uses these Google services:
 - Share the master spreadsheet with `tlcg-sheets-mirror@n8n-mediainsdier.iam.gserviceaccount.com` as **Editor**. This is needed for the Sheet copy.
 - R2 CORS: allow `PUT` from `https://workflow.tl-c.us` and `https://mini.tl-c.us` on bucket `tlcg-attachments`.
 - Email sender: confirm the Resend sending domain and the "from" address that replaces the Gmail account.
+
+## Switch-day additions (Plan 5 review)
+
+1. Stop the app and freeze PR submissions in GAS while `scripts/import-purchase-requests.js --live` runs, so no PR is written to the Sheet during the import.
+2. After the import, check:
+   - no PR has `company_id` NULL (`SELECT pr_no FROM purchase_requests WHERE company_id IS NULL`);
+   - no open PR has empty `pending_emails`;
+   - every company has a `company_code`.
+3. Run the importer with `--notify-purchasing` once (and only once): it emails the purchasing approver of simplified PRs stuck at Mua hàng.
+4. Check once on the real Sheet that the mirror's ISO audit timestamps stay text (not turned into dates by Sheets). The importer's dedupe of audit rows depends on it.
+5. `P2P_SPREADSHEET_ID` must equal the GAS `MASTER_SPREADSHEET_ID`. The server refuses to start with `p2p` on and `P2P_SPREADSHEET_ID` unset, and the importer `--live` reads this id.
+6. `p2p` and `payments` go on together with Plans 6–7, never `p2p` alone. Until Plan 6, the server refuses to start with `payments` in `PG_WORKFLOWS`, and the direct-payment check fails closed.
