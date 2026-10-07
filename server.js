@@ -9,6 +9,7 @@
  * Env:    see .env (DATABASE_URL, REDIS_URL, R2_*, RESEND_API_KEY, etc.)
  */
 
+import 'dotenv/config'; // .env on the Mini (PM2 also loads it via ecosystem.config.cjs)
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -26,6 +27,7 @@ import { handlePresign } from './api/handlers/presign.js';
 import { handleHealth } from './api/handlers/health.js';
 import { startEmailWorker } from './api/handlers/email-queue.js';
 import { rateLimit } from './api/middleware/rate-limiter.js';
+import { unwrapPayload } from './api/middleware/unwrap-payload.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,7 +69,7 @@ app.get('/api/health', handleHealth);
       New actions go to Postgres handlers; old actions proxy to GAS.
       Rate limiter applies to all.
    ───────────────────────────────────────────────────────────── */
-app.all('/api/voucher/:action', async (req, res) => {
+app.all('/api/voucher/:action', unwrapPayload, async (req, res) => {
   const action = req.params.action;
 
   // Check if this action is migrated to the new backend
@@ -78,6 +80,7 @@ app.all('/api/voucher/:action', async (req, res) => {
     });
     if (res.headersSent) return; // rate limiter responded
     try {
+      req.body = req.unwrapped.payload; // data={json} / multipart payloads, unwrapped
       await routeNewAction(action, req, res);
     } catch (err) {
       console.error(`[router] New handler error (${action}):`, err.message);
@@ -91,14 +94,16 @@ app.all('/api/voucher/:action', async (req, res) => {
   return actionHandler(req, res);
 });
 
-app.all('/api/voucher', async (req, res) => {
-  const action = req.body?.action || req.query?.action;
+app.all('/api/voucher', unwrapPayload, async (req, res) => {
+  // Action from the query, the body, or inside data={json} / multipart (see unwrap-payload.js)
+  const action = req.unwrapped.action;
   if (action && migratedActions.includes(action)) {
     await new Promise((resolve) => {
       rateLimit(req, res, () => resolve());
     });
     if (res.headersSent) return;
     try {
+      req.body = req.unwrapped.payload;
       await routeNewAction(action, req, res);
     } catch (err) {
       console.error(`[router] New handler error (${action}):`, err.message);
