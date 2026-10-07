@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS voucher_audit_log (
 
 -- ── Purchase Requests ───────────────────────────────────────
 
+-- NOTE: purchase_requests / pr_audit_log gained columns and indexes in db/migrations/007_purchase_requests.sql
+-- (approver_emails, pending_emails, imported_at, sheet_row, source; idx_pr_active is redefined there).
 CREATE TABLE IF NOT EXISTS purchase_requests (
   id                       SERIAL PRIMARY KEY,
   pr_no                    TEXT NOT NULL UNIQUE,
@@ -231,6 +233,7 @@ CREATE INDEX IF NOT EXISTS idx_vhist_submitted    ON voucher_history(submitted_a
 
 CREATE INDEX IF NOT EXISTS idx_pr_no              ON purchase_requests(pr_no);
 CREATE INDEX IF NOT EXISTS idx_pr_company_status  ON purchase_requests(company_id, status);
+-- idx_pr_active is redefined in migration 007 (adds 'Approved','Rejected')
 CREATE INDEX IF NOT EXISTS idx_pr_active          ON purchase_requests(status) WHERE status NOT IN ('Hoàn thành', 'Đã từ chối');
 CREATE INDEX IF NOT EXISTS idx_pr_submitted       ON purchase_requests(submitted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pr_archived        ON purchase_requests(archived_at);

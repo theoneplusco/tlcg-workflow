@@ -29,4 +29,10 @@ CREATE TABLE IF NOT EXISTS purchase_order_types (
   type      TEXT NOT NULL,
   sheet_row INT
 );
+-- Backfill: rows that predate approver_emails keep approver visibility. Idempotent (only rows still empty).
+-- pending_emails is left to the importer / handlers (it depends on the live state).
+UPDATE purchase_requests SET approver_emails = ARRAY(
+  SELECT DISTINCT lower(trim(e)) FROM unnest(ARRAY[budget_approver_email, supplier_approver_email,
+    contract_approver_email, purchasing_approver_email]) e WHERE coalesce(trim(e), '') <> '')
+WHERE approver_emails = '{}';
 COMMIT;

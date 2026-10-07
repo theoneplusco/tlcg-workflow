@@ -78,3 +78,61 @@ test('approverCandidates: Master Company roles + Kế Toán Chi staff', { skip }
   assert.ok(c.purchasingEmails.has('tlc.ap@tl-c.com.vn'));
   assert.equal(c.purchasingEmails.has(company.treasurer_email.toLowerCase()), false);
 });
+
+test('emails are normalised on write; visibility and canView find mixed-case data', { skip }, async () => {
+  await insertPR(db, rec('ZZ-PR20261007000003', { requester_email: ' Mixed@X.vn ', approver_emails: [' Boss3@X.vn '], pending_emails: ['Boss3@X.vn'] }));
+  const r = await getPR(db, 'ZZ-PR20261007000003');
+  assert.equal(r.requester_email, 'mixed@x.vn');
+  assert.deepEqual(r.approver_emails, ['boss3@x.vn']);
+  const saved = await updatePR(db, r.id, { pending_emails: ['AP3@x.vn '] });
+  assert.deepEqual(saved.pending_emails, ['ap3@x.vn']);
+  for (const email of ['BOSS3@x.vn', 'Mixed@x.vn']) {
+    const v = visibility({ email }, 1);
+    const { rows } = await db.query(`SELECT pr_no FROM purchase_requests WHERE pr_no = 'ZZ-PR20261007000003' AND ${v.sql}`, v.params);
+    assert.equal(rows.length, 1);
+    assert.equal(canView({ email }, r), true);
+  }
+});
+
+test('empty caller email sees nothing; updatePR on unknown id returns null', { skip }, async () => {
+  const v = visibility({ email: '', isAdmin: true }, 1);
+  const { rows } = await db.query(`SELECT 1 FROM purchase_requests WHERE ${v.sql}`, v.params);
+  assert.equal(rows.length, 0);
+  assert.equal(canView({ email: '', isAdmin: true }, { requester_email: '', approver_emails: [] }), false);
+  assert.equal(await updatePR(db, 999999999, { status: 'x' }), null);
+});
+
+test('migration backfill: legacy row with only the four approver columns becomes visible', { skip }, async () => {
+  await db.query(`INSERT INTO purchase_requests (pr_no, requester_email, budget_approver_email, purchasing_approver_email)
+                  VALUES ('ZZ-PR20261007000004', 'r@x.vn', ' Legacy@X.vn', 'AP@x.vn')`);
+  const sql = (await import('node:fs')).readFileSync(new URL('../../db/migrations/007_purchase_requests.sql', import.meta.url), 'utf8');
+  await db.query(sql);
+  const r = await getPR(db, 'ZZ-PR20261007000004');
+  assert.deepEqual([...r.approver_emails].sort(), ['ap@x.vn', 'legacy@x.vn']);
+  assert.equal(canView({ email: 'LEGACY@x.vn' }, r), true);
+});
+
+test('recordChange in one transaction: PR update and audit row commit or roll back together', { skip }, async () => {
+  const c = await db.connect();
+  try {
+    await c.query('BEGIN');
+    const row = await lockPR(c, 'ZZ-PR20261007000001');
+    const after = await updatePR(c, row.id, { status: 'Hoàn thành' });
+    await recordChange(c, after, { action: 'Complete', role: 'purchasing', actorEmail: 'AP@x.vn', newStatus: 'Hoàn thành' });
+    await c.query('ROLLBACK');
+  } finally { c.release(); }
+  assert.notEqual((await getPR(db, 'ZZ-PR20261007000001')).status, 'Hoàn thành');
+  assert.equal((await auditFor(db, 'ZZ-PR20261007000001')).some((a) => a.action === 'Complete'), false);
+  const c2 = await db.connect();
+  try {
+    await c2.query('BEGIN');
+    const row = await lockPR(c2, 'ZZ-PR20261007000001');
+    const after = await updatePR(c2, row.id, { status: 'Hoàn thành' });
+    await recordChange(c2, after, { action: 'Complete', role: 'purchasing', actorEmail: 'AP@x.vn', newStatus: after.status });
+    await c2.query('COMMIT');
+  } finally { c2.release(); }
+  assert.equal((await getPR(db, 'ZZ-PR20261007000001')).status, 'Hoàn thành');
+  const a = (await auditFor(db, 'ZZ-PR20261007000001')).find((x) => x.action === 'Complete');
+  assert.equal(a.new_status, 'Hoàn thành');
+  assert.equal(a.actor_email, 'ap@x.vn');
+});

@@ -1,5 +1,8 @@
 // api/lib/purchase-requests/repo.js — purchase_requests / pr_audit_log storage.
+// RULE: handlers change PR state only via updatePR + recordChange (same transaction). appendAudit is for
+// recordChange and the importer only.
 // Takes the db or transaction client as an argument (no pool import): handlers, tests and the importer share it.
+const lower = (s) => String(s || '').trim().toLowerCase();
 const JSON_COLS = new Set(['items', 'attachments', 'metadata']);
 export const WRITABLE = ['pr_no', 'company_id', 'company_name', 'company_key', 'department', 'requester_name',
   'requester_email', 'required_date', 'priority', 'purpose', 'vendor_name', 'budget_code',
@@ -7,8 +10,10 @@ export const WRITABLE = ['pr_no', 'company_id', 'company_name', 'company_key', '
   'items', 'grand_total', 'currency', 'status', 'p2p_branch', 'purchase_type', 'attachments', 'metadata',
   'submitted_at', 'archived_at', 'approver_emails', 'pending_emails', 'imported_at', 'sheet_row', 'updated_at'];
 
-const val = (k, v) => (JSON_COLS.has(k) ? JSON.stringify(v ?? (k === 'metadata' ? {} : [])) : v);
-const lower = (s) => String(s || '').trim().toLowerCase();
+const EMAIL_LISTS = new Set(['approver_emails', 'pending_emails']);
+const val = (k, v) => (EMAIL_LISTS.has(k) ? (v || []).map(lower).filter(Boolean)
+  : k === 'requester_email' ? lower(v)
+  : JSON_COLS.has(k) ? JSON.stringify(v ?? (k === 'metadata' ? {} : [])) : v);
 
 export async function getPR(db, prNo) {
   const { rows } = await db.query('SELECT * FROM purchase_requests WHERE pr_no = $1', [String(prNo || '').trim()]);
@@ -34,7 +39,7 @@ export async function updatePR(client, id, fields) {
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).concat('updated_at = NOW()');
   const { rows } = await client.query(
     `UPDATE purchase_requests SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, [id, ...keys.map((k) => val(k, fields[k]))]);
-  return rows[0];
+  return rows[0] || null;
 }
 
 export async function appendAudit(client, e) {
@@ -63,6 +68,7 @@ export async function auditFor(db, prNo, limit = 200) {
 
 /** Requester, anyone named on the PR, or an admin (decision 2026-10-07). */
 export function visibility(caller, start = 1) {
+  if (!lower(caller && caller.email)) return { sql: `(FALSE AND $${start}::boolean AND $${start + 1}::text IS NOT NULL)`, params: [false, ''] };
   return {
     sql: `($${start}::boolean OR LOWER(requester_email) = $${start + 1} OR $${start + 1} = ANY(approver_emails))`,
     params: [!!caller.isAdmin, lower(caller.email)],
@@ -72,6 +78,7 @@ export function visibility(caller, start = 1) {
 export function canView(caller, row) {
   if (!caller || !row) return false;
   const me = lower(caller.email);
+  if (!me) return false;
   return !!caller.isAdmin || lower(row.requester_email) === me || (row.approver_emails || []).includes(me);
 }
 
