@@ -157,6 +157,14 @@ test('approve: an approver with no registered sample signature is refused, even 
   assert.deepEqual([ok.success, ok.status], [true, 'Hoàn thành'], ok.message);
 });
 
+test('approve: "no_sample" claimed although a sample is registered → refused (page skipped the comparison)', { skip }, async () => {
+  const no = await submit();
+  const r = await approve(no, people.treasurer, 'budget', { signatureVerification: JSON.stringify({ verified: true, reason: 'no_sample', similarity: '0' }) });
+  assert.deepEqual([r.success, r.message], [false, 'Không xác minh được chữ ký. Vui lòng tải lại trang và thử lại.']);
+  assert.equal((await pr(no)).metadata.budgetStatus, 'Pending', 'nothing approved');
+  assert.equal((await approve(no, people.treasurer, 'budget')).success, true, 'a real comparison still passes');
+});
+
 test('approve: the requester can never approve their own PR', { skip }, async () => {
   const no = await submit();
   assert.equal((await approve(no, 'req@pr-test.vn', 'budget')).message, 'Bạn không thể tự phê duyệt đề nghị của chính mình.');

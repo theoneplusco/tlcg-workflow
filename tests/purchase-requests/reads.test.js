@@ -131,13 +131,13 @@ test('validatePRForDirectPayment: GAS messages; vendorName from the PR (B9); ope
   assert.equal((await v({ prNo: mine }, { paymentsForPR: async () => [{ status: 'Rejected' }] })).success, true);
 });
 
-test('detail: the pending approver gets their own registered sample (mySampleSignatureUrl); others get ""', { skip }, async () => {
+test('detail: the pending approver gets their own registered sample (mySampleSignatureUrl, "" = none); others get null', { skip }, async () => {
   const { sampleSignatureFor } = await import('../../api/lib/approval/signature-check.js');
   const no = (await call(s.handlePRSubmit, submitBody(company, people, { purpose: 'Mẫu chữ ký' }), as('a@pr-test.vn'))).prNo;
   const sample = async (who) => (await call(r.handlePRDetail, { prNo: no }, as(who))).request.mySampleSignatureUrl;
-  assert.equal(await sample('a@pr-test.vn'), '', 'requester: not pending');
+  assert.equal(await sample('a@pr-test.vn'), null, 'requester: not pending');
   assert.equal(await sample(people.treasurer), (await sampleSignatureFor(pool, company.id, null, people.treasurer)).url, 'budget/supplier approver');
-  assert.equal(await sample(people.ap), '', 'purchasing approver: not their turn yet');
+  assert.equal(await sample(people.ap), null, 'purchasing approver: not their turn yet');
   await call(dd.handlePRApprove, { prNo: no, approverRole: 'budget', note: '', approverSignature: 'data:sig', signatureVerification: SIG_OK }, as(people.treasurer));
   const { extra } = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.ap])).rows[0];
   try {
@@ -148,5 +148,5 @@ test('detail: the pending approver gets their own registered sample (mySampleSig
   } finally {
     await pool.query(`UPDATE employees SET extra = $2 WHERE LOWER(email) = $1`, [people.ap, extra]);
   }
-  assert.equal(await sample(people.treasurer), '', 'already approved: no longer pending');
+  assert.equal(await sample(people.treasurer), null, 'already approved: no longer pending');
 });

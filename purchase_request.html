@@ -4998,8 +4998,16 @@
 
         // Signature verification — compare against registered sample if available
         let verificationResult = { verified: true, reason: 'no_sample', similarity: '0' };
-        // Postgres only (GAS never sends mySampleSignatureUrl): the server names the sample it requires, for every role incl. purchasing
-        const pgSample = (_prDetail && _prDetail.prNo === prNo && 'mySampleSignatureUrl' in _prDetail) ? String(_prDetail.mySampleSignatureUrl || '').trim() : null;
+        // Postgres only (GAS cards have no source / mySampleSignatureUrl): the server names the sample it requires, for every role incl. purchasing
+        const detailHere = !!(_prDetail && _prDetail.prNo === prNo);
+        const onPg = pr.source === 'pg' || (detailHere && (_prDetail.source === 'pg' || 'mySampleSignatureUrl' in _prDetail));
+        const rawSample = (onPg && detailHere) ? _prDetail.mySampleSignatureUrl : undefined;
+        if (onPg && typeof rawSample !== 'string') {
+            // detail fetch failed (list-card fallback) or not my turn per the server: send nothing
+            alert('❌ Không tải được chi tiết phiếu. Vui lòng tải lại trang.');
+            return;
+        }
+        const pgSample = onPg ? rawSample.trim() : null;
         if (pgSample === '') {
             alert(
                 `❌ KHÔNG THỂ PHÊ DUYỆT: Thiếu chữ ký mẫu\n\n` +
@@ -5134,7 +5142,7 @@
         // Build target options based on role
         const roleMaxTarget = { budget: 1, supplier: 1, contract: 2, purchasing: 3 };
         // Decision #2 (Postgres only — GAS still offers step 3): purchasing sends back to step 1 or 2
-        const onPg = !!(_prDetail && _prDetail.prNo === prNo && 'mySampleSignatureUrl' in _prDetail);
+        const onPg = !!(_prDetail && _prDetail.prNo === prNo && (_prDetail.source === 'pg' || 'mySampleSignatureUrl' in _prDetail));
         const maxTarget = (onPg && role === 'purchasing') ? 2 : (roleMaxTarget[role] || 1);
         const targetLabels = {
             1: 'Bước 1 — Trả về Người đề nghị (yêu cầu chỉnh sửa & gửi lại)',

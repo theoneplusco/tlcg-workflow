@@ -39,6 +39,8 @@ export async function handlePRApprove(req, res, d) {
     if (r.error) return r;
     // No registered sample = nothing the browser could have verified against: refuse (GAS let "no_sample" through).
     if (!(await sampleSignatureFor(client, row.company_id, null, caller.email)).url) return { error: NO_SAMPLE.vi };
+    // A sample exists, so "no_sample" means the page never compared against it (e.g. it fell back to the list card): refuse.
+    if (verification && verification.reason === 'no_sample') return { error: 'Không xác minh được chữ ký. Vui lòng tải lại trang và thử lại.' };
     const saved = await updatePR(client, row.id, { metadata: r.meta, status: r.status, pending_emails: pendingEmails(row, r.meta, r.status) });
     const extra = { signatureUploaded: true, verification: verificationText(raw) };
     await recordChange(client, saved, r.roles.map((role) => ({ action: 'Approve', role, actorEmail: caller.email, actorName: caller.name,

@@ -40,6 +40,13 @@ test('missingP2PSchema: p2p on without migration 007 → names the file', async 
   assert.match(await missingP2PSchema(['p2p'], fakeDb2(null, 'sheet_outbox')), /007_purchase_requests\.sql/);
   assert.match(await missingP2PSchema(['p2p'], fakeDb2('purchase_order_types', null)), /006_sheet_outbox\.sql/);
 });
+test('missingP2PSchema: database unreachable → not fatal (null), the error is logged', async () => {
+  const { error } = console;
+  console.error = () => {};
+  try {
+    assert.equal(await missingP2PSchema(['p2p'], { query: async () => { throw new Error('ECONNREFUSED'); } }), null);
+  } finally { console.error = error; }
+});
 test('missingP2PSchema: real test database has migrations 006 and 007', { skip: !process.env.TEST_DATABASE_URL && 'needs TEST_DATABASE_URL' }, async () => {
   const pg = (await import('pg')).default;
   const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });

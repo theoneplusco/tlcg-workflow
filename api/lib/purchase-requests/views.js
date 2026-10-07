@@ -26,6 +26,7 @@ export function cardFromRow(row) {
     purchaseType: row.purchase_type || meta.purchaseType || 'goods', p2pBranch: row.p2p_branch || meta.p2pBranch || 'full',
     hasAttachments: (row.attachments || []).some((a) => a && a.fileUrl),
     items: JSON.stringify(row.items || []),
+    source: 'pg', // GAS cards never have it: purchase_request.html tells Postgres mode apart even when the detail fetch fails
   };
 }
 

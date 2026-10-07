@@ -15,7 +15,7 @@ const row = {
 const KEYS = ['prNo', 'company', 'department', 'requesterName', 'requesterEmail', 'requestorEmail', 'requiredDate', 'priority', 'purpose',
   'suggestedVendor', 'grandTotal', 'status', 'submittedAt', 'budgetApprover', 'supplierApprover', 'contractApprover', 'purchasingApprover',
   'budgetApproverEmail', 'supplierApproverEmail', 'contractApproverEmail', 'purchasingApproverEmail', 'budgetStatus', 'supplierStatus',
-  'contractStatus', 'purchasingStatus', 'activeStage', 'purchaseType', 'p2pBranch', 'hasAttachments', 'items'];
+  'contractStatus', 'purchasingStatus', 'activeStage', 'purchaseType', 'p2pBranch', 'hasAttachments', 'items', 'source'];
 
 test('cardFromRow: GAS card keys + items string (B7); terminal rows keep statuses and branch (B5)', () => {
   const c = cardFromRow(row);
@@ -28,6 +28,7 @@ test('cardFromRow: GAS card keys + items string (B7); terminal rows keep statuse
   assert.equal(c.requesterEmail, 'req@x.vn');
   assert.equal(c.items, '[{"desc":"Khăn","qty":"5"}]');
   assert.equal(c.hasAttachments, true);
+  assert.equal(c.source, 'pg', 'the page tells Postgres cards from GAS ones without the detail fetch');
   assert.equal(cardFromRow({ ...row, status: 'Trả lại bổ sung', metadata: { budgetStatus: 'Pending', supplierStatus: 'Pending' } }).activeStage, 'parallel');
   assert.equal(cardFromRow({ ...row, status: 'Rejected' }).activeStage, 'rejected');
 });
