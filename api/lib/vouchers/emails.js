@@ -240,3 +240,24 @@ export function batchRequest(approver, items) {
     </div>`,
   };
 }
+
+/** Daily reminder (GAS sendReminderEmails): the voucher is due tomorrow and still waits for this approver. */
+export function reminder(v, approver, dueLabel, status) {
+  const url = `${baseUrl()}/voucher.html?approveVoucher=${encodeURIComponent(v.voucherNumber)}`;
+  return {
+    to: approver.email,
+    subject: `[NHẮC NHỞ] Phiếu ${v.voucherNumber} sắp đến hạn`,
+    html: `
+          <p>Kính gửi ${esc(approver.name || 'Anh/Chị')},</p>
+          <p>Nhắc nhở: Phiếu <strong>${esc(v.voucherNumber)}</strong> đang chờ phê duyệt của Anh/Chị và sẽ đến hạn vào <strong>ngày mai (${esc(dueLabel)})</strong>.</p>
+          <ul>
+            <li><strong>Loại phiếu:</strong> ${esc(v.voucherType)}</li>
+            <li><strong>Nhân viên:</strong> ${esc(v.employee)}</li>
+            <li><strong>Số tiền:</strong> ${money(v.amount)}</li>
+            <li><strong>Trạng thái:</strong> ${esc(status)}</li>
+          </ul>
+          <p>Vui lòng xem xét và phê duyệt trước hạn:</p>
+          <p><a href="${esc(url)}" style="background:#f59e0b;color:white;padding:10px 24px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:500;">🔔 Xem và phê duyệt phiếu</a></p>
+          ${SIGN_OFF}`,
+  };
+}

@@ -200,3 +200,16 @@ test('reads: summary visibility + admin flag check, history newest first, approv
   assert.equal(st.data.approvalPlan.steps.length, 3);
   assert.match((await call(h.handleVoucherApprovalStatus, { voucherNumber: 'NOPE' })).message, /Không tìm thấy phiếu/);
 });
+
+test('daily reminder: one email per pending approver for vouchers due tomorrow', { skip }, async () => {
+  const { runVoucherReminders } = await import('../../api/jobs/voucher-reminders.js');
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no, { dueDate: '2026-10-08' }));
+  const before = (await emails(no)).length;
+  assert.ok((await runVoucherReminders(pool, '2026-10-07')) >= 1);
+  const rem = (await emails(no)).slice(before).find((x) => x.subject === `[NHẮC NHỞ] Phiếu ${no} sắp đến hạn`);
+  assert.equal(rem.to_email, people.accountant);
+  const later = (await emails(no)).length;
+  await runVoucherReminders(pool, '2026-10-05');
+  assert.equal((await emails(no)).length, later, 'not due tomorrow → nothing');
+});
