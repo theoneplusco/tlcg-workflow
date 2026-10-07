@@ -32,3 +32,31 @@ export async function missingP2PSchema(workflows, db) {
     return null;
   }
 }
+
+/**
+ * Settings that must stop the boot (exit 1), as full log lines. Pure: `env` is process.env in server.js.
+ * payments is refused until Plan 6 moves the payment side (validatePRForDirectPayment fails closed meanwhile);
+ * p2p needs P2P_SPREADSHEET_ID because GAS contracts/acceptance/payments still read PRs from the Sheet copy.
+ */
+export function configProblems(workflows, env) {
+  const out = [];
+  if (workflows.includes('payments')) {
+    out.push('[server] FATAL: payments workflow is not available yet (Plan 6); remove "payments" from PG_WORKFLOWS');
+  }
+  if (workflows.includes('p2p') && !env.P2P_SPREADSHEET_ID) {
+    out.push('[server] FATAL: P2P_SPREADSHEET_ID must be set when p2p is on (GAS contracts/acceptance/payments read PRs from the Sheet)');
+  }
+  return out;
+}
+
+/** Settings worth a warning at boot (the server still starts), as full log lines. */
+export function configWarnings(workflows, env) {
+  const out = [];
+  if ((workflows.includes('p2p') || workflows.includes('vouchers')) && env.SHEETS_MIRROR !== 'on') {
+    out.push('[server] Sheet copy worker is off (SHEETS_MIRROR != on); sheet_outbox will grow');
+  }
+  if (workflows.includes('p2p') && !workflows.includes('files')) {
+    out.push('[server] p2p without files: signature images and attachments still go through GAS');
+  }
+  return out;
+}

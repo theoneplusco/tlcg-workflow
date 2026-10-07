@@ -4,7 +4,8 @@
  *
  *   node scripts/import-purchase-requests.js --dir ./sheets              # Purchase_Request_History.csv, Purchase_Request_Archive.csv,
  *                                                                        # PR_Audit_Log.csv, optional "Purchase Order.csv"
- *   node scripts/import-purchase-requests.js --live                      # read with SHEETS_MIRROR_KEY_FILE
+ *   node scripts/import-purchase-requests.js --live                      # read with SHEETS_MIRROR_KEY_FILE from P2P_SPREADSHEET_ID
+ *                                                                        # (falls back to the registry SPREADSHEET_ID when unset)
  *   node scripts/import-purchase-requests.js --dir ./sheets --dry-run
  *   node scripts/import-purchase-requests.js --live --notify-purchasing  # switch day only: email the purchasing approver
  *                                                                        # of simplified PRs stuck at Mua hàng (GAS bug B2)
@@ -24,6 +25,11 @@ const DIR = args.includes('--dir') ? args[args.indexOf('--dir') + 1] : '';
 const LIVE = args.includes('--live');
 const DRY = args.includes('--dry-run');
 if (!DIR && !LIVE) { console.error('Use --dir <folder> or --live'); process.exit(1); }
+// The PR tabs live in the Sheet the PR mirror writes to (P2P_SPREADSHEET_ID = the GAS MASTER_SPREADSHEET_ID).
+const LIVE_SHEET_ID = process.env.P2P_SPREADSHEET_ID || SPREADSHEET_ID;
+if (LIVE && !DIR) {
+  console.log(`[ImportPR] Spreadsheet: ${LIVE_SHEET_ID} (${process.env.P2P_SPREADSHEET_ID ? 'P2P_SPREADSHEET_ID' : 'registry SPREADSHEET_ID; P2P_SPREADSHEET_ID not set'})`);
+}
 
 async function readTab(name, { optional = false } = {}) {
   try {
@@ -31,7 +37,7 @@ async function readTab(name, { optional = false } = {}) {
     const { google } = await import('googleapis');
     const auth = new google.auth.GoogleAuth({ keyFile: process.env.SHEETS_MIRROR_KEY_FILE || process.env.GOOGLE_SHEETS_MIRROR_KEY || 'secrets/sheets-mirror.json',
       scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
-    const r = await google.sheets({ version: 'v4', auth }).spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${name}'` });
+    const r = await google.sheets({ version: 'v4', auth }).spreadsheets.values.get({ spreadsheetId: LIVE_SHEET_ID, range: `'${name}'` });
     return recordsFromGrid((r.data.values || []).map((row) => row.map((v) => (v == null ? '' : String(v)))));
   } catch (e) {
     if (optional) { console.warn(`[ImportPR] ${name} not read (${e.message}); skipped`); return null; }

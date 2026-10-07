@@ -31,7 +31,7 @@ import { startVoucherReminderJob } from './api/jobs/voucher-reminders.js';
 import { startSheetMirrorJob } from './api/jobs/sheet-mirror.js';
 import { rateLimit } from './api/middleware/rate-limiter.js';
 import { unwrapPayload } from './api/middleware/unwrap-payload.js';
-import { missingVoucherSchema, missingP2PSchema } from './api/lib/startup-checks.js';
+import { missingVoucherSchema, missingP2PSchema, configProblems, configWarnings } from './api/lib/startup-checks.js';
 import { jwtSecret } from './api/handlers/auth.js';
 import pool from './db/pool.js';
 
@@ -161,6 +161,13 @@ app.use((err, req, res, _next) => {
 /* ─────────────────────────────────────────────────────────────
    7. Start.
    ───────────────────────────────────────────────────────────── */
+// Settings that cannot run (payments before Plan 6, p2p without its Sheet id): refuse to boot so PM2 shows the error.
+const settingProblems = configProblems(postgresWorkflows, process.env);
+if (settingProblems.length) {
+  for (const p of settingProblems) console.error(p);
+  process.exit(1);
+}
+for (const w of configWarnings(postgresWorkflows, process.env)) console.warn(w);
 // Vouchers on Postgres need migration 006 (sheet_outbox): refuse to boot without it so PM2 shows the error.
 const schemaProblem = await missingVoucherSchema(postgresWorkflows, pool);
 if (schemaProblem) {
@@ -174,9 +181,6 @@ const p2pProblem = await missingP2PSchema(postgresWorkflows, pool);
 if (p2pProblem) {
   console.error(`[server] FATAL: ${p2pProblem}`);
   process.exit(1);
-}
-if (postgresWorkflows.includes('p2p') && !process.env.P2P_SPREADSHEET_ID) {
-  console.warn('[server] PR Sheet copy disabled: P2P_SPREADSHEET_ID not set');
 }
 // No dev default in production: logins are refused until JWT_SECRET is set (GAS proxy keeps working).
 if (!jwtSecret()) console.error('[server] JWT_SECRET is not set (NODE_ENV=production): login and token checks are refused');

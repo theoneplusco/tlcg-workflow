@@ -74,3 +74,32 @@ test('decodeToken refuses every token in production without JWT_SECRET', () => {
     if (saved.n === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved.n;
   }
 });
+
+test('configProblems: payments on → refuse to boot until Plan 6', async () => {
+  const { configProblems } = await import('../../api/lib/startup-checks.js');
+  assert.deepEqual(configProblems(['payments', 'files'], {}),
+    ['[server] FATAL: payments workflow is not available yet (Plan 6); remove "payments" from PG_WORKFLOWS']);
+});
+test('configProblems: p2p without P2P_SPREADSHEET_ID → fatal; with it, or p2p off → none', async () => {
+  const { configProblems } = await import('../../api/lib/startup-checks.js');
+  assert.deepEqual(configProblems(['p2p', 'files'], {}),
+    ['[server] FATAL: P2P_SPREADSHEET_ID must be set when p2p is on (GAS contracts/acceptance/payments read PRs from the Sheet)']);
+  assert.deepEqual(configProblems(['p2p', 'files'], { P2P_SPREADSHEET_ID: 'abc' }), []);
+  assert.deepEqual(configProblems(['vouchers', 'files'], {}), []);
+  assert.deepEqual(configProblems([], {}), []);
+  assert.equal(configProblems(['p2p', 'payments'], {}).length, 2);
+});
+test('configWarnings: sheet copy worker off with p2p or vouchers', async () => {
+  const { configWarnings } = await import('../../api/lib/startup-checks.js');
+  const off = '[server] Sheet copy worker is off (SHEETS_MIRROR != on); sheet_outbox will grow';
+  assert.deepEqual(configWarnings(['vouchers', 'files'], {}), [off]);
+  assert.deepEqual(configWarnings(['p2p', 'files'], { SHEETS_MIRROR: 'off' }), [off]);
+  assert.deepEqual(configWarnings(['p2p', 'files'], { SHEETS_MIRROR: 'on' }), []);
+  assert.deepEqual(configWarnings(['files'], {}), [], 'neither workflow on → no warning');
+});
+test('configWarnings: p2p without files → signatures and attachments still go through GAS', async () => {
+  const { configWarnings } = await import('../../api/lib/startup-checks.js');
+  assert.deepEqual(configWarnings(['p2p'], { SHEETS_MIRROR: 'on' }),
+    ['[server] p2p without files: signature images and attachments still go through GAS']);
+  assert.deepEqual(configWarnings(['vouchers'], { SHEETS_MIRROR: 'on' }), [], 'only p2p needs this warning');
+});
