@@ -4,9 +4,9 @@
 import { handleGetMasterData, handleGetCompanies, handleGetCompanyApprovers, handleGetEmployees, handleGetSuppliers, handleGetVendorBanks } from './handlers/master-data.js';
 import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus, handleVoucherApprovalContext } from './handlers/vouchers.js';
-import { handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
 import { handlePRSubmit, handlePRResubmit } from './handlers/pr/submit.js';
 import { handlePRApprove, handlePRReject, handlePRSendBack } from './handlers/pr/decide.js';
+import { handlePRHistory, handlePRDetail, handlePRSearch, handleP2PHistory, handleGoodsCatalog, handlePurchaseOrderTypes, handleAddSupplier, handleValidatePRForDirectPayment } from './handlers/pr/reads.js';
 import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
 import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
 import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
@@ -51,7 +51,7 @@ const NEW_HANDLERS = {
   // the 'Phiếu Thu Chi' tab, is no longer written.
   syncToSheets:           (req, res) => res.json({ success: true, message: 'Đã đồng bộ (bản sao Google Sheet tự cập nhật)' }),
 
-  // P2P (Phase 4)
+  // Purchase requests (Plan 5, workflow key p2p)
   purchaseRequest:             handlePRSubmit,
   resubmitPurchaseRequest:     handlePRResubmit,
   approvePurchaseRequest:      handlePRApprove,
@@ -59,6 +59,13 @@ const NEW_HANDLERS = {
   sendBackPurchaseRequest:     handlePRSendBack,
   getPurchaseRequestHistory:   handlePRHistory,
   getPurchaseRequest:          handlePRDetail,
+  searchPurchaseRequests:      handlePRSearch,
+  getP2PHistory:               handleP2PHistory,
+  getGoodsCatalog:             handleGoodsCatalog,
+  getPurchaseOrderTypes:       handlePurchaseOrderTypes,
+  addSupplier:                 handleAddSupplier,
+  // Payment side of a PR (workflow key payments, turned on by Plan 6)
+  validatePRForDirectPayment:  handleValidatePRForDirectPayment,
 
   // Admin — require an admin login token (checked in the handler)
   adminListEmployees:          handleAdminListEmployees,
@@ -91,7 +98,9 @@ const WORKFLOW_ACTIONS = {
     'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext', 'syncToSheets'],
   files: ['createVoucherUploadSession', 'finalizeVoucherUpload', 'fetchSignatureImage'],
   p2p: ['purchaseRequest', 'resubmitPurchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'sendBackPurchaseRequest',
-    'getPurchaseRequestHistory', 'getPurchaseRequest'],
+    'getPurchaseRequestHistory', 'getPurchaseRequest', 'searchPurchaseRequests', 'getP2PHistory', 'getGoodsCatalog',
+    'getPurchaseOrderTypes', 'addSupplier'],
+  payments: ['validatePRForDirectPayment'],
 };
 const PG_WORKFLOWS = new Set(String(process.env.PG_WORKFLOWS || '').split(',').map((s) => s.trim()).filter(Boolean));
 for (const [workflow, actions] of Object.entries(WORKFLOW_ACTIONS)) {
