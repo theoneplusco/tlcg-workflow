@@ -4911,6 +4911,9 @@
                         canvas.width = size;
                         canvas.height = size;
                         const ctx = canvas.getContext('2d');
+                        // Flatten on white, as the upload compression does, so a transparent PNG sample does not hash its background as black
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, size, size);
 
                         // Draw scaled image
                         ctx.drawImage(img, 0, 0, size, size);

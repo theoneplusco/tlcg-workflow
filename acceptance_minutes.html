@@ -1369,6 +1369,9 @@ async function _amGenerateImageHash(imageDataUrl, size = 16) {
             const canvas = document.createElement('canvas');
             canvas.width = size; canvas.height = size;
             const ctx = canvas.getContext('2d');
+            // Flatten on white, as compressImageSignature does for the upload, so a transparent PNG sample does not hash its background as black
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, size, size);
             ctx.drawImage(img, 0, 0, size, size);
             const d = ctx.getImageData(0, 0, size, size).data;
             let sum = 0;
