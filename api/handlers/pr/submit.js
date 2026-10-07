@@ -78,6 +78,14 @@ export async function handlePRSubmit(req, res, d) {
   }
 }
 
+/** Who may resubmit this row: only a returned PR, only by its requester (fails closed when the PR names none). */
+function resubmitProblem(row, caller) {
+  if (!isReturned(row.status)) return 'Chỉ có thể gửi lại khi phiếu ở trạng thái "Trả lại bổ sung".';
+  const owner = str(row.requester_email || (row.metadata || {}).requesterEmail).toLowerCase();
+  if (!owner || owner !== caller.email) return 'Bạn không phải người đề nghị ban đầu của phiếu này.';
+  return null;
+}
+
 /** resubmitPurchaseRequest (spec §3.8). submittedAt from the page is ignored: pr_no is unique (B1). */
 export async function handlePRResubmit(req, res, d) {
   const { db, s3, who, now } = prDeps(d);
@@ -92,20 +100,23 @@ export async function handlePRResubmit(req, res, d) {
     // Same checks as submit; picks re-checked against the caller (token) as requester: no self-approval.
     const prep = await prepareSubmission(db, b, caller);
     if (prep.error) return fail(res, prep.error);
-    if (!(await getPR(db, prNo))) return fail(res, `Không tìm thấy đề nghị: ${prNo}`);
+    const current = await getPR(db, prNo);
+    if (!current) return fail(res, `Không tìm thấy đề nghị: ${prNo}`);
+    const early = resubmitProblem(current, caller); // before any upload: refused callers never write to R2
+    if (early) return fail(res, early);
     const uploaded = await storeAttachments(s3, parseAttachmentList(b.attachments)); // S3 never runs under the row lock
     return await withLockedPR(db, prNo, res, async (client, row) => {
-      if (!isReturned(row.status)) return { error: 'Chỉ có thể gửi lại khi phiếu ở trạng thái "Trả lại bổ sung".' };
-      const owner = str(row.requester_email || (row.metadata || {}).requesterEmail).toLowerCase();
-      if (owner && owner !== caller.email) return { error: 'Bạn không phải người đề nghị ban đầu của phiếu này.' };
+      const problem = resubmitProblem(row, caller); // re-checked under the lock
+      if (problem) return { error: problem };
       const old = row.metadata || {};
       const at = now().toISOString();
+      const submittedAt = old.submittedAt || (row.submitted_at ? new Date(row.submitted_at).toISOString() : at);
       // The page cannot resend or remove the files already on the PR: keep them, add the new ones (decision #7).
       const attachments = [...(row.attachments || []), ...uploaded];
       const count = (Number(old.resubmitCount) || 0) + 1;
       const metadata = {
         ...buildMetadata(b, { companyKey: str(b.companyKey) || prep.company.company_key, requesterEmail: caller.email,
-          submittedAt: old.submittedAt || new Date(row.submitted_at).toISOString(), attachments,
+          submittedAt, attachments,
           purchaseType: prep.sub.purchaseType, branch: prep.sub.branch, picks: prep.sub.picks }),
         sentBackHistory: Array.isArray(old.sentBackHistory) ? old.sentBackHistory : [],
         resubmittedAt: at, resubmitCount: count,

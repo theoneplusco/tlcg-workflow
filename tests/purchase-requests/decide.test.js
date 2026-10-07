@@ -197,3 +197,41 @@ test('resubmit keeps the files already on the PR and adds the new ones (decision
   assert.ok(row.metadata.resubmittedAt);
   assert.deepEqual(row.pending_emails, [people.treasurer]);
 });
+
+const sendBack1 = (no) => call(d.handlePRSendBack, { prNo: no, approverRole: 'budget', targetStep: 1, sentBackNote: 'Sửa' }, as(people.treasurer));
+const counting = () => { const sent = []; return { sent, s3: { send: async (c) => { sent.push(c.input.Key); } } }; };
+
+test('resubmit: nothing is uploaded to R2 for a non-owner or a PR that is not returned', { skip }, async () => {
+  const no = await submit();
+  const files = { attachments: [PDF('x.pdf')] };
+  const a = counting();
+  const notReturned = await call(s.handlePRResubmit, submitBody(company, people, { prNo: no, ...files }), REQ, { s3: a.s3 });
+  assert.equal(notReturned.message, 'Chỉ có thể gửi lại khi phiếu ở trạng thái "Trả lại bổ sung".');
+  assert.equal(a.sent.length, 0, 'no upload for a PR that is not returned');
+  await sendBack1(no);
+  const b = counting();
+  const other = await call(s.handlePRResubmit, submitBody(company, people, { prNo: no, ...files }), as('other@pr-test.vn'), { s3: b.s3 });
+  assert.equal(other.message, 'Bạn không phải người đề nghị ban đầu của phiếu này.');
+  assert.equal(b.sent.length, 0, 'no upload for someone who is not the requester');
+});
+
+test('resubmit fails closed when the PR has no requester email', { skip }, async () => {
+  const no = await submit();
+  await sendBack1(no);
+  await pool.query(`UPDATE purchase_requests SET requester_email = '', metadata = metadata - 'requesterEmail' WHERE pr_no = $1`, [no]);
+  const c = counting();
+  const r = await call(s.handlePRResubmit, submitBody(company, people, { prNo: no, attachments: [PDF('x.pdf')] }), REQ, { s3: c.s3 });
+  assert.deepEqual([r.success, r.message], [false, 'Bạn không phải người đề nghị ban đầu của phiếu này.']);
+  assert.equal(c.sent.length, 0);
+  assert.equal((await pr(no)).status, 'Trả lại bổ sung');
+});
+
+test('resubmit: no submittedAt anywhere on the row → the current time, not 1970 or a crash', { skip }, async () => {
+  const no = await submit();
+  await sendBack1(no);
+  await pool.query(`UPDATE purchase_requests SET submitted_at = NULL, metadata = metadata - 'submittedAt' WHERE pr_no = $1`, [no]);
+  const at = new Date('2026-10-07T03:04:05.000Z');
+  const r = await call(s.handlePRResubmit, submitBody(company, people, { prNo: no }), REQ, { now: () => at });
+  assert.equal(r.success, true, r.message);
+  assert.equal((await pr(no)).metadata.submittedAt, at.toISOString());
+});
