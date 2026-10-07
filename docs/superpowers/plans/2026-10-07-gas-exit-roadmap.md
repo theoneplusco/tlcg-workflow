@@ -24,7 +24,7 @@ GAS also uses these Google services:
 
 ## Plans (each one produces working, tested software; all stay behind `PG_WORKFLOWS` until the switch)
 
-1. **Plan 4: Vouchers fully off GAS** (`2026-10-07-vouchers-off-gas.md`).
+1. ✅ **Plan 4: Vouchers fully off GAS** (`2026-10-07-vouchers-off-gas.md`). Done 2026-10-07: e2e with every GAS URL dead passed 29/29 with zero GAS calls. A real R2 upload still has to be checked on the Mini (no R2 keys on the MacBook).
    - Attachments go to R2.
    - Signature images are fetched by the Mini.
    - `syncToSheets` is replaced.
