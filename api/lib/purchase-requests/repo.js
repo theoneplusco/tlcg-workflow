@@ -37,6 +37,18 @@ export async function insertPR(client, rec) {
   return rows[0];
 }
 
+/**
+ * Importer only: overwrite an imported row in place (id and created_at kept), every given column verbatim,
+ * updated_at included (GAS last activity), and stamp imported_at with the wall clock.
+ */
+export async function replaceImportedPR(client, id, rec) {
+  const keys = WRITABLE.filter((k) => rec[k] !== undefined && k !== 'pr_no' && k !== 'imported_at');
+  const sets = keys.map((k, i) => `${k} = $${i + 2}`).concat('imported_at = clock_timestamp()');
+  const { rows } = await client.query(
+    `UPDATE purchase_requests SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, [id, ...keys.map((k) => val(k, rec[k]))]);
+  return rows[0] || null;
+}
+
 export async function updatePR(client, id, fields) {
   const keys = WRITABLE.filter((k) => fields[k] !== undefined && k !== 'updated_at' && k !== 'pr_no');
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).concat('updated_at = NOW()');

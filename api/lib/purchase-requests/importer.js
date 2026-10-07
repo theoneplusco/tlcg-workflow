@@ -4,10 +4,9 @@
 // queued for the Sheet copy (sheet_outbox). No pool here: the CLI (scripts/import-purchase-requests.js) passes one.
 import { sheetTime } from '../sheets/voucher-records.js';
 import { findCompany } from '../vouchers/repo.js';
-import { queueMail } from '../../handlers/email-queue.js';
 import { STATUS, approverEmails, pendingEmails } from './state.js';
 import { num } from './validate.js';
-import { insertPR, appendAudit } from './repo.js';
+import { insertPR, replaceImportedPR, appendAudit } from './repo.js';
 import { purchasingRequest } from './emails.js';
 
 const lower = (s) => String(s || '').trim().toLowerCase();
@@ -48,7 +47,8 @@ export function prFromSheetRow(r, { archived = false } = {}) {
     p2p_branch: meta.p2pBranch || 'full', purchase_type: meta.purchaseType || 'goods', attachments, metadata: meta,
     submitted_at: submittedAt, sheet_row: r.sheetRow,
   };
-  if (!Number.isFinite(row.grand_total)) row.grand_total = 0;
+  row.badTotal = !Number.isFinite(row.grand_total); // not a column: reported in stats.badTotals
+  if (row.badTotal) row.grand_total = 0;
   row.approver_emails = approverEmails(row);
   row.pending_emails = pendingEmails(row, meta, row.status);
   const last = lastActivity(submittedAt, meta) || submittedAt;
@@ -70,20 +70,23 @@ export function auditFromEventRow(r) {
     extra: { ...(parseJson(r.event_metadata_json, {}) || {}), fromEventRow: true }, source: 'sheet-event', sheetRow: r.sheetRow };
 }
 
+const auditKey = (doc, action, email, at) => [doc, action, lower(email), new Date(at).toISOString()].join('\u0000');
+
 /**
  * One transaction for the whole import (dry run = ROLLBACK). Returns counts for the report.
  * - The working sheet wins over the archive for the same number.
  * - A number already in Postgres is replaced only if this importer wrote it and it has not changed since
  *   (updated_at <= imported_at); otherwise it is counted in skippedNative and left alone.
  * - PR_Audit_Log rows (source 'sheet') and legacy event rows (source 'sheet-event', only for numbers with no
- *   audit row, GAS's fallback) are deleted and re-inserted; 'app' audit rows are never touched.
+ *   audit row, GAS's fallback) are deleted and re-inserted; 'app' audit rows are never touched. A Sheet audit row
+ *   that is the Sheet copy of an 'app' row (same doc_no, action, actor email, time) is skipped (auditSkippedApp).
  * - Companies are matched like vouchers (findCompany). No match → company_id NULL, listed in unmatchedCompanies.
  * - notifyPurchasing (switch day, once): queue the purchasing email for non-archived simplified PRs waiting at
  *   Mua hàng (GAS bug B2 never sent it) and stamp metadata.importNotifiedAt so a re-run never re-sends.
  */
 export async function importPurchaseRequests(db, { working = [], archive = [], audit = [], poTypes = null, dryRun = false, notifyPurchasing = false }) {
-  const stats = { prs: 0, archived: 0, skippedNative: 0, noCompany: 0, unmatchedCompanies: [], audit: 0, eventAudit: 0,
-    poTypes: 0, notified: 0, byStatus: {}, atPurchasing: { simplified: 0, full: 0 } };
+  const stats = { prs: 0, archived: 0, skippedNative: 0, noCompany: 0, unmatchedCompanies: [], badTotals: [], audit: 0,
+    auditSkippedApp: 0, eventAudit: 0, poTypes: 0, notified: 0, byStatus: {}, atPurchasing: { simplified: 0, full: 0 } };
   const prs = new Map();
   for (const r of archive) if (r.pr_no && isSubmitRow(r)) prs.set(r.pr_no, prFromSheetRow(r, { archived: true }));
   for (const r of working) if (r.pr_no && isSubmitRow(r)) prs.set(r.pr_no, prFromSheetRow(r)); // working sheet wins
@@ -108,9 +111,14 @@ export async function importPurchaseRequests(db, { working = [], archive = [], a
       }
       const notifiedAt = old && old.metadata && old.metadata.importNotifiedAt;
       const metadata = notifiedAt ? { ...pr.metadata, importNotifiedAt: notifiedAt } : pr.metadata;
-      if (old) await client.query('DELETE FROM purchase_requests WHERE id = $1', [old.id]);
-      const row = await insertPR(client, { ...pr, metadata, company_id: company ? company.id : null });
-      await client.query('UPDATE purchase_requests SET imported_at = NOW() WHERE id = $1', [row.id]); // DB clock, like later updates
+      const rec = { ...pr, metadata, company_id: company ? company.id : null };
+      let row;
+      if (old) row = await replaceImportedPR(client, old.id, rec); // keeps id and created_at
+      else {
+        row = await insertPR(client, rec);
+        await client.query('UPDATE purchase_requests SET imported_at = clock_timestamp() WHERE id = $1', [row.id]);
+      }
+      if (pr.badTotal) stats.badTotals.push(pr.pr_no);
       stats.prs += 1;
       if (pr.archived_at) stats.archived += 1;
       stats.byStatus[pr.status] = (stats.byStatus[pr.status] || 0) + 1;
@@ -119,7 +127,10 @@ export async function importPurchaseRequests(db, { working = [], archive = [], a
       if (notifyPurchasing && !notifiedAt && waiting && pr.p2p_branch === 'simplified') {
         const m = purchasingRequest(row);
         if (m) {
-          await queueMail(m, client);
+          // Directly, not queueMail (which swallows errors and would leave the transaction aborted): a failure
+          // here fails the whole import with its real cause.
+          await client.query(`INSERT INTO email_queue (to_email, cc, reply_to, subject, body_html, body_text, status)
+                              VALUES ($1, '', '', $2, $3, '', 'pending')`, [m.to, m.subject, m.html || '']);
           await client.query(`UPDATE purchase_requests SET metadata = metadata || jsonb_build_object('importNotifiedAt', NOW()::text) WHERE id = $1`, [row.id]);
           stats.notified += 1;
         }
@@ -127,7 +138,14 @@ export async function importPurchaseRequests(db, { working = [], archive = [], a
     }
     stats.unmatchedCompanies = [...unmatched.values()];
     await client.query(`DELETE FROM pr_audit_log WHERE source IN ('sheet', 'sheet-event')`);
-    for (const e of auditEntries) { await appendAudit(client, e); stats.audit += 1; }
+    const appKeys = new Set((await client.query(
+      `SELECT doc_no, action, LOWER(actor_email) AS email, created_at FROM pr_audit_log WHERE source = 'app'`)).rows
+      .map((a) => auditKey(a.doc_no, a.action, a.email, a.created_at)));
+    for (const e of auditEntries) {
+      if (e.at && appKeys.has(auditKey(e.docNo, e.action, e.actorEmail, e.at))) { stats.auditSkippedApp += 1; continue; }
+      await appendAudit(client, e);
+      stats.audit += 1;
+    }
     for (const e of eventEntries) { await appendAudit(client, e); stats.eventAudit += 1; }
     if (poTypes) {
       await client.query('DELETE FROM purchase_order_types');

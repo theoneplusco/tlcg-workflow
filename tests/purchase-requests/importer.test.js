@@ -105,3 +105,32 @@ test('--notify-purchasing: one email per stuck simplified PR, never twice', { sk
   assert.equal(m[0].subject, '[ĐỀ NGHỊ MUA HÀNG] Yêu cầu Mua hàng - EV-PR20261001000001');
   assert.ok((await repo.getPR(pool, 'EV-PR20261001000001')).metadata.importNotifiedAt);
 });
+
+test('re-import keeps id and created_at (update in place)', { skip }, async () => {
+  const before = (await pool.query(`SELECT id, created_at, imported_at FROM purchase_requests WHERE pr_no = 'EV-PR20261001000002'`)).rows[0];
+  await imp.importPurchaseRequests(pool, tabs());
+  const after = (await pool.query(`SELECT id, created_at, imported_at FROM purchase_requests WHERE pr_no = 'EV-PR20261001000002'`)).rows[0];
+  assert.equal(after.id, before.id);
+  assert.equal(after.created_at.getTime(), before.created_at.getTime());
+  assert.ok(after.imported_at > before.imported_at);
+});
+
+test('an app audit row copied to PR_Audit_Log is not imported again', { skip }, async () => {
+  await pool.query(`DELETE FROM pr_audit_log WHERE source = 'app'`);
+  await repo.appendAudit(pool, { docNo: 'EV-PR20261001000001', action: 'Approve', role: 'purchasing', actorEmail: 'Tlc.AP@x.vn',
+    at: '2026-10-08T03:04:05.678Z', source: 'app' });
+  const t = tabs();
+  t.audit.push({ sheetRow: 3, document_no: 'EV-PR20261001000001', action: 'Approve', role: 'purchasing', actor_email: 'tlc.ap@x.vn',
+    timestamp: '2026-10-08T03:04:05.678Z', extra_json: '' });
+  const s = await imp.importPurchaseRequests(pool, t);
+  assert.equal(s.audit, 1, 'the Submit row only');
+  assert.equal(s.auditSkippedApp, 1);
+  assert.equal(await count(`SELECT count(*)::int AS n FROM pr_audit_log WHERE doc_no = 'EV-PR20261001000001' AND action = 'Approve'`), 1);
+});
+
+test('unreadable grand_total: stored as 0 and listed in badTotals', { skip }, async () => {
+  const t = tabs();
+  t.working.push(sub('EV-PR20261001000008', { grand_total: 'không rõ' }));
+  const s = await imp.importPurchaseRequests(pool, { ...t, dryRun: true });
+  assert.deepEqual(s.badTotals, ['EV-PR20261001000008']);
+});

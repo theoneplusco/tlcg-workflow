@@ -8,7 +8,7 @@
  *   node scripts/import-purchase-requests.js --dir ./sheets --dry-run
  *   node scripts/import-purchase-requests.js --live --notify-purchasing  # switch day only: email the purchasing approver
  *                                                                        # of simplified PRs stuck at Mua hàng (GAS bug B2)
- * Needs migrations 001–007 and Master Data. Re-runnable (see api/lib/purchase-requests/importer.js).
+ * DATABASE_URL is required (no default database). Needs migrations 001–007 and Master Data. Re-runnable (see api/lib/purchase-requests/importer.js).
  * Never queues a Sheet copy (the data came from the Sheet).
  */
 import fs from 'fs';
@@ -39,7 +39,11 @@ async function readTab(name, { optional = false } = {}) {
   }
 }
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL || 'postgres://localhost:5432/tlcg_workflow', max: 2 });
+if (!process.env.DATABASE_URL) { console.error('[ImportPR] DATABASE_URL is not set. Set it to the target database (no default, on purpose).'); process.exit(1); }
+const target = (() => { try { const u = new URL(process.env.DATABASE_URL); return `${u.hostname}${u.port ? ':' + u.port : ''}${u.pathname}`; } catch { return '(unparsable DATABASE_URL)'; } })();
+console.log(`[ImportPR] Target database: ${target}`);
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 2 });
 try {
   const working = await readTab('Purchase_Request_History');
   const archive = await readTab('Purchase_Request_Archive', { optional: true });
@@ -49,6 +53,7 @@ try {
     dryRun: DRY, notifyPurchasing: args.includes('--notify-purchasing') });
   console.log(`[ImportPR] ${DIR ? 'CSV ' + DIR : 'live sheet'}${DRY ? ' (dry run, rolled back)' : ''}`);
   console.log(JSON.stringify(stats, null, 2));
+  if (stats.badTotals.length) console.warn(`[ImportPR] grand_total unreadable (stored as 0): ${stats.badTotals.join(', ')}`);
   if (stats.noCompany) console.warn(`[ImportPR] ${stats.noCompany} PR(s) without a matching company (company_id NULL): fix Master Data, then re-run`);
   console.log('Export 2026-10-06 expectation: prs 34 (32 working + 2 archive), byStatus Mua hàng (5/5) 21 / Đang duyệt ngân sách & NCC (2/5) 11, audit 80');
 } finally { await pool.end(); }

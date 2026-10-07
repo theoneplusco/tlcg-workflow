@@ -64,3 +64,24 @@ test('audit rows: PR_Audit_Log and legacy event rows', () => {
     event_note: 'Kem', event_metadata_json: '' });
   assert.deepEqual([e.docNo, e.action, e.at, e.source, e.extra.fromEventRow], ['EV-2', 'Submit', '2026-10-05T10:50:11.901Z', 'sheet-event', true]);
 });
+
+test('prFromSheetRow: an unreadable grand_total is stored as 0 and flagged', () => {
+  const pr = prFromSheetRow({ sheetRow: 4, pr_no: 'EV-X', status: 'Hoàn thành', grand_total: 'abc', metadata_json: '{}' });
+  assert.equal(pr.grand_total, 0);
+  assert.equal(pr.badTotal, true);
+  assert.equal(prFromSheetRow({ sheetRow: 4, pr_no: 'EV-Y', grand_total: '1.500.000' }).badTotal, false);
+});
+
+for (const script of ['import-purchase-requests.js', 'import-vouchers.js']) {
+  test(`${script}: refuses to run without DATABASE_URL (no default database)`, async () => {
+    const { spawnSync } = await import('node:child_process');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const env = { ...process.env };
+    delete env.DATABASE_URL;
+    const r = spawnSync(process.execPath, [path.resolve('scripts', script), '--dir', os.tmpdir(), '--dry-run'],
+      { cwd: os.tmpdir(), env, encoding: 'utf-8', timeout: 20000 });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /DATABASE_URL/);
+  });
+}

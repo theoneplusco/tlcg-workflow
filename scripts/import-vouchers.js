@@ -34,7 +34,11 @@ const LIVE = args.includes('--live');
 const DRY = args.includes('--dry-run');
 if (!DIR && !LIVE) { console.error('Use --dir <folder> or --live'); process.exit(1); }
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL || 'postgres://localhost:5432/tlcg_workflow', max: 4 });
+if (!process.env.DATABASE_URL) { console.error('[ImportVouchers] DATABASE_URL is not set. Set it to the target database (no default, on purpose).'); process.exit(1); }
+const target = (() => { try { const u = new URL(process.env.DATABASE_URL); return `${u.hostname}${u.port ? ':' + u.port : ''}${u.pathname}`; } catch { return '(unparsable DATABASE_URL)'; } })();
+console.log(`[ImportVouchers] Target database: ${target}`);
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 4 });
 const lower = (s) => String(s || '').trim().toLowerCase();
 
 // ── Reading ─────────────────────────────────────────────────────
