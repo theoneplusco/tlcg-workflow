@@ -38,6 +38,11 @@ export function attachmentKey(voucherNumber, fileName, rand = crypto.randomBytes
   return `vouchers/${safe(voucherNumber) || 'draft'}/${rand}-${safe(fileName) || 'attachment'}`;
 }
 
+/** Purchase request attachments: no PR number in the key, so the number may still change (GAS B10). */
+export function prAttachmentKey(fileName, rand = crypto.randomBytes(16).toString('hex')) {
+  return `purchase-requests/${rand}-${safe(fileName) || 'attachment'}`;
+}
+
 // Attachment types we accept. Anything that a browser would run (html, svg, xhtml) is refused.
 export const ALLOWED_TYPES = new Set([
   'application/pdf',

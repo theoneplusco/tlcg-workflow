@@ -4,7 +4,8 @@
 import { handleGetMasterData, handleGetCompanies, handleGetCompanyApprovers, handleGetEmployees, handleGetSuppliers, handleGetVendorBanks } from './handlers/master-data.js';
 import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus, handleVoucherApprovalContext } from './handlers/vouchers.js';
-import { handlePRSubmit, handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
+import { handlePRApprove, handlePRReject, handlePRHistory, handlePRDetail } from './handlers/purchase-request.js';
+import { handlePRSubmit } from './handlers/pr/submit.js';
 import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
 import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
 import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
