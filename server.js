@@ -31,7 +31,7 @@ import { startVoucherReminderJob } from './api/jobs/voucher-reminders.js';
 import { startSheetMirrorJob } from './api/jobs/sheet-mirror.js';
 import { rateLimit } from './api/middleware/rate-limiter.js';
 import { unwrapPayload } from './api/middleware/unwrap-payload.js';
-import { missingVoucherSchema, missingP2PSchema, configProblems, configWarnings } from './api/lib/startup-checks.js';
+import { missingVoucherSchema, missingP2PSchema, missingSignatureSchema, configProblems, configWarnings } from './api/lib/startup-checks.js';
 import { jwtSecret } from './api/handlers/auth.js';
 import pool from './db/pool.js';
 
@@ -176,6 +176,11 @@ if (schemaProblem) {
 }
 if (postgresWorkflows.includes('vouchers') && !process.env.VOUCHER_SPREADSHEET_ID) {
   console.warn('[server] Sheet copy disabled: VOUCHER_SPREADSHEET_ID not set');
+}
+const signatureProblem = await missingSignatureSchema(postgresWorkflows, pool);
+if (signatureProblem) {
+  console.error(`[server] FATAL: ${signatureProblem}`);
+  process.exit(1);
 }
 const p2pProblem = await missingP2PSchema(postgresWorkflows, pool);
 if (p2pProblem) {

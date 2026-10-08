@@ -203,6 +203,7 @@
   }
 </style>
 <script src="i18n.js"></script>
+<script src="signature-image.js"></script>
 </head>
 <body>
 <div class="page">
@@ -268,6 +269,15 @@
       <label><input type="checkbox" name="isAdmin"> Admin rights</label>
       <label><input type="checkbox" name="resetPassword"> Issue a new temporary password</label>
       <label style="padding-left:24px;"><input type="checkbox" name="sendEmail" checked> Email it to the employee</label>
+    </div>
+    <div style="margin-top:14px;border-top:1px solid var(--line, #e2e8f0);padding-top:12px;">
+      <b>Chữ ký mẫu</b> <span style="color:var(--muted);font-size:13px;">(đóng lên phiếu khi người này phê duyệt)</span>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;">
+        <div id="acct-sig-preview" style="width:220px;height:90px;border:1px dashed #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:var(--muted);font-size:13px;">Đang tải…</div>
+        <input type="file" id="acct-sig-file" accept="image/png,image/jpeg" hidden>
+        <button class="btn btn-ghost btn-sm" type="button" id="acct-sig-btn">Tải chữ ký mới</button>
+      </div>
+      <div id="acct-sig-status" style="color:var(--muted);font-size:13px;margin-top:6px;"></div>
     </div>
     <div class="body" id="acct-summary" style="margin-top:14px;"></div>
     <div class="actions">
@@ -1276,7 +1286,52 @@
     acctForm.sendEmail.checked = true;
     renderAcctSummary();
     acctDialog.showModal();
+    loadAcctSignature(id);
   }
+
+  // Sample signature stored in Postgres: admins view and replace anyone's (saved at once, audited)
+  function renderAcctSignature(data) {
+    const box = document.getElementById('acct-sig-preview');
+    box.textContent = '';
+    if (data && data.hasSignature) {
+      const img = document.createElement('img');
+      img.src = data.signature;
+      img.alt = 'Chữ ký mẫu';
+      img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+      box.appendChild(img);
+      document.getElementById('acct-sig-status').textContent = 'Cập nhật ' + new Date(data.updatedAt).toLocaleString('vi-VN') + ' bởi ' + data.updatedBy;
+    } else {
+      box.textContent = 'Chưa có chữ ký';
+      document.getElementById('acct-sig-status').textContent = 'Chưa có chữ ký tải lên (dùng link Drive cũ nếu có).';
+    }
+  }
+  async function loadAcctSignature(id) {
+    document.getElementById('acct-sig-preview').textContent = 'Đang tải…';
+    document.getElementById('acct-sig-status').textContent = '';
+    try {
+      const data = await api('adminGetSignature', { id: id });
+      if (acctRow && acctRow.id === id) renderAcctSignature(data);
+    } catch (err) {
+      document.getElementById('acct-sig-status').textContent = err.message;
+    }
+  }
+  document.getElementById('acct-sig-btn').onclick = () => document.getElementById('acct-sig-file').click();
+  document.getElementById('acct-sig-file').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file || !acctRow) return;
+    const id = acctRow.id;
+    const status = document.getElementById('acct-sig-status');
+    try {
+      const signature = await SignatureImage.fromFile(file);
+      status.textContent = 'Đang lưu…';
+      await api('adminSaveSignature', { id: id, signature: signature });
+      await loadAcctSignature(id);
+      status.textContent = 'Đã lưu chữ ký mẫu. ' + status.textContent;
+    } catch (err) {
+      status.textContent = err.message;
+    }
+  });
   document.getElementById('acct-cancel').onclick = () => acctDialog.close();
   acctForm.addEventListener('submit', async (e) => {
     e.preventDefault();

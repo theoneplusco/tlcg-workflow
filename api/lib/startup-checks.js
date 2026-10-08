@@ -35,6 +35,18 @@ export async function missingP2PSchema(workflows, db) {
   }
 }
 
+/** Approvals on Postgres (vouchers or p2p) read stored signatures (migration 009). Message when missing, else null. */
+export async function missingSignatureSchema(workflows, db) {
+  if (!workflows.includes('vouchers') && !workflows.includes('p2p')) return null;
+  try {
+    const { rows } = await db.query(`SELECT to_regclass('public.employee_signatures') AS t`);
+    return rows[0] && rows[0].t ? null : 'approvals on Postgres need table employee_signatures: run db/migrations/009_employee_signatures.sql';
+  } catch (e) {
+    console.error('[server] could not check for employee_signatures (database unreachable?):', e.message);
+    return null;
+  }
+}
+
 /**
  * Settings that must stop the boot (exit 1), as full log lines. Pure: `env` is process.env in server.js.
  * payments is refused until Plan 6 moves the payment side (validatePRForDirectPayment fails closed meanwhile);

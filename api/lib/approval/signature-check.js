@@ -2,6 +2,8 @@
 // On Postgres the server stamps this sample on the approval after a password check (step-up.js);
 // the old browser image comparison and its verified === true rule are gone. Old approvals keep their
 // stored signatureVerification objects. Takes `db` as an argument (no pool import).
+import { storedSignatureFor, STORED_FROM } from './signature-store.js';
+
 const lower = (s) => String(s || '').trim().toLowerCase();
 
 // Role → Master Company signature column (the sample each role holder signs against)
@@ -10,13 +12,15 @@ const ROLE_EMAIL = { chief_accountant: 'accountant_email', legal_rep: 'legal_rep
 const EMPLOYEE_SAMPLE_HEADERS = ['Signature', 'Chữ ký', 'Chu_ky', 'employee_signature', 'Signature_URL'];
 
 /**
- * The sample signature an approver must match: their role's sample on the
- * company (Master Company), else a Signature column on their Master
- * Employee row. { url, from } — url '' when none is registered.
+ * The sample signature stamped for an approver: the signature they (or an admin) uploaded (migration 009, a data URL),
+ * else their role's sample on the company (Master Company), else a Signature column on their Master Employee row.
+ * { url, from } — url '' when none is registered.
  * `entries` = [{ role, label }] the approver holds; null = derive them from the company's role emails.
  */
 export async function sampleSignatureFor(db, companyId, entries, email) {
   const me = lower(email);
+  const stored = me ? await storedSignatureFor(db, me) : null;
+  if (stored) return { url: stored.dataUrl, from: STORED_FROM };
   const company = companyId ? (await db.query(`SELECT * FROM companies WHERE id = $1`, [companyId])).rows[0] : null;
   const held = entries || (company ? Object.keys(ROLE_SAMPLE).filter((r) => me && lower(company[ROLE_EMAIL[r]]) === me).map((role) => ({ role, label: role })) : []);
   for (const a of held) {
@@ -30,6 +34,6 @@ export async function sampleSignatureFor(db, companyId, entries, email) {
 }
 
 export const NO_SAMPLE = {
-  vi: 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).',
-  en: 'No sample signature is registered for you. Ask an administrator to add it in Master Data (Employees › Signature).',
+  vi: 'Chưa có chữ ký mẫu của bạn (hoặc không tải được). Vui lòng tải chữ ký trong Hồ sơ của tôi (My Profile) hoặc nhờ quản trị viên.',
+  en: 'No usable sample signature is registered for you. Upload one in My Profile or ask an administrator.',
 };

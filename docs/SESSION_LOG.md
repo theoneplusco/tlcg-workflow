@@ -27,6 +27,22 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
 ---
 
+### 2026-10-08 (evening): cloud session — signatures stored in Postgres (no more Drive links)
+- **Why:** linh.le could not approve RI-PC20260820000001. Her RIOT accountant sample is a Drive link (`1_7jJRd7…`) that answers HTTP 404 to the server (private or deleted file). GAS read Drive with the owner's permission; the new server reads links like any visitor, so every Drive sample must be public or it blocks approvals.
+- **Did (user's choice: both employee and admin can upload):**
+  - Migration `009_employee_signatures.sql`: one signature per employee (`employee_signatures`, PNG/JPEG data URL, max 750 KB). The server refuses to start with vouchers or p2p on while it is missing.
+  - `sampleSignatureFor` now uses the person's **uploaded** signature first, for every role they approve in; the company Drive links and the employee `Signature` column are only a fallback.
+  - My Profile (`index.html`): card "Chữ ký mẫu" with the current signature and "Tải chữ ký lên"; saving asks for the login password (same 5-tries lockout as approvals).
+  - admin.html › Account: "Chữ ký mẫu" section; an admin views and replaces anyone's signature (saved at once, no password).
+  - Every upload is written to `master_audit` (table_key `signatures`, size only, never the image). New shared `signature-image.js` resizes to ≤ 900×400 on white before upload; the server re-checks type (by bytes) and size.
+  - New actions (always on): `getMySignature`, `saveMySignature`, `adminGetSignature`, `adminSaveSignature`.
+  - NO_SAMPLE now says: upload in My Profile or ask an administrator.
+  - Tests: `tests/approval/signatures.test.js` (4); full suite 389/389; browser check 10/10.
+- **Deploy on the Mini:** `git pull`, `psql tlcg_workflow -f db/migrations/009_employee_signatures.sql`, `pm2 reload tlcg-workflow`. Then Linh uploads her signature in My Profile (or an admin does it in admin.html › Account) and approves again.
+- **Left / next:** ask every approver to upload their signature; afterwards the Drive sample links can be retired.
+
+---
+
 ### 2026-10-08 (later): cloud session — wf.tl-c.us deployed; requester can delete a voucher
 - **Did (with the user, on the Mac Mini):** wf.tl-c.us now runs this branch.
   - The Mini's app folder is `/Users/theoneplus_server/tlcg-workflow` (its own git copy, not the MacBook folder). It was on `cursor/purchase-request-slim-list` with many uncommitted files: a full copy is in `/Users/theoneplus_server/tlcg-workflow-backup-20261008` and the changes are in `git stash` ("mini local changes before plan 5c").

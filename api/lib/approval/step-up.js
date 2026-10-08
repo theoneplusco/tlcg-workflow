@@ -7,11 +7,12 @@
 import { verifyPassword } from '../auth/password.js';
 import { fetchImageDataUrl } from '../files/fetch-image.js';
 import { sampleSignatureFor, NO_SAMPLE } from './signature-check.js';
+import { MAX_STAMP_BYTES } from './stamp-limits.js';
 
 export const MAX_PASSWORD_FAILS = 5;
 export const LOCK_SECONDS = 900;
 export const MAX_PASSWORD_LENGTH = 200;
-export const MAX_STAMP_BYTES = 768000; // 750 KB decoded
+export { MAX_STAMP_BYTES } from './stamp-limits.js';
 const CACHE_MS = 10 * 60 * 1000;
 const CACHE_MAX = 200;
 

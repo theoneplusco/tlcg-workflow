@@ -135,7 +135,7 @@ test('resubmit works from the page even with a new client submittedAt (B1); hist
 });
 
 const PDF = (name) => ({ fileName: name, fileData: Buffer.from('%PDF').toString('base64'), mimeType: 'application/pdf' });
-const NO_SAMPLE = 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).';
+const NO_SAMPLE = 'Chưa có chữ ký mẫu của bạn (hoặc không tải được). Vui lòng tải chữ ký trong Hồ sơ của tôi (My Profile) hoặc nhờ quản trị viên.';
 const LOCKED = 'Bạn đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút.';
 const auditCount = async (no) => (await pool.query(`SELECT COUNT(*)::int AS n FROM pr_audit_log WHERE doc_no = $1 AND action = 'Approve'`, [no])).rows[0].n;
 

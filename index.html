@@ -19,6 +19,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer></script>
     <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
     <script src="i18n.js"></script>
+    <script src="approval-password.js"></script>
+    <script src="signature-image.js"></script>
     <style>
         /* ============================================
            iOS Design System - Apple Human Interface
@@ -3578,6 +3580,27 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Sample signature (stored in Postgres; stamped on every approval) -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 class="text-xl font-bold mb-2 flex items-center gap-2">
+                        <i class="fas fa-signature"></i>
+                        <span>Chữ ký mẫu</span>
+                    </h3>
+                    <p class="text-sm text-slate-500 mb-4">Chữ ký này được đóng lên phiếu mỗi khi bạn phê duyệt. Tải ảnh chữ ký (PNG hoặc JPG, nền trắng). Bạn sẽ được hỏi mật khẩu đăng nhập để lưu.</p>
+                    <div class="flex flex-col md:flex-row md:items-center gap-4">
+                        <div id="my-sig-preview" class="flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50" style="width:320px;max-width:100%;height:140px;">
+                            <span class="text-sm text-slate-400">Đang tải…</span>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <input type="file" id="my-sig-file" accept="image/png,image/jpeg" class="hidden" onchange="onMySignatureFile(this)">
+                            <button type="button" id="my-sig-btn" onclick="document.getElementById('my-sig-file').click()" class="bg-slate-800 text-white px-5 py-3 rounded-lg font-bold hover:bg-slate-900 transition flex items-center gap-2">
+                                <i class="fas fa-upload"></i> <span>Tải chữ ký lên</span>
+                            </button>
+                            <p id="my-sig-status" class="text-sm text-slate-500"></p>
+                        </div>
+                    </div>
+                </div>
             </main>
 
             <!-- ADMIN (admins only; hub is revealed in updateProfileDisplay) -->
@@ -4281,6 +4304,59 @@
             });
         }
 
+        // ── Sample signature (My Profile) ──────────────────────────────
+        function renderMySignature(data) {
+            const box = document.getElementById('my-sig-preview');
+            const status = document.getElementById('my-sig-status');
+            if (!box) return;
+            box.innerHTML = '';
+            if (data && data.hasSignature) {
+                const img = document.createElement('img');
+                img.src = data.signature;
+                img.alt = 'Chữ ký mẫu';
+                img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+                box.appendChild(img);
+                status.textContent = 'Cập nhật: ' + new Date(data.updatedAt).toLocaleString('vi-VN');
+            } else {
+                box.innerHTML = '<span class="text-sm text-slate-400">Chưa có chữ ký mẫu</span>';
+                status.textContent = 'Bạn chưa tải chữ ký. Hãy tải lên để phê duyệt được.';
+            }
+        }
+
+        async function loadMySignature() {
+            try {
+                const res = await fetch('/api/voucher', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'getMySignature' }) });
+                const json = await res.json();
+                if (json.success) renderMySignature(json.data);
+                else document.getElementById('my-sig-status').textContent = json.message || 'Không tải được chữ ký.';
+            } catch (e) {
+                const st = document.getElementById('my-sig-status');
+                if (st) st.textContent = 'Không tải được chữ ký.';
+            }
+        }
+
+        async function onMySignatureFile(input) {
+            const file = input.files && input.files[0];
+            input.value = '';
+            if (!file) return;
+            const status = document.getElementById('my-sig-status');
+            let signature;
+            try { signature = await SignatureImage.fromFile(file); } catch (e) { status.textContent = e.message; return; }
+            let message = '';
+            for (;;) {
+                const password = await ApprovalPassword.ask({ title: 'Lưu chữ ký mẫu', hint: 'Nhập mật khẩu đăng nhập để lưu chữ ký mẫu mới.', confirmLabel: 'Lưu', error: message });
+                if (password === null) { status.textContent = 'Chưa lưu chữ ký.'; return; }
+                status.textContent = 'Đang lưu…';
+                try {
+                    const res = await fetch('/api/voucher', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'saveMySignature', signature, password }) });
+                    const json = await res.json();
+                    if (json.success) { await loadMySignature(); status.textContent = json.message; return; }
+                    message = json.message || 'Không lưu được chữ ký.';
+                    if (!/Mật khẩu không đúng/.test(message)) { status.textContent = message; return; }
+                } catch (e) { status.textContent = 'Lỗi kết nối. Vui lòng thử lại.'; return; }
+            }
+        }
+
         function showPage(pageId) {
             // Check if page requires authentication
             const isPublicPage = publicPages.includes(pageId);
@@ -4317,6 +4393,9 @@
             }
             if (pageId === 'admin') {
                 loadAdminCompanyOptions();
+            }
+            if (pageId === 'profile') {
+                loadMySignature();
             }
             
             window.scrollTo(0,0);

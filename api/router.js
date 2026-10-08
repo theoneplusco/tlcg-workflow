@@ -13,6 +13,7 @@ import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateC
 import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
 import { handleCreateVoucherUploadSession, handleFinalizeVoucherUpload, handleFetchSignatureImage } from './handlers/files.js';
+import { handleGetMySignature, handleSaveMySignature, handleAdminGetSignature, handleAdminSaveSignature } from './handlers/signatures.js';
 
 // ── New handlers (Postgres) ──────────────────────────────────
 const NEW_HANDLERS = {
@@ -87,6 +88,11 @@ const NEW_HANDLERS = {
   adminApprovalFlowGet:        handleAdminApprovalFlowGet,
   adminApprovalFlowSave:       handleAdminApprovalFlowSave,
   adminApprovalFlowPreview:    handleAdminApprovalFlowPreview,
+  // Sample signatures stored in Postgres (migration 009): always on, used by every approval on Postgres
+  getMySignature:              handleGetMySignature,
+  saveMySignature:             handleSaveMySignature,
+  adminGetSignature:           handleAdminGetSignature,
+  adminSaveSignature:          handleAdminSaveSignature,
   // Voucher attachments on R2 (workflow key: files)
   createVoucherUploadSession:  handleCreateVoucherUploadSession,
   finalizeVoucherUpload:       handleFinalizeVoucherUpload,
