@@ -27,7 +27,8 @@ export async function handlePRHistory(req, res, d) {
        AND NOT (status = ANY($3) AND updated_at < NOW() - interval '90 days')
        AND ($4 = '' OR LOWER(requester_name) = LOWER($4))
      ORDER BY submitted_at DESC NULLS LAST, id DESC`, [...v.params, TERMINAL_STATUSES, str(src(req).requesterName)]);
-  return ok(res, 'Thành công', { requests: rows.map(cardFromRow) });
+  // source 'pg': purchase_request.html loads the exchange rates only on Postgres, even when the list is empty
+  return ok(res, 'Thành công', { requests: rows.map(cardFromRow), source: 'pg' });
 }
 
 export async function handlePRDetail(req, res, d) {

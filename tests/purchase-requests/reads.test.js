@@ -28,6 +28,7 @@ test('list: requester sees own, approver sees both, admin all, stranger none, no
   assert.deepEqual(nos((await call(r.handlePRHistory, {}, as('x@x.vn', { isAdmin: true }))).requests), [mine, theirs].sort());
   const none = await call(r.handlePRHistory, {}, as('x@x.vn'));
   assert.deepEqual([none.success, none.message, none.requests, none.data.requests], [true, 'Thành công', [], []]);
+  assert.equal(none.source, 'pg', 'an empty list still tells the page it is on Postgres (it then loads the exchange rates)');
   assert.equal((await call(r.handlePRHistory, {}, null)).code, 401);
 });
 
