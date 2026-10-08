@@ -9,7 +9,7 @@ after(async () => { (await import('../../db/redis.js')).default.quit(); await (a
 test('p2p actions are all migrated; validatePRForDirectPayment waits for payments', () => {
   for (const a of ['purchaseRequest', 'resubmitPurchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'sendBackPurchaseRequest',
     'getPurchaseRequestHistory', 'getPurchaseRequest', 'searchPurchaseRequests', 'getP2PHistory', 'getGoodsCatalog',
-    'getPurchaseOrderTypes', 'addSupplier']) assert.ok(migratedActions.includes(a), a);
+    'getPurchaseOrderTypes', 'addSupplier', 'getExchangeRates']) assert.ok(migratedActions.includes(a), a);
   assert.equal(migratedActions.includes('validatePRForDirectPayment'), false);
   assert.equal(migratedActions.includes('getPaymentProgressByPR'), false, 'payment-side, Plan 6');
 });

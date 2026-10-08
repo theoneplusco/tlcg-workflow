@@ -31,9 +31,21 @@ export const isTerminal = (s) => isRejected(s) || isComplete(s);
 export const isReturned = (s) => s === STATUS.RETURNED;
 export const emailOf = (pr, role) => lower(pr[COL[role]]);
 
-/** GAS computeP2PBranch_: services or grand total ≥ 2,000,000 ₫ → full (needs a contract reviewer). */
-export function computeBranch(purchaseType, grandTotal) {
-  return lower(purchaseType) === 'services' || (Number(grandTotal) || 0) >= 2000000 ? 'full' : 'simplified';
+/** The full-branch limit is in VND (decision 2026-10-07): other currencies are converted with the admin rate first. */
+export const FULL_BRANCH_MIN_VND = 2000000;
+
+/** GAS computeP2PBranch_ on the VND total: services or ≥ 2,000,000 ₫ → full (needs a contract reviewer). */
+export function computeBranch(purchaseType, grandTotalVnd) {
+  return lower(purchaseType) === 'services' || (Number(grandTotalVnd) || 0) >= FULL_BRANCH_MIN_VND ? 'full' : 'simplified';
+}
+
+/**
+ * The branch of a stored PR: from its VND total when it has one (every submit/resubmit on Postgres stores it);
+ * rows imported from GAS have none and keep the branch GAS chose (decision 4: never recomputed in VND).
+ */
+export function branchOf(row) {
+  if (row.grand_total_vnd != null && row.grand_total_vnd !== '') return computeBranch(row.purchase_type, Number(row.grand_total_vnd));
+  return row.p2p_branch || (row.metadata || {}).p2pBranch || 'full';
 }
 export const normalizePurchaseType = (t) => (lower(t) === 'services' ? 'services' : 'goods');
 
@@ -168,7 +180,7 @@ export function approverPickError(picks, { companyEmails, purchasingEmails }, br
 /** GAS _validatePRForDirectPayment_ PR-side rules (the payment check is the caller's). */
 export function directPaymentProblem(row) {
   if (row.status !== STATUS.DONE) return 'PR chưa được phê duyệt hoàn tất.';
-  if ((row.p2p_branch || (row.metadata || {}).p2pBranch || 'full') !== 'simplified') {
+  if (branchOf(row) !== 'simplified') {
     return 'PR này thuộc quy trình đầy đủ — cần tạo Biên bản nghiệm thu trước khi thanh toán.';
   }
   return null;

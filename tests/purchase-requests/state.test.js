@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STATUS, computeBranch, approvalState, pendingEmails, approverEmails, applyApprove, applyReject,
-  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, SELF_APPROVAL_ERROR, MISSING_REQUESTER_ERROR,
+  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, branchOf, SELF_APPROVAL_ERROR, MISSING_REQUESTER_ERROR,
 } from '../../api/lib/purchase-requests/state.js';
 
 const AT = '2026-10-07T03:00:00.000Z';
@@ -175,4 +175,18 @@ test('directPaymentProblem: GAS validatePRForDirectPayment rules', () => {
   assert.equal(directPaymentProblem({ status: STATUS.PURCHASING, p2p_branch: 'simplified' }), 'PR chưa được phê duyệt hoàn tất.');
   assert.equal(directPaymentProblem({ status: STATUS.DONE, p2p_branch: 'full' }), 'PR này thuộc quy trình đầy đủ — cần tạo Biên bản nghiệm thu trước khi thanh toán.');
   assert.equal(directPaymentProblem({ status: STATUS.DONE, p2p_branch: 'simplified' }), null);
+});
+
+test('branchOf: from the stored VND total; rows imported from GAS keep their stored branch', () => {
+  assert.equal(branchOf({ purchase_type: 'goods', grand_total_vnd: '2600000', p2p_branch: 'simplified' }), 'full');
+  assert.equal(branchOf({ purchase_type: 'goods', grand_total_vnd: '149500.00', p2p_branch: 'full' }), 'simplified');
+  assert.equal(branchOf({ purchase_type: 'services', grand_total_vnd: '10' }), 'full');
+  assert.equal(branchOf({ p2p_branch: 'simplified', grand_total_vnd: null }), 'simplified');
+  assert.equal(branchOf({ metadata: { p2pBranch: 'simplified' } }), 'simplified');
+  assert.equal(branchOf({}), 'full');
+});
+test('directPaymentProblem: the VND branch decides', () => {
+  assert.equal(directPaymentProblem({ status: STATUS.DONE, purchase_type: 'goods', grand_total_vnd: '2600000', p2p_branch: 'simplified' }),
+    'PR này thuộc quy trình đầy đủ — cần tạo Biên bản nghiệm thu trước khi thanh toán.');
+  assert.equal(directPaymentProblem({ status: STATUS.DONE, purchase_type: 'goods', grand_total_vnd: '1300000', p2p_branch: 'simplified' }), null);
 });

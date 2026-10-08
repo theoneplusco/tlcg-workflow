@@ -1,5 +1,6 @@
 // api/lib/purchase-requests/validate.js — GAS handlePurchaseRequest checks and the stored metadata (pure).
 import { computeBranch, normalizePurchaseType } from './state.js';
+import { normalizeCurrency, toVnd, missingRateMessage, BAD_CURRENCY } from '../fx/rates.js';
 
 const lower = (s) => String(s || '').trim().toLowerCase();
 const PRIORITY = { gap: 'Gấp', high: 'Gấp', binh_thuong: 'Bình Thường', medium: 'Bình Thường', khong_gap: 'Không Gấp', low: 'Không Gấp' };
@@ -88,8 +89,18 @@ export function itemsTotal(items, currency = 'VND') {
   return n.error ? NaN : sumTotals(n.items);
 }
 
-/** Checks 1–8 of GAS handlePurchaseRequest, in order (item caps and numbers between 7 and 8). Total and branch from the items (S4). */
-export function checkSubmission(b) {
+/** Without a looked-up rate only VND is known (rate 1); anything else is refused, never guessed. */
+const defaultFx = (currency) => {
+  const cur = normalizeCurrency(currency);
+  return { currency: cur, rateToVnd: cur === 'VND' ? 1 : null };
+};
+
+/**
+ * Checks 1–8 of GAS handlePurchaseRequest, in order (item caps and numbers between 7 and 8). Total from the
+ * items (S4); the branch on the VND total (decision 2026-10-07). `fx` = { currency, rateToVnd } as looked up
+ * by the caller (rates.js getRateToVnd); a missing rate or bad currency is refused where the branch is computed.
+ */
+export function checkSubmission(b, fx = defaultFx(b.currency)) {
   const empty = (k) => !String(b[k] ?? '').trim();
   if (empty('companyName')) return { error: 'Thiếu tên công ty.' };
   if (empty('requesterName')) return { error: 'Thiếu tên người đề nghị.' };
@@ -102,14 +113,17 @@ export function checkSubmission(b) {
   if (norm.error) return norm;
   const purchaseType = normalizePurchaseType(b.purchaseType);
   const grandTotal = sumTotals(norm.items);
-  const branch = computeBranch(purchaseType, grandTotal);
+  if (!fx.currency) return { error: BAD_CURRENCY };
+  if (fx.rateToVnd == null) return { error: missingRateMessage(fx.currency) };
+  const grandTotalVnd = toVnd(grandTotal, fx.rateToVnd);
+  const branch = computeBranch(purchaseType, grandTotalVnd);
   if (branch === 'full' && empty('contractApprover')) {
     return { error: 'Đề nghị này (Dịch vụ hoặc giá trị ≥ 2.000.000₫) yêu cầu người thẩm định hợp đồng.' };
   }
   // Optional (the page sends '' without a saved signature); when sent, an image data URL within the cap.
   if (b.requesterSignature != null && b.requesterSignature !== '' && !signatureFormatOk(b.requesterSignature)) return { error: BAD_SIGNATURE };
   return {
-    items: norm.items, purchaseType, grandTotal, branch,
+    items: norm.items, purchaseType, grandTotal, branch, currency: fx.currency, rateToVnd: fx.rateToVnd, grandTotalVnd,
     picks: { budget: lower(b.budgetApprover), supplier: lower(b.supplierApprover),
       contract: branch === 'full' ? lower(b.contractApprover) : '', purchasing: lower(b.purchasingApprover) },
   };

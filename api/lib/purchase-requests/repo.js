@@ -11,7 +11,8 @@ export const WRITABLE = ['pr_no', 'company_id', 'company_name', 'company_key', '
   'requester_email', 'required_date', 'priority', 'purpose', 'vendor_name', 'budget_code',
   'budget_approver_email', 'supplier_approver_email', 'contract_approver_email', 'purchasing_approver_email',
   'items', 'grand_total', 'currency', 'status', 'p2p_branch', 'purchase_type', 'attachments', 'metadata',
-  'submitted_at', 'archived_at', 'approver_emails', 'pending_emails', 'imported_at', 'sheet_row', 'updated_at'];
+  'submitted_at', 'archived_at', 'approver_emails', 'pending_emails', 'imported_at', 'sheet_row', 'updated_at',
+  'fx_rate', 'grand_total_vnd'];
 
 const EMAIL_LISTS = new Set(['approver_emails', 'pending_emails']);
 const val = (k, v) => (EMAIL_LISTS.has(k) ? (v || []).map(lower).filter(Boolean)

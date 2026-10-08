@@ -1,6 +1,7 @@
 // api/handlers/pr/reads.js — PR reads and the small P2P actions on Postgres (spec §3.2–3.4, 3.9–3.13).
 import { getPR, auditFor, visibility, canView } from '../../lib/purchase-requests/repo.js';
-import { TERMINAL_STATUSES, directPaymentProblem } from '../../lib/purchase-requests/state.js';
+import { TERMINAL_STATUSES, directPaymentProblem, branchOf } from '../../lib/purchase-requests/state.js';
+import { listRates } from '../../lib/fx/rates.js';
 import { cardFromRow, fullFromRow, historyEntry, goodsRecord, supplierExtra, likePattern } from '../../lib/purchase-requests/views.js';
 import { ok, fail, signedInCaller, NO_ACCESS_MSG, SYSTEM_ERROR } from '../../lib/purchase-requests/respond.js';
 import { MASTER_TABLES } from '../../lib/master-registry.js';
@@ -149,5 +150,15 @@ export async function handleValidatePRForDirectPayment(req, res, d) {
   if (open.length) return fail(res, 'Đã tồn tại đề nghị thanh toán cho PR này.');
   return ok(res, 'OK', { prNo: row.pr_no, vendorName: row.vendor_name || '', department: row.department || '',
     grandTotal: Number(row.grand_total) || 0, requesterName: row.requester_name || '', purchaseType: row.purchase_type || 'goods',
-    p2pBranch: row.p2p_branch || 'full' });
+    p2pBranch: branchOf(row) });
+}
+
+/** getExchangeRates — the admin rates the page uses to show the same branch the server will compute. */
+export async function handleExchangeRates(req, res, d) {
+  const { db, who } = prDeps(d);
+  const caller = await signedInCaller(req, res, who);
+  if (!caller) return;
+  try {
+    return ok(res, 'Thành công', { base: 'VND', rates: await listRates(db) });
+  } catch (e) { return systemError(res, 'getExchangeRates', e); }
 }

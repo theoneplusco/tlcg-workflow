@@ -6,7 +6,7 @@ import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVe
 import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus, handleVoucherApprovalContext } from './handlers/vouchers.js';
 import { handlePRSubmit, handlePRResubmit } from './handlers/pr/submit.js';
 import { handlePRApprove, handlePRReject, handlePRSendBack } from './handlers/pr/decide.js';
-import { handlePRHistory, handlePRDetail, handlePRSearch, handleP2PHistory, handleGoodsCatalog, handlePurchaseOrderTypes, handleAddSupplier, handleValidatePRForDirectPayment } from './handlers/pr/reads.js';
+import { handlePRHistory, handlePRDetail, handlePRSearch, handleP2PHistory, handleGoodsCatalog, handlePurchaseOrderTypes, handleAddSupplier, handleValidatePRForDirectPayment, handleExchangeRates } from './handlers/pr/reads.js';
 import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
 import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn,
   handleAdminMasterAudit, handleAdminExchangeRateAdd, handleAdminExchangeRateDelete } from './handlers/admin-master.js';
@@ -64,6 +64,7 @@ const NEW_HANDLERS = {
   getP2PHistory:               handleP2PHistory,
   getGoodsCatalog:             handleGoodsCatalog,
   getPurchaseOrderTypes:       handlePurchaseOrderTypes,
+  getExchangeRates:            handleExchangeRates,
   addSupplier:                 handleAddSupplier,
   // Payment side of a PR (workflow key payments, turned on by Plan 6)
   validatePRForDirectPayment:  handleValidatePRForDirectPayment,
@@ -103,7 +104,7 @@ const WORKFLOW_ACTIONS = {
   files: ['createVoucherUploadSession', 'finalizeVoucherUpload', 'fetchSignatureImage'],
   p2p: ['purchaseRequest', 'resubmitPurchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'sendBackPurchaseRequest',
     'getPurchaseRequestHistory', 'getPurchaseRequest', 'searchPurchaseRequests', 'getP2PHistory', 'getGoodsCatalog',
-    'getPurchaseOrderTypes', 'addSupplier'],
+    'getPurchaseOrderTypes', 'addSupplier', 'getExchangeRates'],
   payments: ['validatePRForDirectPayment'],
 };
 const PG_WORKFLOWS = new Set(String(process.env.PG_WORKFLOWS || '').split(',').map((s) => s.trim()).filter(Boolean));

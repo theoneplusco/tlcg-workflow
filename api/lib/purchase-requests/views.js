@@ -1,5 +1,5 @@
 // api/lib/purchase-requests/views.js — Postgres rows → the shapes the PR pages read (pure).
-import { approvalState, isComplete, isRejected } from './state.js';
+import { approvalState, isComplete, isRejected, branchOf } from './state.js';
 import { coreCellValue, MASTER_TABLES } from '../master-registry.js';
 
 const iso = (t) => (t ? new Date(t).toISOString() : '');
@@ -23,7 +23,7 @@ export function cardFromRow(row) {
     budgetStatus: meta.budgetStatus || '', supplierStatus: meta.supplierStatus || '',
     contractStatus: meta.contractStatus || '', purchasingStatus: meta.purchasingStatus || '',
     activeStage: isComplete(status) ? 'complete' : isRejected(status) ? 'rejected' : approvalState(row, meta).stage,
-    purchaseType: row.purchase_type || meta.purchaseType || 'goods', p2pBranch: row.p2p_branch || meta.p2pBranch || 'full',
+    purchaseType: row.purchase_type || meta.purchaseType || 'goods', p2pBranch: branchOf(row),
     hasAttachments: (row.attachments || []).some((a) => a && a.fileUrl),
     items: JSON.stringify(row.items || []),
     source: 'pg', // GAS cards never have it: purchase_request.html tells Postgres mode apart even when the detail fetch fails

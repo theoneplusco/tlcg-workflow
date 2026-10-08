@@ -130,7 +130,7 @@ test('num: dotted / comma thousands only for VND; other currencies are plain dec
   assert.equal(num('2.75', 'EUR'), 2.75);
   assert.equal(num('', 'USD'), 0);
   assert.ok(Number.isNaN(num('1.234.567', 'USD')));
-  const usd = checkSubmission(body({ currency: 'USD', items: list([{ desc: 'A', qty: '1.5', price: '2.75', total: '0' }]) }));
+  const usd = checkSubmission(body({ currency: 'USD', items: list([{ desc: 'A', qty: '1.5', price: '2.75', total: '0' }]) }), { currency: 'USD', rateToVnd: 26000 });
   assert.equal(usd.grandTotal, 4.125);
   assert.equal(usd.items[0].total, 4.125);
   const vnd = checkSubmission(body({ currency: 'VND', items: list([{ desc: 'A', qty: '1', price: '1.234.567' }]) }));
@@ -149,4 +149,23 @@ test('caps: at most 200 items and 1000 characters per field; stored keys are the
     price: '29900', total: '1', note: 'n', evil: '<script>', fileUrl: 'https://x' }]);
   assert.deepEqual(kept, [{ section: 'hang-hoa', loai: 'Hàng Hóa', desc: 'Khăn', qty: '5', unit: 'Cái', price: '29900', total: 149500, note: 'n' }]);
   assert.equal(normalizeItems([{ desc: 'Old', quantity: '2', unitPrice: '10' }]).items[0].total, 20, 'legacy keys read as qty/price');
+});
+
+const fxBody = (over = {}) => ({ companyName: 'C', requesterName: 'R', requiredDate: '2026-10-20', budgetApprover: 'b@x.vn',
+  supplierApprover: 's@x.vn', purchaseType: 'goods', items: JSON.stringify([{ desc: 'A', qty: '1', price: '100' }]), ...over });
+
+test('checkSubmission: the 2,000,000 limit is in VND; other currencies use the given rate, never a guess', () => {
+  const vnd = checkSubmission(fxBody({ items: JSON.stringify([{ desc: 'A', qty: '1', price: '1999999' }]) }));
+  assert.deepEqual([vnd.currency, vnd.rateToVnd, vnd.grandTotalVnd, vnd.branch], ['VND', 1, 1999999, 'simplified']);
+  assert.equal(checkSubmission(fxBody({ currency: 'USD' }), { currency: 'USD', rateToVnd: 26000 }).error,
+    'Đề nghị này (Dịch vụ hoặc giá trị ≥ 2.000.000₫) yêu cầu người thẩm định hợp đồng.');
+  const full = checkSubmission(fxBody({ currency: 'USD', contractApprover: 'c@x.vn' }), { currency: 'USD', rateToVnd: 26000 });
+  assert.deepEqual([full.grandTotal, full.grandTotalVnd, full.branch, full.picks.contract], [100, 2600000, 'full', 'c@x.vn']);
+  const small = checkSubmission(fxBody({ currency: 'USD', items: JSON.stringify([{ desc: 'A', qty: '1', price: '76.9' }]) }), { currency: 'USD', rateToVnd: 26000 });
+  assert.deepEqual([small.grandTotalVnd, small.branch], [1999400, 'simplified']);
+  assert.equal(checkSubmission(fxBody({ currency: 'EUR' }), { currency: 'EUR', rateToVnd: null }).error, 'Chưa có tỷ giá cho EUR. Vui lòng liên hệ quản trị viên.');
+  assert.equal(checkSubmission(fxBody({ currency: 'eur' })).error, 'Chưa có tỷ giá cho EUR. Vui lòng liên hệ quản trị viên.', 'no rate given → refused');
+  assert.equal(checkSubmission(fxBody({ currency: 'US$' })).error, 'Loại tiền tệ không hợp lệ.');
+  assert.equal(checkSubmission(fxBody({ companyName: '', currency: 'EUR' })).error, 'Thiếu tên công ty.', 'GAS checks keep their order');
+  assert.equal(checkSubmission(fxBody({ currency: 'VNĐ' })).currency, 'VND');
 });
