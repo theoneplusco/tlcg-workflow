@@ -276,16 +276,16 @@ test('approve: a sample changed while it loaded is never stamped stale (retried 
   }
 });
 
-test('approve: the requester can never approve their own PR', { skip }, async () => {
+test('approve: a requester with no slot on the PR cannot approve it', { skip }, async () => {
   const no = await submit();
-  assert.equal((await approve(no, 'req@pr-test.vn', 'budget')).message, 'Bạn không thể tự phê duyệt đề nghị của chính mình.');
+  assert.equal((await approve(no, 'req@pr-test.vn', 'budget')).message, 'Bạn không được phân công là người duyệt "budget" cho đề nghị này.');
 });
 
-test('resubmit: the requester picking themselves is refused; the token decides who the requester is', { skip }, async () => {
+test('resubmit: picks off the company list are refused; the token decides who the requester is', { skip }, async () => {
   const no = await submit();
   await call(d.handlePRSendBack, { prNo: no, approverRole: 'budget', targetStep: 1, sentBackNote: 'Sửa' }, as(people.treasurer));
   const self = await call(s.handlePRResubmit, submitBody(company, people, { prNo: no, budgetApprover: 'req@pr-test.vn' }), REQ);
-  assert.equal(self.message, 'Bạn không thể tự phê duyệt đề nghị của chính mình.');
+  assert.match(self.message, /^Người phê duyệt ngân sách \(req@pr-test\.vn\) không thuộc danh sách/);
   const claim = await call(s.handlePRResubmit, submitBody(company, people, { prNo: no, requesterEmail: 'boss@pr-test.vn' }), REQ);
   assert.equal(claim.message, 'Bạn đang đăng nhập bằng req@pr-test.vn, không thể thao tác thay boss@pr-test.vn.');
   assert.equal((await call(s.handlePRResubmit, submitBody(company, people, { prNo: '' }), REQ)).message, 'Thiếu số phiếu mua hàng.');

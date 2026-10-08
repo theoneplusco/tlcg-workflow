@@ -69,3 +69,26 @@ test('resubmitNotices: budget + supplier once', () => {
   assert.deepEqual(r.map((x) => x.to), ['linh@x.vn']);
   assert.equal(r[0].subject, '[ĐỀ NGHỊ MUA HÀNG] Phiếu đã được cập nhật và gửi lại - EV-PR20261007000001');
 });
+test('openStageRequests: who is asked after a submit/resubmit (and any self-approval)', () => {
+  const at = (meta, over = {}) => m.openStageRequests({ ...pr, supplier_approver_email: 'ncc@x.vn', metadata: meta, ...over });
+  assert.deepEqual(at({ budgetStatus: 'Pending', supplierStatus: 'Pending', purchasingStatus: 'Pending' }).map((x) => x.to), ['linh@x.vn', 'ncc@x.vn']);
+  const half = at({ budgetStatus: 'Approved', supplierStatus: 'Pending', purchasingStatus: 'Pending' });
+  assert.deepEqual(half.map((x) => [x.to, x.subject]), [['ncc@x.vn', '[ĐỀ NGHỊ MUA HÀNG] Yêu cầu phê duyệt - EV-PR20261007000001']]);
+  const re = m.openStageRequests({ ...pr, supplier_approver_email: 'ncc@x.vn', metadata: { budgetStatus: 'Approved', supplierStatus: 'Pending', purchasingStatus: 'Pending' } }, 'resubmit');
+  assert.deepEqual(re.map((x) => [x.to, x.subject]), [['ncc@x.vn', '[ĐỀ NGHỊ MUA HÀNG] Phiếu đã được cập nhật và gửi lại - EV-PR20261007000001']]);
+  const buy = at({ budgetStatus: 'Approved', supplierStatus: 'Approved', purchasingStatus: 'Pending' });
+  assert.deepEqual(buy.map((x) => [x.to, x.subject]), [['tlc.ap@x.vn', '[ĐỀ NGHỊ MUA HÀNG] Yêu cầu Mua hàng - EV-PR20261007000001']]);
+  const done = at({ budgetStatus: 'Approved', supplierStatus: 'Approved', purchasingStatus: 'Approved' });
+  assert.deepEqual(done.map((x) => [x.to, x.subject]), [['req@x.vn', '[ĐỀ NGHỊ MUA HÀNG] Phiếu đã hoàn thành - EV-PR20261007000001']]);
+});
+test('submitConfirmation: names the auto-approved steps', () => {
+  assert.doesNotMatch(m.submitConfirmation(pr).html, /tự động duyệt/);
+  const c = m.submitConfirmation(pr, [{ step: 2, labels: ['Người duyệt Ngân sách', 'Người duyệt NCC'] }]);
+  assert.match(c.html, /Các bước bạn là người duyệt đã được tự động duyệt khi gửi phiếu \(đã xác nhận bằng mật khẩu\): bước 2 \(Người duyệt Ngân sách, Người duyệt NCC\)\./);
+});
+test('sendBackNotices: step 2 asks only the given approvers (the requester\'s auto-approved slots are not asked)', () => {
+  const two = { ...pr, supplier_approver_email: 'ncc@x.vn' };
+  assert.deepEqual(m.sendBackNotices(two, { targetStep: 2, byRole: 'purchasing', note: 'x' }).map((x) => x.to), ['linh@x.vn', 'ncc@x.vn']);
+  assert.deepEqual(m.sendBackNotices(two, { targetStep: 2, byRole: 'purchasing', note: 'x' }, ['ncc@x.vn']).map((x) => x.to), ['ncc@x.vn']);
+  assert.deepEqual(m.sendBackNotices(two, { targetStep: 2, byRole: 'purchasing', note: 'x' }, []), []);
+});

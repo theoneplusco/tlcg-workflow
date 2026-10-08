@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STATUS, computeBranch, approvalState, pendingEmails, approverEmails, applyApprove, applyReject,
-  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, branchOf, SELF_APPROVAL_ERROR, MISSING_REQUESTER_ERROR,
+  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, branchOf, MISSING_REQUESTER_ERROR, prOwnSteps, prOwnOpen, prOwnLeft, picksAsRow, consentRound, ROLE_LABEL,
 } from '../../api/lib/purchase-requests/state.js';
 
 const AT = '2026-10-07T03:00:00.000Z';
@@ -126,29 +126,45 @@ test('approverPickError: server check of the requester picks (S3)', () => {
   assert.equal(approverPickError({ ...ok, purchasing: '' }, cands, 'full', 'req@x.vn'), null, 'purchasing optional');
 });
 
-test('approverPickError: refuses self-approval (decision #3), checked before candidate lists', () => {
+test('approverPickError: self-picks allowed again (Plan 5c) but must be on the lists; requester still required', () => {
   const cands = { companyEmails: new Set(['linh@x.vn', 'kt@x.vn']), purchasingEmails: new Set(['tlc.ap@x.vn']) };
   const ok = { budget: 'linh@x.vn', supplier: 'linh@x.vn', contract: 'kt@x.vn', purchasing: 'tlc.ap@x.vn' };
-  const MSG = 'Bạn không thể tự phê duyệt đề nghị của chính mình.';
-  assert.equal(approverPickError({ ...ok, budget: 'linh@x.vn' }, cands, 'full', 'linh@x.vn'), MSG);
-  assert.equal(approverPickError({ ...ok, budget: 'Linh@X.vn ' }, cands, 'full', ' LINH@x.vn'), MSG, 'mixed case / whitespace');
-  assert.equal(approverPickError({ ...ok, purchasing: 'tlc.ap@x.vn' }, cands, 'full', 'TLC.AP@x.vn'), MSG);
-  // self pick wins over the candidate-list message (requester not in the list)
-  assert.equal(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'me@x.vn'), MSG);
-  // requester not picked → existing behaviour
-  assert.equal(approverPickError(ok, cands, 'full', 'req@x.vn'), null);
-  assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'req@x.vn'), /không thuộc danh sách/);
+  assert.equal(approverPickError(ok, cands, 'full', 'linh@x.vn'), null, 'requester on budget + supplier');
+  assert.equal(approverPickError(ok, cands, 'full', 'TLC.AP@x.vn'), null, 'requester as purchasing');
+  assert.equal(approverPickError(ok, cands, 'full', 'kt@x.vn'), null, 'requester as contract reviewer');
+  assert.match(approverPickError({ ...ok, budget: 'me@x.vn' }, cands, 'full', 'me@x.vn'), /không thuộc danh sách/);
   assert.equal(approverPickError(ok, cands, 'full'), 'Thiếu thông tin người đề nghị.', 'requester omitted → fail closed');
   assert.equal(approverPickError(ok, cands, 'full', '  '), MISSING_REQUESTER_ERROR);
-  // contract is not used on simplified: picking oneself there is not self-approval
-  assert.equal(approverPickError({ ...ok, contract: 'kt@x.vn' }, cands, 'simplified', 'kt@x.vn'), null);
-  assert.equal(approverPickError({ ...ok, contract: 'kt@x.vn' }, cands, 'full', 'kt@x.vn'), MSG);
 });
 
-test('applyApprove refuses the requester (defence in depth)', () => {
-  const p = pr({ requester_email: 'Linh@x.vn' });
-  assert.equal(applyApprove(p, meta(), { email: 'linh@x.vn', role: 'budget', at: AT }).error, SELF_APPROVAL_ERROR);
-  assert.equal(applyApprove(pr({ requester_email: '' }), meta({ requesterEmail: 'LINH@x.vn' }), { email: 'linh@x.vn', role: 'budget', at: AT }).error, SELF_APPROVAL_ERROR);
+test('applyApprove: the requester approves their own slot by hand (declined consent, old PRs)', () => {
+  const r = applyApprove(pr({ requester_email: 'Linh@x.vn' }), meta(), { email: 'linh@x.vn', role: 'budget', at: AT });
+  assert.equal(r.error, undefined);
+  assert.deepEqual(r.roles, ['budget', 'supplier']);
+});
+
+test('own PR slots: steps 2 / 5 in order, open stage only, contract never, rounds', () => {
+  assert.deepEqual(ROLE_LABEL, { budget: 'Người duyệt Ngân sách', supplier: 'Người duyệt NCC', contract: 'Người thẩm định Hợp đồng', purchasing: 'Người mua hàng' });
+  assert.deepEqual(prOwnSteps(pr(), 'LINH@x.vn'), [
+    { step: 2, key: '*', entries: null, roles: ['budget', 'supplier'], labels: ['Người duyệt Ngân sách', 'Người duyệt NCC'] }]);
+  assert.deepEqual(prOwnSteps(pr(), 'tlc.ap@x.vn').map((o) => [o.step, o.roles]), [[5, ['purchasing']]]);
+  assert.deepEqual(prOwnSteps(pr({ p2p_branch: 'full', contract_approver_email: 'kt@x.vn' }), 'kt@x.vn'), [], 'the contract stage never opens');
+  assert.deepEqual(prOwnSteps(pr(), ''), []);
+  assert.deepEqual(prOwnSteps(picksAsRow({ budget: 'a@x.vn', supplier: 'b@x.vn', contract: '', purchasing: 'a@x.vn' }), 'a@x.vn').map((o) => [o.step, o.roles]),
+    [[2, ['budget']], [5, ['purchasing']]]);
+  assert.equal(prOwnOpen(pr(), meta(), 'tlc.ap@x.vn'), null, 'purchasing not open yet');
+  assert.deepEqual(prOwnOpen(pr(), meta(), 'linh@x.vn'), prOwnSteps(pr(), 'linh@x.vn')[0], 'same step + key as the consent');
+  assert.deepEqual(prOwnOpen(pr(), meta({ budgetStatus: 'Approved' }), 'linh@x.vn').roles, ['supplier']);
+  assert.equal(prOwnOpen(pr(), meta({ budgetStatus: 'Approved' }), 'linh@x.vn').key, '*', 'key from the stage, not the pending slots');
+  assert.deepEqual(prOwnOpen(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' }), 'tlc.ap@x.vn').roles, ['purchasing']);
+  assert.equal(prOwnOpen(pr({ status: STATUS.RETURNED }), meta(), 'linh@x.vn'), null);
+  assert.equal(prOwnOpen(pr({ status: STATUS.REJECTED }), meta(), 'linh@x.vn'), null);
+  assert.equal(prOwnLeft(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' }), 'linh@x.vn'), false);
+  assert.equal(prOwnLeft(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' }), 'tlc.ap@x.vn'), true);
+  // Only send-backs to step 1 (the requester edits and resubmits) start a new consent round; step-2 ones keep it (decision 2)
+  assert.equal(consentRound({}), 0);
+  assert.equal(consentRound({ sentBackHistory: [{ targetStep: 2 }, { targetStep: 2 }] }), 0);
+  assert.equal(consentRound({ sentBackHistory: [{ targetStep: 2 }, { targetStep: 1 }, { targetStep: '1' }] }), 2);
 });
 
 test('approve: budget+purchasing person in the parallel stage fills only parallel slots', () => {

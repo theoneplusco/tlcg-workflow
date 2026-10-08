@@ -1,6 +1,7 @@
 // api/lib/purchase-requests/views.js — Postgres rows → the shapes the PR pages read (pure).
 import { approvalState, isComplete, isRejected, branchOf } from './state.js';
 import { coreCellValue, MASTER_TABLES } from '../master-registry.js';
+import { withoutStamps } from '../approval/self-approval.js';
 
 const iso = (t) => (t ? new Date(t).toISOString() : '');
 const lower = (s) => String(s || '').trim().toLowerCase();
@@ -37,7 +38,7 @@ export const attachmentUrls = (attachments) => (attachments || []).filter((a) =>
 export function fullFromRow(row) {
   return {
     ...cardFromRow(row),
-    metadata: JSON.stringify(row.metadata || {}),
+    metadata: JSON.stringify(withoutStamps(row.metadata || {})), // Plan 5c: never the stored stamp copy
     attachmentUrls: attachmentUrls(row.attachments),
     budgetCode: row.budget_code || '',
   };

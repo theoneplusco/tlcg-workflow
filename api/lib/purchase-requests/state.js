@@ -4,7 +4,7 @@
 // - the same person on budget + supplier approves once for both slots;
 // - send back to step 3 is refused: the PR has no contract stage (GAS bug B3);
 // - reject uses the caller's slot in the open stage (GAS let a later role win, then refused);
-// - the requester may not pick themselves as an approver (decision #3).
+// - the requester may pick themselves; with their password at submit their slots are auto-approved (Plan 5c, 2026-10-08).
 export const STATUS = {
   PARALLEL: 'Đang duyệt ngân sách & NCC (2/5)',
   CONTRACT: 'Thẩm định Hợp đồng (4/5)',
@@ -21,7 +21,6 @@ const ROLE_STAGE = { budget: 'parallel', supplier: 'parallel', contract: 'contra
 const STAGE_LABEL = { parallel: 'duyệt ngân sách & NCC', contract: 'thẩm định hợp đồng', purchasing: 'mua hàng', complete: 'complete' };
 const COL = { budget: 'budget_approver_email', supplier: 'supplier_approver_email', contract: 'contract_approver_email', purchasing: 'purchasing_approver_email' };
 
-export const SELF_APPROVAL_ERROR = 'Bạn không thể tự phê duyệt đề nghị của chính mình.';
 export const MISSING_REQUESTER_ERROR = 'Thiếu thông tin người đề nghị.';
 const lower = (s) => String(s || '').trim().toLowerCase();
 export const isRole = (r) => ROLES.includes(lower(r));
@@ -30,6 +29,51 @@ export const isComplete = (s) => s === STATUS.DONE || s === 'Approved';
 export const isTerminal = (s) => isRejected(s) || isComplete(s);
 export const isReturned = (s) => s === STATUS.RETURNED;
 export const emailOf = (pr, role) => lower(pr[COL[role]]);
+
+/** Role names in emails and in the self-approval texts. */
+export const ROLE_LABEL = { budget: 'Người duyệt Ngân sách', supplier: 'Người duyệt NCC', contract: 'Người thẩm định Hợp đồng', purchasing: 'Người mua hàng' };
+/** Step numbers of the PR status labels: (2/5) budget & supplier, (4/5) contract, (5/5) purchasing. */
+const STAGE_STEP = { parallel: 2, contract: 4, purchasing: 5 };
+const REACHABLE = ['parallel', 'purchasing']; // approvalState never opens the contract stage (GAS parity)
+// PR stamps are the person's own sample (entries null → stamp key '*', as entriesKey(null) in self-approval.js)
+const ownEntry = (stage, roles) => ({ step: STAGE_STEP[stage], key: '*', entries: null, roles, labels: roles.map((r) => ROLE_LABEL[r]) });
+const stageSlots = (pr, stage, me) => ROLES.filter((r) => ROLE_STAGE[r] === stage && emailOf(pr, r) === me);
+
+/** The submit picks as the approver columns of a row (for prOwnSteps before the PR exists). */
+export const picksAsRow = (picks) => ({ budget_approver_email: picks.budget, supplier_approver_email: picks.supplier,
+  contract_approver_email: picks.contract, purchasing_approver_email: picks.purchasing });
+
+/** Plan 5c: every reachable stage where `email` holds a slot, in order (what the requester consents to). */
+export function prOwnSteps(pr, email) {
+  const me = lower(email);
+  if (!me) return [];
+  return REACHABLE.map((stage) => [stage, stageSlots(pr, stage, me)])
+    .filter(([, roles]) => roles.length).map(([stage, roles]) => ownEntry(stage, roles));
+}
+
+/**
+ * Plan 5c: the requester's not-yet-approved slots in the OPEN stage (null when none, or the PR is not open).
+ * step and key come from the stage (its full slot set), so they match what prOwnSteps recorded at consent;
+ * roles / labels are the slots still to approve (applyApprove's same-person merge clears them all at once).
+ */
+export function prOwnOpen(pr, meta, email) {
+  const me = lower(email);
+  if (!me || isTerminal(pr.status) || isReturned(pr.status)) return null;
+  const { stage } = approvalState(pr, meta);
+  if (!REACHABLE.includes(stage)) return null;
+  const roles = stageSlots(pr, stage, me).filter((r) => meta[`${r}Status`] !== 'Approved');
+  return roles.length ? ownEntry(stage, roles) : null;
+}
+
+/** Plan 5c: does `email` still hold a reachable slot that is not approved? */
+export const prOwnLeft = (pr, meta, email) => ['budget', 'supplier', 'purchasing'].some((r) => emailOf(pr, r) === lower(email) && meta[`${r}Status`] !== 'Approved');
+
+/**
+ * The consent round: send-backs to step 1 only (the requester edits and resubmits, and is asked again).
+ * A step-2 send-back keeps the consent (controller decision 2, 2026-10-08): content is unchanged.
+ */
+export const consentRound = (meta) => (Array.isArray((meta || {}).sentBackHistory)
+  ? meta.sentBackHistory.filter((h) => h && Number(h.targetStep) === 1).length : 0);
 
 /** The full-branch limit is in VND (decision 2026-10-07): other currencies are converted with the admin rate first. */
 export const FULL_BRANCH_MIN_VND = 2000000;
@@ -88,7 +132,6 @@ export function applyApprove(pr, meta = {}, { email, role, note = '', signature 
   const r = lower(role);
   const me = lower(email);
   if (!isRole(r)) return { error: BAD_ROLE };
-  if (me && me === lower(pr.requester_email || meta.requesterEmail)) return { error: SELF_APPROVAL_ERROR };
   if (isRejected(pr.status)) return { error: 'Đề nghị này đã bị từ chối, không thể duyệt.' };
   if (isComplete(pr.status)) return { error: 'Đề nghị này đã được duyệt rồi.' };
   if (isReturned(pr.status)) return { error: 'Phiếu đang chờ người đề nghị bổ sung thông tin, không thể duyệt.' };
@@ -159,12 +202,10 @@ export function applySendBack(pr, meta = {}, { email, role, targetStep, note, at
 const PICK_LABEL = { budget: 'Người phê duyệt ngân sách', supplier: 'Người phê duyệt NCC', contract: 'Người thẩm định hợp đồng' };
 /**
  * The requester's picks must come from the lists the page offers (GAS trusted any email, S3).
- * requesterEmail (4th arg) is required (fail closed); self-approval is refused before the candidate lists.
+ * requesterEmail (4th arg) is required (fail closed). The requester may pick themselves (Plan 5c).
  */
 export function approverPickError(picks, { companyEmails, purchasingEmails }, branch, requesterEmail = '') {
-  const me = lower(requesterEmail);
-  if (!me) return MISSING_REQUESTER_ERROR;
-  if (ROLES.some((r) => (r !== 'contract' || branch === 'full') && lower(picks[r]) === me)) return SELF_APPROVAL_ERROR;
+  if (!lower(requesterEmail)) return MISSING_REQUESTER_ERROR;
   for (const r of ['budget', 'supplier', 'contract']) {
     const e = lower(picks[r]);
     if (r === 'contract' && (branch !== 'full' || !e)) continue;

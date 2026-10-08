@@ -1,12 +1,13 @@
 // api/handlers/pr/decide.js — approve / reject / send back a purchase request on Postgres.
 // Rules: api/lib/purchase-requests/state.js. Who acts: the login token (never the body's email).
-import { STATUS, isRole, BAD_ROLE, applyApprove, applyReject, sendBackInputError, applySendBack, pendingEmails } from '../../lib/purchase-requests/state.js';
+import { STATUS, isRole, BAD_ROLE, applyApprove, applyReject, sendBackInputError, applySendBack, pendingEmails, approvalState } from '../../lib/purchase-requests/state.js';
 import { getPR, updatePR, recordChange } from '../../lib/purchase-requests/repo.js';
 import { purchasingRequest, completed, rejectedNotice, sendBackNotices } from '../../lib/purchase-requests/emails.js';
 import { fail, signedInCaller, claimProblem } from '../../lib/purchase-requests/respond.js';
 import { NO_SAMPLE } from '../../lib/approval/signature-check.js';
 import { confirmPassword, verificationRecord, makeStamper, stampStillCurrent } from '../../lib/approval/step-up.js';
 import { prDeps, withLockedPR, RETRY } from './tx.js';
+import { autoAdvancePR, settleStamps, withoutConsentStamps } from './auto.js';
 
 /** Login, PR number, body email = caller. Returns { caller, prNo, b } or null after answering. */
 async function start(req, res, who, claimedKey = 'approverEmail') {
@@ -49,14 +50,18 @@ export async function handlePRApprove(req, res, d) {
       if (!pre.ok) return { error: pre.message };
       const r = applyApprove(row, row.metadata || {}, { email: caller.email, role: b.approverRole, note: b.note || '', at,
         signature: pre.signature, verification: verificationRecord(pre.from, at) }); // one stamp on every slot this approval covers
-      const saved = await updatePR(client, row.id, { metadata: r.meta, status: r.status, pending_emails: pendingEmails(row, r.meta, r.status) });
+      const meta = settleStamps(r.meta, r.status); // completed by hand: the self-approval stamp copy is no longer needed
+      const saved = await updatePR(client, row.id, { metadata: meta, status: r.status, pending_emails: pendingEmails(row, meta, r.status) });
       const extra = { auth: 'password', signatureStamped: true, sampleFrom: pre.from };
       await recordChange(client, saved, r.roles.map((role) => ({ action: 'Approve', role, actorEmail: caller.email, actorName: caller.name,
         prevStatus: row.status, newStatus: r.status, note: b.note || '', extra, at })));
+      // Plan 5c: the requester's own next slot(s), when they consented at submit — same commit, real time
+      const { state: final } = await autoAdvancePR(client, saved, now);
+      const stage = approvalState(final, final.metadata || {}).stage;
       const mails = [];
-      if (r.after.stage === 'purchasing' && r.before.stage !== 'purchasing') mails.push(purchasingRequest(saved)); // both branches (B2)
-      if (r.after.stage === 'complete') mails.push(completed(saved));
-      return { saved, mails, message: 'Đã duyệt thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
+      if (stage === 'purchasing' && r.before.stage !== 'purchasing') mails.push(purchasingRequest(final)); // both branches (B2)
+      if (stage === 'complete') mails.push(completed(final));
+      return { saved: final, mails, message: 'Đã duyệt thành công.', fields: { prNo: final.pr_no, status: final.status } };
     });
     if (out !== RETRY) return out;
   }
@@ -72,7 +77,8 @@ export async function handlePRReject(req, res, d) {
     const at = now().toISOString();
     const r = applyReject(row, row.metadata || {}, { email: caller.email, note: String(b.note || '').trim(), at });
     if (r.error) return r;
-    const saved = await updatePR(client, row.id, { metadata: r.meta, status: STATUS.REJECTED, pending_emails: [] });
+    const meta = withoutConsentStamps(r.meta); // final: the self-approval stamp copy is no longer needed
+    const saved = await updatePR(client, row.id, { metadata: meta, status: STATUS.REJECTED, pending_emails: [] });
     await recordChange(client, saved, { action: 'Reject', role: r.role, actorEmail: caller.email, actorName: caller.name,
       prevStatus: row.status, newStatus: STATUS.REJECTED, note: r.meta.rejectionNote, at });
     return { saved, mails: [rejectedNotice(saved, { by: caller.name || caller.email, note: r.meta.rejectionNote })],
@@ -94,10 +100,21 @@ export async function handlePRSendBack(req, res, d) {
     const at = now().toISOString();
     const r = applySendBack(row, row.metadata || {}, { email: caller.email, role, targetStep, note, at });
     if (r.error) return r;
-    const saved = await updatePR(client, row.id, { metadata: r.meta, status: r.status, pending_emails: pendingEmails(row, r.meta, r.status) });
+    // Step 1: the requester edits and resubmits with a fresh consent, so the old one (and its stamp copy) is void
+    const meta = targetStep === 1 ? withoutConsentStamps(r.meta) : r.meta;
+    const saved = await updatePR(client, row.id, { metadata: meta, status: r.status, pending_emails: pendingEmails(row, meta, r.status) });
     await recordChange(client, saved, { action: 'Return', role, actorEmail: caller.email, actorName: caller.name,
       prevStatus: row.status, newStatus: r.status, note, extra: { targetStep }, at });
-    return { saved, mails: sendBackNotices(saved, { targetStep, byRole: role, note }),
-      message: 'Đã trả lại thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
+    if (targetStep === 1) {
+      return { saved, mails: sendBackNotices(saved, { targetStep, byRole: role, note }),
+        message: 'Đã trả lại thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
+    }
+    // Step 2 keeps the consent (controller decision 2): the requester's reset slots are auto-approved again, and only
+    // the approvers still to act are asked; if nobody is left at step 2, whoever the PR now waits for is asked.
+    const { state: final, auto } = await autoAdvancePR(client, saved, now);
+    const stage = approvalState(final, final.metadata || {}).stage;
+    const mails = stage === 'parallel' ? sendBackNotices(final, { targetStep, byRole: role, note }, final.pending_emails || [])
+      : !auto.length ? [] : stage === 'purchasing' ? [purchasingRequest(final)] : stage === 'complete' ? [completed(final)] : [];
+    return { saved: final, mails, message: 'Đã trả lại thành công.', fields: { prNo: final.pr_no, status: final.status } };
   });
 }

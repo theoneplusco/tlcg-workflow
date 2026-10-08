@@ -4,6 +4,7 @@
 // so legacy event rows of the same PR are never overwritten. Times are ISO text, as GAS wrote them.
 import { metadataJson } from './voucher-records.js';
 import { attachmentUrls } from '../purchase-requests/views.js';
+import { withoutStamps } from '../approval/self-approval.js';
 
 /** Target spreadsheet for the PR copy. No default; read at call time. */
 export const p2pSpreadsheetId = () => String(process.env.P2P_SPREADSHEET_ID || '').trim();
@@ -35,7 +36,7 @@ export function prRecord(row) {
     purpose: row.purpose || '', suggested_vendor: row.vendor_name || '', budget_code: row.budget_code || '',
     budget_approver_email: row.budget_approver_email || '', supplier_approver_email: row.supplier_approver_email || '',
     items_json: itemsJson(row.items, row.grand_total), grand_total: Number(row.grand_total) || 0, status: row.status || '',
-    submitted_at: iso(row.submitted_at), metadata_json: metadataJson(row.metadata || {}),
+    submitted_at: iso(row.submitted_at), metadata_json: metadataJson(withoutStamps(row.metadata || {})), // Plan 5c: never the stored stamp copy
     contract_approver_email: row.contract_approver_email || '', purchasing_approver_email: row.purchasing_approver_email || '',
     attachment_urls: attachmentUrls(row.attachments),
     row_type: 'submit',

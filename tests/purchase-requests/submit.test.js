@@ -60,17 +60,17 @@ test('GAS validation wording comes first', { skip }, async () => {
 });
 
 test('approver outside the company list is refused (S3)', { skip }, async () => {
-  // Not the caller's own email: self-picks are refused first, with their own message (next test).
   const r = await call(h.handlePRSubmit, submitBody(company, people, { budgetApprover: 'Outsider@pr-test.vn' }), REQ);
   assert.equal(r.success, false);
   assert.match(r.message, /^Người phê duyệt ngân sách \(outsider@pr-test\.vn\) không thuộc danh sách người duyệt của công ty này/);
 });
 
-test('the requester may not pick themselves (decision #3), even when on the company list', { skip }, async () => {
+test('self-picks (Plan 5c): off the company list → list message; on it → the requester is asked to confirm, nothing stored', { skip }, async () => {
   const r1 = await call(h.handlePRSubmit, submitBody(company, people, { budgetApprover: 'REQ@pr-test.vn' }), REQ);
-  assert.deepEqual([r1.success, r1.message], [false, 'Bạn không thể tự phê duyệt đề nghị của chính mình.']);
+  assert.equal(r1.success, false);
+  assert.match(r1.message, /^Người phê duyệt ngân sách \(req@pr-test\.vn\) không thuộc danh sách người duyệt của công ty này/);
   const r2 = await call(h.handlePRSubmit, submitBody(company, people), as(people.treasurer));
-  assert.deepEqual([r2.success, r2.message], [false, 'Bạn không thể tự phê duyệt đề nghị của chính mình.']);
+  assert.deepEqual([r2.success, r2.needSelfApproval], [false, true]);
   const n = (await pool.query('SELECT count(*)::int AS n FROM purchase_requests WHERE requester_email = $1', [people.treasurer])).rows[0].n;
   assert.equal(n, 0, 'nothing stored');
 });

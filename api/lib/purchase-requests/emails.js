@@ -5,13 +5,16 @@
 // - one email per distinct address (B12); the purchasing email on both branches (B2);
 // - a rejection email to the requester (B13).
 import { baseUrl, money } from '../vouchers/emails.js';
+import { ROLE_LABEL, approvalState, pendingEmails } from './state.js';
+import { selfEmailHtml } from '../approval/self-approval.js';
+
+export { ROLE_LABEL };
 
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const lower = (s) => String(s || '').trim().toLowerCase();
 const distinct = (...emails) => [...new Set(emails.map(lower).filter(Boolean))];
 const P = '[ĐỀ NGHỊ MUA HÀNG]';
 const SIGN_OFF = '<p>Trân trọng,<br>Hệ thống Workflow TLC Group</p>';
-export const ROLE_LABEL = { budget: 'Người duyệt Ngân sách', supplier: 'Người duyệt NCC', contract: 'Người thẩm định Hợp đồng', purchasing: 'Người mua hàng' };
 
 export const prLink = (no) => `${baseUrl()}/purchase_request.html?prNo=${encodeURIComponent(no)}`;
 const button = (no) => `<p style="margin:16px 0;"><a href="${esc(prLink(no))}" style="background:#4285f4;color:#ffffff;padding:12px 24px;text-decoration:none;border-radius:6px;display:inline-block;">Mở đề nghị ${esc(no)}</a></p>`;
@@ -32,18 +35,20 @@ function attachmentList(pr) {
 const box = (title, text) => `<div style="background:#fffbeb;border-left:4px solid #f59e0b;padding:12px 16px;margin:12px 0;"><strong>${title}</strong><br>${esc(text)}</div>`;
 const mail = (to, subject, body) => ({ to, subject, html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937;">${body}${SIGN_OFF}</div>` });
 
-export function approvalRequests(pr) {
-  return distinct(pr.budget_approver_email, pr.supplier_approver_email).map((to) => mail(to, `${P} Yêu cầu phê duyệt - ${pr.pr_no}`,
+/** `to` defaults to budget + supplier (GAS); after a self-approval only the slots still open are asked. */
+export function approvalRequests(pr, to = [pr.budget_approver_email, pr.supplier_approver_email]) {
+  return distinct(...to).map((t) => mail(t, `${P} Yêu cầu phê duyệt - ${pr.pr_no}`,
     `<p>Kính gửi,</p><p>Có một <strong>Đề nghị mua hàng</strong> mới đang chờ phê duyệt của bạn.</p>${table(pr)}
      <p>Vui lòng đăng nhập vào hệ thống để xem chi tiết và phê duyệt.</p>${button(pr.pr_no)}${attachmentList(pr)}`));
 }
 
-export function submitConfirmation(pr) {
+/** `auto` = the requester's steps auto-approved at submit (Plan 5c): named in the email. */
+export function submitConfirmation(pr, auto = []) {
   const to = lower(pr.requester_email);
   if (!to) return null;
   return mail(to, `${P} Xác nhận gửi phiếu - ${pr.pr_no}`,
     `<p>Kính gửi ${esc(pr.requester_name)},</p><p>Đề nghị mua hàng của bạn đã được gửi thành công.</p>${table(pr, { requester: false })}
-     <p>Người phê duyệt đã được thông báo qua email và sẽ xử lý đề nghị của bạn.</p>${button(pr.pr_no)}${attachmentList(pr)}`);
+     <p>Người phê duyệt đã được thông báo qua email và sẽ xử lý đề nghị của bạn.</p>${selfEmailHtml(auto)}${button(pr.pr_no)}${attachmentList(pr)}`);
 }
 
 export function purchasingRequest(pr) {
@@ -69,7 +74,8 @@ export function rejectedNotice(pr, { by, note } = {}) {
      ${table(pr, { requester: false })}${note ? box('Lý do từ chối:', note) : ''}${button(pr.pr_no)}`);
 }
 
-export function sendBackNotices(pr, { targetStep, byRole, note } = {}) {
+/** Step 2: `to` defaults to budget + supplier (GAS); after a self-approval only the slots still open are asked. */
+export function sendBackNotices(pr, { targetStep, byRole, note } = {}, to = [pr.budget_approver_email, pr.supplier_approver_email]) {
   const who = ROLE_LABEL[byRole] || byRole;
   const reason = box('Lý do trả lại:', note);
   if (Number(targetStep) === 1) {
@@ -78,15 +84,28 @@ export function sendBackNotices(pr, { targetStep, byRole, note } = {}) {
       `<p>Kính gửi ${esc(pr.requester_name)},</p><p>${esc(who)} đã trả lại đề nghị mua hàng của bạn để bổ sung thông tin.</p>
        ${table(pr, { requiredDate: false })}${reason}<p>Vui lòng mở đề nghị và chọn <strong>"Chỉnh sửa &amp; Gửi lại"</strong>.</p>${button(pr.pr_no)}`)] : [];
   }
-  return distinct(pr.budget_approver_email, pr.supplier_approver_email).map((to) => mail(to,
+  return distinct(...to).map((t) => mail(t,
     `${P} Yêu cầu xem lại - Bước Ngân sách & NCC - ${pr.pr_no}`,
     `<p>Kính gửi,</p><p>${esc(who)} đã trả lại đề nghị mua hàng về bước <strong>Duyệt ngân sách &amp; NCC</strong>. Vui lòng xem lại và phê duyệt lại.</p>
      ${table(pr, { requiredDate: false })}${reason}${button(pr.pr_no)}`));
 }
 
-export function resubmitNotices(pr) {
-  return distinct(pr.budget_approver_email, pr.supplier_approver_email).map((to) => mail(to,
+export function resubmitNotices(pr, to = [pr.budget_approver_email, pr.supplier_approver_email]) {
+  return distinct(...to).map((t) => mail(t,
     `${P} Phiếu đã được cập nhật và gửi lại - ${pr.pr_no}`,
     `<p>Kính gửi,</p><p>Người đề nghị đã cập nhật và gửi lại <strong>Đề nghị mua hàng</strong>. Vui lòng xem lại và phê duyệt.</p>
      ${table(pr)}${button(pr.pr_no)}${attachmentList(pr)}`));
+}
+
+/**
+ * After a submit or resubmit (and any self-approval): ask whoever the PR now waits for. The open stage's approvers
+ * who still have to act, or the purchasing request, or the completion notice when nothing is left.
+ */
+export function openStageRequests(pr, kind = 'submit') {
+  const meta = pr.metadata || {};
+  const { stage } = approvalState(pr, meta);
+  if (stage === 'complete') return [completed(pr)];
+  if (stage === 'purchasing') return [purchasingRequest(pr)];
+  const to = pendingEmails(pr, meta, pr.status);
+  return kind === 'resubmit' ? resubmitNotices(pr, to) : approvalRequests(pr, to);
 }
