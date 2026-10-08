@@ -75,7 +75,7 @@ export function planOwnOpen(plan, email) {
 }
 
 /** Does `email` still have an entry to approve anywhere in the plan? */
-export const planOwnLeft = (plan, email) => plan.steps.some((s) => s.approvers.some((a) => a.email === lower(email) && a.status !== 'approved'));
+export const planOwnLeft = (plan, email) => !!plan && Array.isArray(plan.steps) && plan.steps.some((s) => s.approvers.some((a) => a.email === lower(email) && a.status !== 'approved'));
 
 /** Same steps (number, stamp key, labels) as the requester confirmed? */
 export const sameOwnSteps = (a, b) => JSON.stringify(a.map(pub)) === JSON.stringify((b || []).map(pub));
@@ -87,8 +87,10 @@ export const sameOwnSteps = (a, b) => JSON.stringify(a.map(pub)) === JSON.string
  * The password check is Plan 5b's confirmPassword: the same lockout counter as approvals.
  * `email` is ALWAYS the signed-in caller (token), never a body field. Controller decision 1 (2026-10-08): when the
  * submitter files for another employee, `own` are the submitter's steps and the consent (`by`) is the submitter's.
+ * `ref` = the request identity (voucher number / PR number) the consent is bound to; consentFor refuses any other.
+ * When the number is only assigned inside the transaction, the caller sets `consent.ref` before storing it.
  */
-export async function requestConsent({ db, redis, email, password, declined, own, companyId, round = 0, lang, at }) {
+export async function requestConsent({ db, redis, email, password, declined, own, companyId, round = 0, ref = null, lang, at }) {
   const me = lower(email);
   if (!me || !own || !own.length) return { consent: null };
   const steps = own.map(pub);
@@ -105,29 +107,33 @@ export async function requestConsent({ db, redis, email, password, declined, own
     if (!s.ok) return { ask, message: `${s.message} ${L(lang).noSampleHint}` };
     stamps.push({ key: o.key, companyId: companyId || null, url: s.url, from: s.from, signature: s.signature });
   }
-  return { consent: { by: me, consentedAt: at, method: 'password', round, steps, stamps, auto: [] } };
+  return { consent: { by: me, ref: ref == null ? null : String(ref), consentedAt: at, method: 'password', round, steps, stamps, auto: [] } };
 }
 
 /**
- * The consent stored on a request, if it still applies (same owner, same send-back round, a stamp left).
- * `requesterEmail` = whoever consented at submit: the signed-in submitter recorded on the request (controller
- * decision 1), which is the requester except when filing for someone else. `round` = the send-back count that voids
- * a consent; controller decision 2 (PR sent back to step 2 keeps consent) means the caller counts only the
- * send-backs that should void it, not step-2 ones.
+ * The consent stored on a request, if it still applies (same submitter, same request, same send-back round, a stamp left).
+ * - `submitterEmail`: the token email recorded as the submitter at submit (vouchers.submitted_by / PR submitter),
+ *   never requestor_email or metadata.selfApproval.by (controller decision 1: filing for someone else).
+ * - `round` (required): the send-back count that voids a consent. Controller decision 2 (a PR sent back to step 2
+ *   keeps consent) means the caller counts only the send-backs that should void it, not step-2 ones.
+ *   undefined / null → no consent.
+ * - `ref` (required): the request identity (voucher number / PR number); must equal the stored `consent.ref`.
  */
-export function consentFor(meta, { requesterEmail, round = 0 }) {
+export function consentFor(meta, { submitterEmail, round, ref } = {}) {
   const c = meta && meta.selfApproval;
-  if (!c || !c.by || c.by !== lower(requesterEmail) || (Number(c.round) || 0) !== round) return null;
+  if (!c || !c.by || !lower(submitterEmail) || c.by !== lower(submitterEmail)) return null;
+  if (round == null || (Number(c.round) || 0) !== Number(round)) return null;
+  if (ref == null || ref === '' || c.ref == null || String(c.ref) !== String(ref)) return null;
   return Array.isArray(c.stamps) && c.stamps.some((s) => s && s.signature) ? c : null;
 }
 
 /**
- * The consent after one auto-approval: logged in `auto`; the stamp copy dropped when no own entry is `left`.
- * Controller decision 2: a caller whose own slots can be reset later (PR send-back to step 2) passes `left` true
- * until that can no longer happen, so the reset slot is auto-approved again from the stored stamp.
+ * The consent after one auto-approval: logged in `auto`. The stored stamp is dropped unless `keepStamp`:
+ * pass true while the request can still come back to the submitter's consented slots (own entries still pending,
+ * or a PR step-2 send-back is still possible, controller decision 2), so a reset slot is auto-approved again from it.
  */
-export function recordAuto(consent, mine, at, left) {
-  return { ...consent, auto: [...(consent.auto || []), { step: mine.step, labels: mine.labels, at }], stamps: left ? consent.stamps : [] };
+export function recordAuto(consent, mine, at, keepStamp = false) {
+  return { ...consent, auto: [...(consent.auto || []), { step: mine.step, labels: mine.labels, at }], stamps: keepStamp ? consent.stamps : [] };
 }
 
 /** Metadata for history rows and API views: the consent without the stamp images. Input not mutated. */
@@ -139,22 +145,32 @@ export function withoutStamps(meta) {
 
 /**
  * Inside the caller's transaction, after a submit or any approval: while the consent applies and the open step holds
- * the requester's pending entry, approve it (the workflow's `approve` writes state, history, Sheet copy and audit)
+ * the submitter's pending entry of a CONSENTED step, approve it (the workflow's `approve` writes state, history, Sheet copy and audit)
  * and look again. A sample that changed since the consent stops the loop (DB lookup only, never a fetch).
  */
 export async function autoAdvance(client, { state, companyId, consentOf, pendingOwn, approve, now = () => new Date() }) {
   const auto = [];
-  for (let n = 0; n < MAX_AUTO; n += 1) {
+  let last = null;
+  let n = 0;
+  for (; n < MAX_AUTO; n += 1) {
     const consent = consentOf(state);
     if (!consent) break;
     const mine = pendingOwn(state, consent.by);
     if (!mine) break;
+    // Only steps the submitter confirmed (step + stamp key); a step gained since the consent is approved by hand.
+    if (!(consent.steps || []).some((s) => s.step === mine.step && s.key === mine.key)) break;
+    if (last && last.step === mine.step && last.key === mine.key) {
+      console.error(`[SelfApproval] no progress: step ${mine.step} (${mine.key}) still pending after auto-approval; stopped`);
+      break;
+    }
     const stamp = consent.stamps.find((s) => s.key === mine.key && s.signature) || null;
     if (!(await stampStillCurrent(client, stamp, companyId, mine.entries, consent.by))) break;
     const at = new Date(now()).toISOString();
     state = await approve(state, { consent, mine, stamp, at, note: selfNote(mine.labels) });
     auto.push({ step: mine.step, labels: mine.labels, at });
+    last = mine;
   }
+  if (n >= MAX_AUTO) console.error(`[SelfApproval] stopped after ${MAX_AUTO} auto-approvals (MAX_AUTO)`);
   return { state, auto };
 }
 

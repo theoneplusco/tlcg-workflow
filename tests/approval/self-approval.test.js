@@ -80,19 +80,29 @@ test('engine plans: own steps in order (label, else the step name), open entries
 });
 
 test('consentFor / recordAuto / withoutStamps / askBody / planChangedBody', () => {
-  const c = { by: 'me@x.vn', consentedAt: AT, method: 'password', round: 0, steps: [],
+  const c = { by: 'me@x.vn', ref: 'TL-1', consentedAt: AT, method: 'password', round: 0, steps: [],
     stamps: [{ key: 'person', companyId: null, url: 'u', from: 'Master Employee', signature: 'data:image/png;base64,AA' }], auto: [] };
-  assert.equal(consentFor({ selfApproval: c }, { requesterEmail: 'ME@x.vn' }), c);
-  assert.equal(consentFor({}, { requesterEmail: 'me@x.vn' }), null, 'old requests: no consent');
-  assert.equal(consentFor(null, { requesterEmail: 'me@x.vn' }), null);
-  assert.equal(consentFor({ selfApproval: c }, { requesterEmail: 'other@x.vn' }), null);
-  assert.equal(consentFor({ selfApproval: c }, { requesterEmail: 'me@x.vn', round: 1 }), null, 'sent back since: consent void');
-  assert.equal(consentFor({ selfApproval: { ...c, stamps: [] } }, { requesterEmail: 'me@x.vn' }), null);
+  const q = { submitterEmail: 'me@x.vn', round: 0, ref: 'TL-1' };
+  assert.equal(consentFor({ selfApproval: c }, { ...q, submitterEmail: 'ME@x.vn' }), c);
+  assert.equal(consentFor({}, q), null, 'old requests: no consent');
+  assert.equal(consentFor(null, q), null);
+  assert.equal(consentFor({ selfApproval: c }, { ...q, submitterEmail: 'other@x.vn' }), null);
+  assert.equal(consentFor({ selfApproval: c }, { ...q, submitterEmail: '' }), null);
+  assert.equal(consentFor({ selfApproval: c }, { ...q, round: 1 }), null, 'sent back since: consent void');
+  assert.equal(consentFor({ selfApproval: c }, { submitterEmail: 'me@x.vn', ref: 'TL-1' }), null, 'round is required');
+  assert.equal(consentFor({ selfApproval: c }, { ...q, round: null }), null, 'round is required');
+  assert.equal(consentFor({ selfApproval: c }, { ...q, ref: 'TL-2' }), null, 'consent of another request');
+  assert.equal(consentFor({ selfApproval: c }, { ...q, ref: undefined }), null, 'ref is required');
+  assert.equal(consentFor({ selfApproval: { ...c, ref: null } }, q), null, 'a consent without ref never applies');
+  assert.equal(consentFor({ selfApproval: c }), null);
+  assert.equal(consentFor({ selfApproval: { ...c, stamps: [] } }, q), null);
   const mine = { step: 1, key: 'person', labels: ['Kiểm tra'] };
   assert.deepEqual(recordAuto(c, mine, AT, true).auto, [{ step: 1, labels: ['Kiểm tra'], at: AT }]);
   assert.equal(recordAuto(c, mine, AT, true).stamps, c.stamps);
-  assert.deepEqual(recordAuto(c, mine, AT, false).stamps, [], 'last own step: the stamp copy is dropped');
+  assert.deepEqual(recordAuto(c, mine, AT, false).stamps, [], 'nothing can come back: the stamp copy is dropped');
+  assert.deepEqual(recordAuto(c, mine, AT).stamps, [], 'keepStamp defaults to false');
   const meta = { a: 1, selfApproval: c };
+  assert.equal(planOwnLeft(null, 'me@x.vn'), false);
   assert.deepEqual(withoutStamps(meta).selfApproval.stamps, [{ key: 'person', companyId: null, url: 'u', from: 'Master Employee' }]);
   assert.equal(meta.selfApproval.stamps[0].signature.startsWith('data:'), true, 'input not mutated');
   assert.deepEqual(withoutStamps({ a: 1 }), { a: 1 });
@@ -105,7 +115,7 @@ test('consentFor / recordAuto / withoutStamps / askBody / planChangedBody', () =
 
 test('requestConsent: nothing to ask, ask, declined, wrong password, no sample, consent with one stamp per sample', { skip }, async () => {
   const own = planOwnSteps(PLAN, ME);
-  const base = { db, redis, email: ME, own, companyId: null, lang: 'vi', at: AT };
+  const base = { db, redis, email: ME, own, companyId: null, ref: 'TL-1', lang: 'vi', at: AT };
   assert.deepEqual(await requestConsent({ ...base, own: [] }), { consent: null });
   assert.deepEqual(await requestConsent({ ...base, email: '' }), { consent: null });
   const ask = await requestConsent(base);
@@ -118,7 +128,7 @@ test('requestConsent: nothing to ask, ask, declined, wrong password, no sample, 
   const ok = await requestConsent({ ...base, password: PW, declined: true });
   assert.deepEqual(Object.keys(ok), ['consent'], 'a password wins over declined');
   assert.deepEqual(ok.consent, {
-    by: ME, consentedAt: AT, method: 'password', round: 0, steps: ask.ask.steps, auto: [],
+    by: ME, ref: 'TL-1', consentedAt: AT, method: 'password', round: 0, steps: ask.ask.steps, auto: [],
     stamps: [{ key: 'person', companyId: null, url: 'https://drive/sa-me', from: 'Master Employee', signature: FAKE_STAMP('https://drive/sa-me') }],
   });
   const noSigPlan = { ...PLAN, steps: [{ name: 'X', status: 'pending', approvers: [entry(NOSIG)] }] };
@@ -140,11 +150,11 @@ test('requestConsent shares the approval lockout counter: 4 wrong at submit + 1 
 });
 
 test('autoAdvance: own open steps in order, stops at another approver, group entry only, sample re-checked by DB lookup', { skip }, async () => {
-  const { consent } = await requestConsent({ db, redis, email: ME, own: planOwnSteps(PLAN, ME), companyId: null, lang: 'vi', at: AT, password: PW });
+  const { consent } = await requestConsent({ db, redis, email: ME, own: planOwnSteps(PLAN, ME), companyId: null, ref: 'TL-1', lang: 'vi', at: AT, password: PW });
   const notes = [];
   const run = (state) => autoAdvance(db, {
     state, companyId: null, now: () => new Date('2026-10-08T03:00:00.000Z'),
-    consentOf: (s) => consentFor(s.metadata, { requesterEmail: ME }),
+    consentOf: (s) => consentFor(s.metadata, { submitterEmail: ME, round: 0, ref: 'TL-1' }),
     pendingOwn: (s, me) => planOwnOpen(s.plan, me),
     approve: async (s, { consent: c, mine, stamp, at, note }) => {
       notes.push(note);
@@ -156,6 +166,10 @@ test('autoAdvance: own open steps in order, stops at another approver, group ent
   assert.deepEqual(out.auto, [{ step: 1, labels: ['Kiểm tra'], at: '2026-10-08T03:00:00.000Z' }]);
   assert.equal(out.state.plan.steps[0].approvers[0].signature, FAKE_STAMP('https://drive/sa-me'));
   assert.equal(out.state.plan.steps[1].status, 'pending', 'never ahead of another approver');
+  // A step that became mine after the consent (flow edited) is not auto-approved: it waits for me by hand
+  const gained = structuredClone(out.state.plan);
+  gained.steps[1].approvers = [entry(ME)];
+  assert.deepEqual((await run({ ...out.state, plan: gained })).auto, [], 'step 2 was never consented');
   out = await run({ ...out.state, plan: applyApproval(out.state.plan, 'other@test.vn', { at: AT }).plan });
   assert.deepEqual(out.auto.map((a) => a.step), [3]);
   assert.deepEqual(out.state.plan.steps[2].approvers.map((a) => a.status), ['approved', 'pending'], 'group step: only my entry');
@@ -169,4 +183,23 @@ test('autoAdvance: own open steps in order, stops at another approver, group ent
   } finally {
     await db.query(`UPDATE employees SET extra = extra || jsonb_build_object('Signature', 'https://drive/sa-me') WHERE LOWER(email) = $1`, [ME]);
   }
+});
+
+test('autoAdvance stops when approve makes no progress (same step and key still pending)', { skip }, async () => {
+  const { consent } = await requestConsent({ db, redis, email: ME, own: planOwnSteps(PLAN, ME), companyId: null, ref: 'TL-1', lang: 'vi', at: AT, password: PW });
+  let calls = 0;
+  const errors = [];
+  const orig = console.error;
+  console.error = (...a) => { errors.push(a.join(' ')); };
+  try {
+    const out = await autoAdvance(db, {
+      state: { plan: PLAN, metadata: { selfApproval: consent } }, companyId: null,
+      consentOf: (s) => consentFor(s.metadata, { submitterEmail: ME, round: 0, ref: 'TL-1' }),
+      pendingOwn: (s, me) => planOwnOpen(s.plan, me),
+      approve: async (s) => { calls += 1; return s; }, // a broken adapter: nothing changes
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(out.auto.map((a) => a.step), [1]);
+    assert.equal(errors.some((e) => e.includes('no progress')), true);
+  } finally { console.error = orig; }
 });
