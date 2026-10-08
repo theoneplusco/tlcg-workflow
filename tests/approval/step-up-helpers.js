@@ -8,7 +8,7 @@ const lower = (s) => String(s || '').trim().toLowerCase();
 
 /**
  * Give each email (an existing employee, else a new active one) the password PW, stamp samples without
- * network (FAKE_STAMP of the sample URL), and clear the lockout counters. Returns cleanup() that deletes
+ * network (FAKE_STAMP of the sample URL), and clear the lockout counters and locks. Returns cleanup() that deletes
  * the employees it had to create.
  */
 export async function useStepUp(pool, redis, emails) {
@@ -23,7 +23,7 @@ export async function useStepUp(pool, redis, emails) {
   }
   stampDeps.fetchImage = async (url) => FAKE_STAMP(url);
   clearStampCache();
-  const keys = await redis.keys('stepup:fail:*');
+  const keys = [...await redis.keys('stepup:fail:*'), ...await redis.keys('stepup:lock:*')];
   if (keys.length) await redis.del(...keys);
   return async () => { if (added.length) await pool.query(`DELETE FROM employees WHERE email = ANY($1)`, [added]); };
 }

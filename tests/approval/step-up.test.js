@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import pg from 'pg';
 import Redis from 'ioredis';
 import {
-  confirmPassword, stampSignature, stampDeps, clearStampCache, failKey, verificationRecord, STEP_UP_MSG, MAX_STAMP_BYTES,
+  confirmPassword, stampSignature, stampDeps, clearStampCache, failKey, lockKey, verificationRecord, STEP_UP_MSG, MAX_STAMP_BYTES, LOCK_SECONDS,
 } from '../../api/lib/approval/step-up.js';
 import { sha256Hex } from '../../api/lib/auth/password.js';
 import { NO_SAMPLE } from '../../api/lib/approval/signature-check.js';
@@ -17,11 +17,13 @@ const redis = url ? new Redis(process.env.REDIS_URL || 'redis://localhost:6379/1
 const ME = 'stepup@test.vn';
 const LEGACY = 'stepup-legacy@test.vn';
 const M = STEP_UP_MSG.vi;
-let company, savedSig, cleanup;
+let company, savedSig, savedExtra, cleanup;
+const realFetchImage = stampDeps.fetchImage; // captured before useStepUp swaps in FAKE_STAMP
 
 before(async () => {
   if (!db) return;
   cleanup = await useStepUp(db, redis, [ME]);
+  savedExtra = (await db.query(`SELECT extra FROM employees WHERE email = $1`, [ME])).rows[0].extra;
   await db.query(`DELETE FROM employees WHERE email = $1`, [LEGACY]);
   await db.query(`INSERT INTO employees (full_name, email, status, password_hash, legacy_password_sha256) VALUES ('Legacy', $1, 'active', '', $2)`, [LEGACY, sha256Hex(PW)]);
   company = (await db.query(`SELECT * FROM companies WHERE company_key = 'E.V' ORDER BY id LIMIT 1`)).rows[0];
@@ -32,8 +34,9 @@ after(async () => {
   if (!db) return;
   await db.query(`UPDATE companies SET treasurer_sig_url = $2 WHERE id = $1`, [company.id, savedSig]);
   await db.query(`DELETE FROM employees WHERE email = $1`, [LEGACY]);
+  await db.query(`UPDATE employees SET extra = $2 WHERE email = $1`, [ME, savedExtra]);
   await cleanup();
-  await redis.del(failKey(ME), failKey(LEGACY));
+  await redis.del(failKey(ME), failKey(LEGACY), lockKey(ME), lockKey(LEGACY), failKey('nobody@test.vn'), lockKey('nobody@test.vn'));
   await db.end();
   await redis.quit();
 });
@@ -51,15 +54,35 @@ test('confirmPassword: right password ok; wrong, empty and over-long refused', {
   await redis.del(failKey(ME), failKey('nobody@test.vn'));
 });
 
-test('confirmPassword: the 5th wrong password locks, even the right one, until the counter expires', { skip }, async () => {
+test('confirmPassword: the 5th wrong password locks for 15 minutes from that failure, even the right one', { skip }, async () => {
   for (let i = 1; i <= 4; i += 1) assert.equal((await check('nope')).message, M.wrongPassword, `attempt ${i}`);
+  const failTtl = await redis.ttl(failKey(ME));
+  assert.ok(failTtl > 0 && failTtl <= LOCK_SECONDS, `fail ttl ${failTtl}`);
   assert.deepEqual(await check('nope'), { ok: false, locked: true, message: M.locked });
+  assert.equal(await redis.exists(failKey(ME)), 0, 'the counter is replaced by the lock');
+  const ttl = await redis.ttl(lockKey(ME));
+  assert.ok(ttl > 0 && ttl <= LOCK_SECONDS, `lock ttl ${ttl}`);
   assert.deepEqual(await check(PW), { ok: false, locked: true, message: M.locked });
-  const ttl = await redis.ttl(failKey(ME));
-  assert.ok(ttl > 0 && ttl <= 900, `ttl ${ttl}`);
-  await redis.del(failKey(ME));
+  await redis.del(lockKey(ME)); // the lock expired
   assert.deepEqual(await check(PW), { ok: true });
-  assert.equal(await redis.exists(failKey(ME)), 0, 'a correct password clears the counter');
+  assert.equal(await redis.exists(failKey(ME)) + await redis.exists(lockKey(ME)), 0, 'a correct password clears both keys');
+});
+
+test('confirmPassword: a counter left without TTL cannot lock forever (the next failure sets both TTLs)', { skip }, async () => {
+  await redis.set(failKey(ME), '4'); // e.g. left by a crash between calls, no TTL
+  assert.equal(await redis.ttl(failKey(ME)), -1);
+  assert.deepEqual(await check('nope'), { ok: false, locked: true, message: M.locked });
+  assert.equal(await redis.exists(failKey(ME)), 0);
+  const ttl = await redis.ttl(lockKey(ME));
+  assert.ok(ttl > 0 && ttl <= LOCK_SECONDS, `lock ttl ${ttl}`);
+  await redis.set(failKey(ME), '2');
+  assert.deepEqual(await check('nope'), { ok: false, locked: true, message: M.locked }, 'still locked while the lock key lives');
+  assert.equal(await redis.get(failKey(ME)), '2', 'attempts while locked are not counted');
+  await redis.del(lockKey(ME));
+  assert.deepEqual(await check('nope'), { ok: false, message: M.wrongPassword });
+  const failTtl = await redis.ttl(failKey(ME));
+  assert.ok(failTtl > 0 && failTtl <= LOCK_SECONDS, `a wrong password refreshes the counter TTL (${failTtl})`);
+  await redis.del(failKey(ME));
 });
 
 test('confirmPassword: GAS SHA-256 password accepted and upgraded to bcrypt (the login path)', { skip }, async () => {
@@ -72,6 +95,14 @@ test('confirmPassword: GAS SHA-256 password accepted and upgraded to bcrypt (the
 test('confirmPassword: Redis down → refused (fail closed)', { skip }, async () => {
   const down = { get: async () => { throw new Error('down'); } };
   assert.deepEqual(await check(PW, ME, 'vi', down), { ok: false, message: M.unavailable });
+  const incrFails = {
+    get: async () => null,
+    del: async () => 1,
+    multi: () => { const t = { incr: () => t, expire: () => t, set: () => t, del: () => t, exec: async () => [[new Error('OOM'), null], [null, 1]] }; return t; },
+  };
+  assert.deepEqual(await check('nope', ME, 'vi', incrFails), { ok: false, message: M.unavailable });
+  const execNull = { get: async () => null, multi: () => { const t = { incr: () => t, expire: () => t, exec: async () => null }; return t; } };
+  assert.deepEqual(await check('nope', ME, 'vi', execNull), { ok: false, message: M.unavailable });
 });
 
 test('stampSignature: the role sample as an image data URL, fetched once per URL (cache)', { skip }, async () => {
@@ -117,4 +148,33 @@ test('stampSignature: a failed fetch is not cached (the next approval tries agai
 test('verificationRecord: what the metadata keeps for a password approval', () => {
   assert.deepEqual(verificationRecord('Thủ quỹ', '2026-10-07T01:00:00.000Z'),
     { verified: true, method: 'password', sampleFrom: 'Thủ quỹ', verifiedAt: '2026-10-07T01:00:00.000Z' });
+});
+
+test('stampSignature: an oversized fetched sample is not cached (the next approval fetches again)', { skip }, async () => {
+  clearStampCache();
+  let calls = 0;
+  stampDeps.fetchImage = async () => { calls += 1; return 'data:image/png;base64,' + Buffer.alloc(MAX_STAMP_BYTES + 1).toString('base64'); };
+  assert.deepEqual(await stampSignature(db, company.id, null, company.treasurer_email, 'vi'), { ok: false, message: NO_SAMPLE.vi });
+  assert.deepEqual(await stampSignature(db, company.id, null, company.treasurer_email, 'vi'), { ok: false, message: NO_SAMPLE.vi });
+  assert.equal(calls, 2);
+});
+
+test('stampSignature: only raster images (png, jpeg, gif, webp) are stamped', { skip }, async () => {
+  for (const [mime, okay] of [['image/png', true], ['image/jpeg', true], ['image/jpg', true], ['image/gif', true], ['image/webp', true],
+    ['image/svg+xml', false], ['image/bmp', false], ['image/tiff', false]]) {
+    clearStampCache();
+    stampDeps.fetchImage = async () => `data:${mime};base64,` + Buffer.from('sig').toString('base64');
+    assert.equal((await stampSignature(db, company.id, null, company.treasurer_email, 'vi')).ok, okay, mime);
+  }
+  const svg = 'data:image/svg+xml;base64,' + Buffer.from('<svg/>').toString('base64');
+  await db.query(`UPDATE employees SET extra = COALESCE(extra, '{}'::jsonb) || jsonb_build_object('Signature', $2::text) WHERE email = $1`, [ME, svg]);
+  assert.deepEqual(await stampSignature(db, null, null, ME, 'vi'), { ok: false, message: NO_SAMPLE.vi }, 'inline svg sample refused');
+});
+
+test('stampDeps.fetchImage (real): refuses a sample larger than MAX_STAMP_BYTES before reading it', async () => {
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => ({ status: 200, ok: true, headers: new Map([['content-type', 'image/png'], ['content-length', String(MAX_STAMP_BYTES + 1)]]), arrayBuffer: async () => new ArrayBuffer(0) });
+  try {
+    await assert.rejects(realFetchImage('https://drive.google.com/file/d/big/view'), /Hình ảnh quá lớn/);
+  } finally { globalThis.fetch = saved; }
 });
