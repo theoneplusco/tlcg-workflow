@@ -1,20 +1,23 @@
 // tests/purchase-requests/reads.test.js — PR reads on Postgres
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { skip, url, setup, teardown, call, as, submitBody, SIG_OK } from './helpers.js';
+import { skip, url, setup, teardown, call, as, submitBody } from './helpers.js';
+import { PW, useStepUp } from '../approval/step-up-helpers.js';
 
-let s, dd, r, pool, company, people, mine, theirs;
+let s, dd, r, pool, company, people, mine, theirs, cleanupStepUp;
 before(async () => {
   if (!url) return;
   ({ pool, company, people } = await setup());
   s = await import('../../api/handlers/pr/submit.js');
   dd = await import('../../api/handlers/pr/decide.js');
   r = await import('../../api/handlers/pr/reads.js');
+  cleanupStepUp = await useStepUp(pool, (await import('../../db/redis.js')).default, [people.treasurer, people.ap]);
   mine = (await call(s.handlePRSubmit, submitBody(company, people, { purpose: 'Khăn giấy phòng họp' }), as('a@pr-test.vn'))).prNo;
   theirs = (await call(s.handlePRSubmit, submitBody(company, people, { purpose: 'Ly giấy' }), as('b@pr-test.vn'))).prNo;
 });
 after(async () => {
   if (pool) await pool.query(`DELETE FROM master_vendors WHERE extra->>'Vendor_Full_Name' LIKE 'NCC Plan5 %'; DELETE FROM purchase_order_types WHERE type LIKE 'Plan5 %'`);
+  if (cleanupStepUp) await cleanupStepUp();
   await teardown(pool);
 });
 const nos = (list) => list.map((x) => x.prNo).sort();
@@ -60,7 +63,7 @@ test('search: 2+ chars, substring on number/company/requester/purpose, visible o
 });
 
 test('getP2PHistory: PR flow from pr_audit_log, other flows go to GAS', { skip }, async () => {
-  await call(dd.handlePRApprove, { prNo: mine, approverRole: 'budget', approverSignature: 'data:image/png;base64,AAAA', signatureVerification: SIG_OK }, as(people.treasurer));
+  await call(dd.handlePRApprove, { prNo: mine, approverRole: 'budget', approverPassword: PW }, as(people.treasurer));
   const h = await call(r.handleP2PHistory, { docNo: mine, flow: 'PR' }, as('a@pr-test.vn'));
   assert.equal(h.message, 'OK');
   assert.deepEqual(h.history.map((x) => `${x.action}/${x.role}`), ['Submit/requester', 'Approve/budget', 'Approve/supplier']);
@@ -147,9 +150,11 @@ test('detail: the pending approver gets their own registered sample (mySampleSig
   const no = (await call(s.handlePRSubmit, submitBody(company, people, { purpose: 'Mẫu chữ ký' }), as('a@pr-test.vn'))).prNo;
   const sample = async (who) => (await call(r.handlePRDetail, { prNo: no }, as(who))).request.mySampleSignatureUrl;
   assert.equal(await sample('a@pr-test.vn'), null, 'requester: not pending');
+  const detail = await call(r.handlePRDetail, { prNo: no }, as(people.treasurer));
+  assert.equal(detail.request.approvalAuth, 'password');
   assert.equal(await sample(people.treasurer), (await sampleSignatureFor(pool, company.id, null, people.treasurer)).url, 'budget/supplier approver');
   assert.equal(await sample(people.ap), null, 'purchasing approver: not their turn yet');
-  await call(dd.handlePRApprove, { prNo: no, approverRole: 'budget', note: '', approverSignature: 'data:image/png;base64,AAAA', signatureVerification: SIG_OK }, as(people.treasurer));
+  await call(dd.handlePRApprove, { prNo: no, approverRole: 'budget', note: '', approverPassword: PW }, as(people.treasurer));
   const { extra } = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.ap])).rows[0];
   try {
     await pool.query(`UPDATE employees SET extra = extra - 'Chữ ký' - 'Chu_ky' - 'employee_signature' - 'Signature_URL' || '{"Signature":"https://sig.test/ap.png"}'::jsonb WHERE LOWER(email) = $1`, [people.ap]);

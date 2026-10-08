@@ -1,33 +1,8 @@
-// api/lib/approval/signature-check.js — the approver signature rule shared by vouchers and purchase requests.
-// The browser compares the drawn signature with the registered sample; the server refuses an approval
-// unless that check reports verified === true AND a sample is registered for the approver (GAS let
-// "no_sample" through). Takes `db` as an argument (no pool import).
+// api/lib/approval/signature-check.js — which registered sample signature belongs to an approver.
+// On Postgres the server stamps this sample on the approval after a password check (step-up.js);
+// the old browser image comparison and its verified === true rule are gone. Old approvals keep their
+// stored signatureVerification objects. Takes `db` as an argument (no pool import).
 const lower = (s) => String(s || '').trim().toLowerCase();
-
-const MSG = {
-  vi: {
-    needApproveSignature: 'Vui lòng tải lên chữ ký trước khi phê duyệt',
-    missingSigAuthAdmin: 'Thiếu dữ liệu xác thực chữ ký. Vui lòng thử lại hoặc liên hệ quản trị viên.',
-    missingSigAuthRetry: 'Thiếu dữ liệu xác thực chữ ký. Vui lòng thử lại.',
-  },
-  en: {
-    needApproveSignature: 'Please upload your signature before approving',
-    missingSigAuthAdmin: 'Missing signature verification data. Please try again or contact an administrator.',
-    missingSigAuthRetry: 'Missing signature verification data. Please try again.',
-  },
-};
-
-/** GAS approve/bulk signature checks. `verification` must already be an object. Returns an error message or ''. */
-export function signatureProblem(lang, signature, verification, bulk = false) {
-  const m = MSG[lang === 'en' ? 'en' : 'vi'];
-  if (!signature || !String(signature).trim()) return m.needApproveSignature;
-  if (!verification || typeof verification !== 'object') return bulk ? m.missingSigAuthRetry : m.missingSigAuthAdmin;
-  if (verification.verified !== true) {
-    return 'Chữ ký không hợp lệ. Lý do: ' + (verification.reason || 'unknown') + '. ' +
-      (verification.similarity ? 'Độ tương đồng: ' + verification.similarity + '% (yêu cầu: 75%)' : 'Vui lòng sử dụng chữ ký mẫu đã đăng ký.');
-  }
-  return '';
-}
 
 // Role → Master Company signature column (the sample each role holder signs against)
 export const ROLE_SAMPLE = { chief_accountant: 'accountant_sig_url', legal_rep: 'legal_rep_sig_url', treasurer: 'treasurer_sig_url' };

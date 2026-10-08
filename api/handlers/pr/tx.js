@@ -1,5 +1,6 @@
 // api/handlers/pr/tx.js — default dependencies and the lock → rule → commit → email pattern of PR writes.
 import pool from '../../../db/pool.js';
+import redis from '../../../db/redis.js';
 import { getS3 } from '../../lib/files/r2.js';
 import { callerFromRequest } from '../../lib/auth-caller.js';
 import gasProxy from '../../voucher.js';
@@ -17,6 +18,7 @@ export function prDeps(d = {}) {
   const db = d.db ?? pool;
   return {
     db,
+    redis, // the approval step-up lockout counter
     s3: Object.hasOwn(d, 's3') ? d.s3 : getS3(), // lazy; an explicit null means "no R2" (tests)
     who: (req) => callerFromRequest(req, db), // the login check reads the same database as the handler
     now: () => new Date(), gasProxy, paymentsForPR: async () => { throw new Error('paymentsForPR not implemented (Plan 6)'); },
@@ -24,9 +26,13 @@ export function prDeps(d = {}) {
   };
 }
 
+/** withLockedPR's answer when `work` asked to be redone outside the lock (nothing was answered or written). */
+export const RETRY = Symbol('retry outside the lock');
+
 /**
- * Lock the PR, run `work(client, row)` → { error } | { saved, mails, message, fields }, commit,
- * then queue the emails (never before commit) and answer in the GAS shape.
+ * Lock the PR, run `work(client, row)` → { error } | { saved, mails, message, fields } | { retry: true }, commit,
+ * then queue the emails (never before commit) and answer in the GAS shape. { retry: true } rolls back and
+ * returns RETRY without answering (the caller redoes its pre-lock work, e.g. loading a sample signature).
  */
 export async function withLockedPR(db, prNo, res, work) {
   const client = await db.connect();
@@ -35,6 +41,7 @@ export async function withLockedPR(db, prNo, res, work) {
     await client.query('BEGIN');
     const row = await lockPR(client, prNo);
     out = row ? await work(client, row) : { error: `Không tìm thấy đề nghị: ${prNo}` };
+    if (out && out.retry) { await client.query('ROLLBACK'); return RETRY; }
     if (!out || (!out.error && !out.saved)) throw new Error('PR write returned no saved row'); // rolls back below
     await client.query(out.error ? 'ROLLBACK' : 'COMMIT');
   } catch (e) {

@@ -3,7 +3,6 @@ import { vnDate } from '../../api/lib/purchase-requests/numbering.js';
 
 export const url = process.env.TEST_DATABASE_URL;
 export const skip = !url && 'set TEST_DATABASE_URL to run';
-export const SIG_OK = JSON.stringify({ verified: true, similarity: 92, reason: 'ok' });
 const lower = (s) => String(s || '').trim().toLowerCase();
 
 export async function setup() {

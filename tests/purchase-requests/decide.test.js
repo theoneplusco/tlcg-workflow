@@ -1,23 +1,28 @@
 // tests/purchase-requests/decide.test.js — approve / reject / send back / resubmit on Postgres
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { skip, url, setup, teardown, call, as, submitBody, SIG_OK } from './helpers.js';
+import { skip, url, setup, teardown, call, as, submitBody } from './helpers.js';
+import { PW, FAKE_STAMP, useStepUp } from '../approval/step-up-helpers.js';
+import { sampleSignatureFor } from '../../api/lib/approval/signature-check.js';
+import { stampDeps, clearStampCache } from '../../api/lib/approval/step-up.js';
 
-let s, d, pool, company, people;
+let s, d, pool, company, people, redis, cleanupStepUp;
 const REQ = as('req@pr-test.vn');
 before(async () => {
   if (!url) return;
   ({ pool, company, people } = await setup());
   s = await import('../../api/handlers/pr/submit.js');
   d = await import('../../api/handlers/pr/decide.js');
+  redis = (await import('../../db/redis.js')).default;
+  cleanupStepUp = await useStepUp(pool, redis, [people.treasurer, people.accountant, people.legal, people.ap, 'req@pr-test.vn', 'stranger@x.vn']);
 });
-after(() => teardown(pool));
+after(async () => { if (cleanupStepUp) await cleanupStepUp(); await teardown(pool); });
 
 const pr = async (no) => (await pool.query('SELECT * FROM purchase_requests WHERE pr_no = $1', [no])).rows[0];
 const mailsTo = async (no, subjectPart) => (await pool.query(
   `SELECT to_email FROM email_queue WHERE subject LIKE $1 ORDER BY id`, [`%${subjectPart}%${no}`])).rows.map((r) => r.to_email);
 const submit = async (over = {}) => (await call(s.handlePRSubmit, submitBody(company, people, over), REQ)).prNo;
-const approve = (no, who, role, extra = {}) => call(d.handlePRApprove, { prNo: no, approverRole: role, note: '', approverSignature: 'data:image/png;base64,AAAA', signatureVerification: SIG_OK, ...extra }, as(who));
+const approve = (no, who, role, extra = {}) => call(d.handlePRApprove, { prNo: no, approverRole: role, note: '', approverPassword: PW, ...extra }, as(who));
 
 test('approve: the shared budget/supplier approver approves once; purchasing emailed on a simplified PR (B2)', { skip }, async () => {
   const no = await submit();
@@ -28,11 +33,17 @@ test('approve: the shared budget/supplier approver approves once; purchasing ema
   assert.equal(r.data.status, 'Mua hàng (5/5)', 'page reads result.data.status (B8)');
   const row = await pr(no);
   assert.equal(row.metadata.supplierStatus, 'Approved');
-  assert.deepEqual(row.metadata.budgetSignatureVerification, JSON.parse(SIG_OK));
+  const sample = (await sampleSignatureFor(pool, company.id, null, people.treasurer)).url;
+  assert.equal(row.metadata.budgetSignature, FAKE_STAMP(sample), 'the registered sample is stamped on both slots');
+  assert.equal(row.metadata.supplierSignature, FAKE_STAMP(sample));
+  assert.deepEqual([row.metadata.budgetSignatureVerification.verified, row.metadata.budgetSignatureVerification.method], [true, 'password']);
+  assert.deepEqual(row.metadata.supplierSignatureVerification, row.metadata.budgetSignatureVerification);
   assert.deepEqual(row.pending_emails, [people.ap]);
   const audit = (await pool.query(`SELECT role, extra FROM pr_audit_log WHERE doc_no = $1 AND action = 'Approve' ORDER BY id`, [no])).rows;
   assert.deepEqual(audit.map((a) => a.role), ['budget', 'supplier']);
-  assert.equal(audit[0].extra.signatureUploaded, true);
+  assert.deepEqual([audit[0].extra.auth, audit[0].extra.signatureStamped], ['password', true]);
+  assert.deepEqual(audit[1].extra, audit[0].extra, 'both slots audited the same way');
+  assert.equal(JSON.stringify(audit[0].extra).includes(PW), false, 'the password is never stored');
   assert.deepEqual(await mailsTo(no, 'Yêu cầu Mua hàng'), [people.ap]);
 });
 
@@ -124,34 +135,55 @@ test('resubmit works from the page even with a new client submittedAt (B1); hist
 });
 
 const PDF = (name) => ({ fileName: name, fileData: Buffer.from('%PDF').toString('base64'), mimeType: 'application/pdf' });
-const NOT_SIGNED = 'Vui lòng tải lên chữ ký trước khi phê duyệt';
 const NO_SAMPLE = 'Chưa có chữ ký mẫu của bạn. Vui lòng nhờ quản trị viên bổ sung trong Dữ liệu gốc (Nhân viên › Signature).';
+const LOCKED = 'Bạn đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút.';
+const auditCount = async (no) => (await pool.query(`SELECT COUNT(*)::int AS n FROM pr_audit_log WHERE doc_no = $1 AND action = 'Approve'`, [no])).rows[0].n;
 
-test('approve needs a signature the browser verified (decision #13): missing, unverified and no_sample-without-sample refused', { skip }, async () => {
+test('approve: password required, wrong one refused, 5th wrong locks; nothing approved meanwhile', { skip }, async () => {
   const no = await submit();
-  assert.equal((await approve(no, people.treasurer, 'budget', { approverSignature: '' })).message, NOT_SIGNED);
-  const BAD_SIG = 'Chữ ký không hợp lệ hoặc quá lớn.';
-  for (const sig of ['data:sig', 'https://evil.example/x.png', { a: 1 }, 'data:image/png;base64,' + 'A'.repeat(500 * 1024)]) {
-    assert.equal((await approve(no, people.treasurer, 'budget', { approverSignature: sig })).message, BAD_SIG, 'not an image data URL, or over 500 KB');
-  }
-  assert.equal((await approve(no, people.treasurer, 'budget', { signatureVerification: '' })).message,
-    'Thiếu dữ liệu xác thực chữ ký. Vui lòng thử lại hoặc liên hệ quản trị viên.');
-  const bad = await approve(no, people.treasurer, 'budget', { signatureVerification: JSON.stringify({ verified: false, similarity: 40, reason: 'mismatch' }) });
-  assert.equal(bad.success, false);
-  assert.equal(bad.message, 'Chữ ký không hợp lệ. Lý do: mismatch. Độ tương đồng: 40% (yêu cầu: 75%)');
-  assert.equal((await approve(no, people.treasurer, 'budget', { signatureVerification: 'not json' })).success, false, 'unparseable → not verified');
-  const row = await pr(no);
-  assert.equal(row.metadata.budgetStatus, 'Pending', 'nothing approved');
-  assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM pr_audit_log WHERE doc_no = $1 AND action = 'Approve'`, [no])).rows[0].n, 0);
+  assert.equal((await approve(no, people.treasurer, 'budget', { approverPassword: '' })).message, 'Vui lòng nhập mật khẩu đăng nhập để xác nhận phê duyệt.');
+  for (let i = 0; i < 4; i += 1) assert.equal((await approve(no, people.treasurer, 'budget', { approverPassword: 'x' })).message, 'Mật khẩu không đúng.');
+  assert.equal((await approve(no, people.treasurer, 'budget', { approverPassword: 'x' })).message, LOCKED);
+  assert.equal((await approve(no, people.treasurer, 'budget')).message, LOCKED, 'the right password is refused while locked');
+  assert.equal((await pr(no)).metadata.budgetStatus, 'Pending');
+  await redis.del(`stepup:fail:${people.treasurer}`, `stepup:lock:${people.treasurer}`);
+  assert.equal((await approve(no, people.treasurer, 'budget')).success, true);
 });
 
-test('approve: an approver with no registered sample signature is refused, even when the page says verified', { skip }, async () => {
+test('approve: a wrong password writes nothing and never loads the sample', { skip }, async () => {
+  const no = await submit();
+  const before = await pr(no);
+  let fetches = 0;
+  const saved = stampDeps.fetchImage;
+  try {
+    stampDeps.fetchImage = async (u) => { fetches += 1; return FAKE_STAMP(u); };
+    clearStampCache();
+    const r = await approve(no, people.treasurer, 'budget', { approverPassword: 'wrong' });
+    assert.deepEqual([r.success, r.message], [false, 'Mật khẩu không đúng.']);
+  } finally { stampDeps.fetchImage = saved; clearStampCache(); await redis.del(`stepup:fail:${people.treasurer}`); }
+  const after = await pr(no);
+  assert.deepEqual([after.status, after.metadata, after.updated_at], [before.status, before.metadata, before.updated_at]);
+  assert.equal(await auditCount(no), 0);
+  assert.equal(fetches, 0);
+});
+
+test('approve: the password belongs to the token caller; a body approverEmail cannot borrow someone else\'s', { skip }, async () => {
+  const no = await submit();
+  // The treasurer's token with the AP's email in the body: refused before any password check (no counter touched)
+  const r = await approve(no, people.treasurer, 'budget', { approverEmail: people.ap, approverPassword: 'x' });
+  assert.equal(r.message, `Bạn đang đăng nhập bằng ${people.treasurer}, không thể thao tác thay ${people.ap}.`);
+  assert.equal(await redis.get(`stepup:fail:${people.ap}`), null);
+  assert.equal(await redis.get(`stepup:fail:${people.treasurer}`), null);
+  assert.equal((await call(d.handlePRApprove, { prNo: no, approverRole: 'budget', approverPassword: PW }, null)).code, 401);
+});
+
+test('approve: an approver with no registered sample is refused (ask an admin)', { skip }, async () => {
   const no = await submit();
   await approve(no, people.treasurer, 'budget');
   const { extra } = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.ap])).rows[0];
   try {
     await pool.query(`UPDATE employees SET extra = extra - 'Signature' - 'Chữ ký' - 'Chu_ky' - 'employee_signature' - 'Signature_URL' WHERE LOWER(email) = $1`, [people.ap]);
-    const r = await approve(no, people.ap, 'purchasing', { signatureVerification: JSON.stringify({ verified: true, reason: 'no_sample', similarity: '0' }) });
+    const r = await approve(no, people.ap, 'purchasing');
     assert.deepEqual([r.success, r.message], [false, NO_SAMPLE]);
     assert.equal((await pr(no)).status, 'Mua hàng (5/5)', 'unchanged');
   } finally {
@@ -161,12 +193,87 @@ test('approve: an approver with no registered sample signature is refused, even 
   assert.deepEqual([ok.success, ok.status], [true, 'Hoàn thành'], ok.message);
 });
 
-test('approve: "no_sample" claimed although a sample is registered → refused (page skipped the comparison)', { skip }, async () => {
+test('approve: the business rules answer before the stamp (not your turn is not a sample problem)', { skip }, async () => {
   const no = await submit();
-  const r = await approve(no, people.treasurer, 'budget', { signatureVerification: JSON.stringify({ verified: true, reason: 'no_sample', similarity: '0' }) });
-  assert.deepEqual([r.success, r.message], [false, 'Không xác minh được chữ ký. Vui lòng tải lại trang và thử lại.']);
-  assert.equal((await pr(no)).metadata.budgetStatus, 'Pending', 'nothing approved');
-  assert.equal((await approve(no, people.treasurer, 'budget')).success, true, 'a real comparison still passes');
+  assert.equal((await approve(no, people.ap, 'purchasing')).message, 'Chưa đến lượt duyệt của bạn. Giai đoạn hiện tại: duyệt ngân sách & NCC.');
+});
+
+test('approve: the sample loads before the PR row lock, once; an unreachable or oversized one refuses with NO_SAMPLE', { skip }, async () => {
+  const no = await submit();
+  await approve(no, people.treasurer, 'budget');
+  const { extra } = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.ap])).rows[0];
+  const saved = stampDeps.fetchImage;
+  let fetches = 0;
+  const lockedDuringFetch = [];
+  const lockFree = async () => {
+    try { await pool.query(`SELECT 1 FROM purchase_requests WHERE pr_no = $1 FOR UPDATE NOWAIT`, [no]); } catch (e) { lockedDuringFetch.push(e.code); }
+  };
+  try {
+    await pool.query(`UPDATE employees SET extra = extra - 'Chữ ký' - 'Chu_ky' - 'employee_signature' - 'Signature_URL' || '{"Signature":"https://sig.test/ap-broken.png"}'::jsonb WHERE LOWER(email) = $1`, [people.ap]);
+    stampDeps.fetchImage = async () => { fetches += 1; await lockFree(); throw new Error('unreachable'); };
+    clearStampCache();
+    const err = console.error; console.error = () => {};
+    let r;
+    try { r = await approve(no, people.ap, 'purchasing'); } finally { console.error = err; }
+    assert.deepEqual([r.success, r.message], [false, NO_SAMPLE]);
+    assert.equal(fetches, 1);
+    assert.equal((await pr(no)).status, 'Mua hàng (5/5)', 'unchanged');
+    // Oversized (> 750 KB decoded) → NO_SAMPLE too; the 500 KB client-signature limit does not apply to the stamp
+    const big = 'data:image/png;base64,' + Buffer.alloc(768001).toString('base64');
+    stampDeps.fetchImage = async () => { fetches += 1; await lockFree(); return big; };
+    clearStampCache();
+    console.error = () => {};
+    try { r = await approve(no, people.ap, 'purchasing'); } finally { console.error = err; }
+    assert.deepEqual([r.success, r.message], [false, NO_SAMPLE]);
+    // A 700 KB sample (over the 500 KB client limit, within the 750 KB stamp limit) is stamped
+    const large = 'data:image/png;base64,' + Buffer.alloc(700 * 1024).toString('base64');
+    stampDeps.fetchImage = async () => { fetches += 1; await lockFree(); return large; };
+    clearStampCache();
+    const ok = await approve(no, people.ap, 'purchasing');
+    assert.deepEqual([ok.success, ok.status], [true, 'Hoàn thành'], ok.message);
+    assert.equal((await pr(no)).metadata.purchasingSignature, large);
+    assert.equal(fetches, 3);
+    assert.deepEqual(lockedDuringFetch, [], 'no PR row lock held while the sample loads');
+    const audit = (await pool.query(`SELECT extra FROM pr_audit_log WHERE doc_no = $1 AND action = 'Approve' AND role = 'purchasing'`, [no])).rows;
+    assert.deepEqual(audit.map((a) => [a.extra.auth, a.extra.signatureStamped, a.extra.sampleFrom]), [['password', true, 'Master Employee']]);
+  } finally {
+    stampDeps.fetchImage = saved;
+    clearStampCache();
+    await pool.query(`UPDATE employees SET extra = $2 WHERE LOWER(email) = $1`, [people.ap, extra]);
+  }
+});
+
+test('approve: a sample changed while it loaded is never stamped stale (retried once, then NO_SAMPLE)', { skip }, async () => {
+  const no = await submit();
+  await approve(no, people.treasurer, 'budget');
+  const { extra } = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.ap])).rows[0];
+  const saved = stampDeps.fetchImage;
+  const setSample = (u) => pool.query(`UPDATE employees SET extra = extra - 'Chữ ký' - 'Chu_ky' - 'employee_signature' - 'Signature_URL' || jsonb_build_object('Signature', $2::text) WHERE LOWER(email) = $1`, [people.ap, u]);
+  try {
+    // Changes once while loading: the second attempt stamps the new sample
+    let n = 0;
+    await setSample('https://sig.test/v0.png');
+    stampDeps.fetchImage = async (u) => { n += 1; if (n === 1) await setSample('https://sig.test/v1.png'); return FAKE_STAMP(u); };
+    clearStampCache();
+    const ok = await approve(no, people.ap, 'purchasing');
+    assert.equal(ok.success, true, ok.message);
+    assert.equal((await pr(no)).metadata.purchasingSignature, FAKE_STAMP('https://sig.test/v1.png'), 'the current sample, not the stale one');
+    assert.equal(n, 2);
+    // Changes on every load: refused, nothing written
+    const no2 = await submit();
+    await approve(no2, people.treasurer, 'budget');
+    let m = 0;
+    stampDeps.fetchImage = async (u) => { m += 1; await setSample(`https://sig.test/w${m}.png`); return FAKE_STAMP(u); };
+    clearStampCache();
+    const r = await approve(no2, people.ap, 'purchasing');
+    assert.deepEqual([r.success, r.message], [false, NO_SAMPLE]);
+    assert.equal(m, 2, 'one retry');
+    assert.equal((await pr(no2)).metadata.purchasingStatus, 'Pending');
+  } finally {
+    stampDeps.fetchImage = saved;
+    clearStampCache();
+    await pool.query(`UPDATE employees SET extra = $2 WHERE LOWER(email) = $1`, [people.ap, extra]);
+  }
 });
 
 test('approve: the requester can never approve their own PR', { skip }, async () => {

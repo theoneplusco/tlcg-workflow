@@ -1,12 +1,12 @@
 // api/handlers/pr/decide.js — approve / reject / send back a purchase request on Postgres.
 // Rules: api/lib/purchase-requests/state.js. Who acts: the login token (never the body's email).
-import { STATUS, isRole, BAD_ROLE, applyApprove, applyReject, sendBackInputError, applySendBack, pendingEmails, parseVerification } from '../../lib/purchase-requests/state.js';
-import { updatePR, recordChange } from '../../lib/purchase-requests/repo.js';
-import { signatureFormatOk, BAD_SIGNATURE } from '../../lib/purchase-requests/validate.js';
+import { STATUS, isRole, BAD_ROLE, applyApprove, applyReject, sendBackInputError, applySendBack, pendingEmails } from '../../lib/purchase-requests/state.js';
+import { getPR, updatePR, recordChange } from '../../lib/purchase-requests/repo.js';
 import { purchasingRequest, completed, rejectedNotice, sendBackNotices } from '../../lib/purchase-requests/emails.js';
 import { fail, signedInCaller, claimProblem } from '../../lib/purchase-requests/respond.js';
-import { signatureProblem, sampleSignatureFor, NO_SAMPLE } from '../../lib/approval/signature-check.js';
-import { prDeps, withLockedPR } from './tx.js';
+import { NO_SAMPLE } from '../../lib/approval/signature-check.js';
+import { confirmPassword, verificationRecord, makeStamper, stampStillCurrent } from '../../lib/approval/step-up.js';
+import { prDeps, withLockedPR, RETRY } from './tx.js';
 
 /** Login, PR number, body email = caller. Returns { caller, prNo, b } or null after answering. */
 async function start(req, res, who, claimedKey = 'approverEmail') {
@@ -20,38 +20,47 @@ async function start(req, res, who, claimedKey = 'approverEmail') {
   return { caller, prNo, b };
 }
 
-const verificationText = (v) => (v == null || v === '' ? null : typeof v === 'string' ? v : JSON.stringify(v));
-
+/**
+ * Decision 2026-10-07 (option D): the login password of the signed-in caller confirms who approves, and the
+ * server stamps their registered sample (company role sample, else Master Employee Signature). The client sends
+ * no signature or verification any more; old rows keep theirs. Order: login → PR number → role → password (no
+ * lock, nothing written on a wrong or locked one) → sample loaded outside the lock → lock, GAS rules, sample
+ * unchanged → write. A sample that changed while loading is retried once, then refused with NO_SAMPLE.
+ */
 export async function handlePRApprove(req, res, d) {
-  const { db, who, now } = prDeps(d);
+  const { db, redis, who, now } = prDeps(d);
   const s = await start(req, res, who);
   if (!s) return;
   const { caller, prNo, b } = s;
   if (!isRole(b.approverRole)) return fail(res, BAD_ROLE);
-  // Decision #13, as vouchers: a signature the browser verified against the registered sample (GAS S5 stored anything).
-  const raw = b.signatureVerification;
-  const verification = raw == null || raw === '' ? null : parseVerification(raw);
-  const sigErr = signatureProblem('vi', b.approverSignature, verification);
-  if (sigErr) return fail(res, sigErr);
-  if (!signatureFormatOk(b.approverSignature)) return fail(res, BAD_SIGNATURE); // stored in metadata: image data URL, ≤ 500 KB
-  return withLockedPR(db, prNo, res, async (client, row) => {
-    const at = now().toISOString();
-    const r = applyApprove(row, row.metadata || {}, { email: caller.email, role: b.approverRole, note: b.note || '',
-      signature: b.approverSignature, verification, at });
-    if (r.error) return r;
-    // No registered sample = nothing the browser could have verified against: refuse (GAS let "no_sample" through).
-    if (!(await sampleSignatureFor(client, row.company_id, null, caller.email)).url) return { error: NO_SAMPLE.vi };
-    // A sample exists, so "no_sample" means the page never compared against it (e.g. it fell back to the list card): refuse.
-    if (verification && verification.reason === 'no_sample') return { error: 'Không xác minh được chữ ký. Vui lòng tải lại trang và thử lại.' };
-    const saved = await updatePR(client, row.id, { metadata: r.meta, status: r.status, pending_emails: pendingEmails(row, r.meta, r.status) });
-    const extra = { signatureUploaded: true, verification: verificationText(raw) };
-    await recordChange(client, saved, r.roles.map((role) => ({ action: 'Approve', role, actorEmail: caller.email, actorName: caller.name,
-      prevStatus: row.status, newStatus: r.status, note: b.note || '', extra, at })));
-    const mails = [];
-    if (r.after.stage === 'purchasing' && r.before.stage !== 'purchasing') mails.push(purchasingRequest(saved)); // both branches (B2)
-    if (r.after.stage === 'complete') mails.push(completed(saved));
-    return { saved, mails, message: 'Đã duyệt thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
-  });
+  const pw = await confirmPassword({ db, redis, email: caller.email, password: b.approverPassword, lang: 'vi' });
+  if (!pw.ok) return fail(res, pw.message);
+  const stamper = makeStamper('vi');
+  const rule = (row, at) => applyApprove(row, row.metadata || {}, { email: caller.email, role: b.approverRole, note: b.note || '', at });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Outside the lock: the sample of someone whose turn it is (the rules answer first, never "no sample")
+    const peek = await getPR(db, prNo);
+    const pre = peek && !rule(peek, now().toISOString()).error ? await stamper(db, peek.company_id, null, caller.email) : null;
+    const out = await withLockedPR(db, prNo, res, async (client, row) => {
+      const at = now().toISOString();
+      const check = rule(row, at); // GAS rules first: turn, assignment, status
+      if (check.error) return check;
+      if (!(await stampStillCurrent(client, pre, row.company_id, null, caller.email))) return { retry: true };
+      if (!pre.ok) return { error: pre.message };
+      const r = applyApprove(row, row.metadata || {}, { email: caller.email, role: b.approverRole, note: b.note || '', at,
+        signature: pre.signature, verification: verificationRecord(pre.from, at) }); // one stamp on every slot this approval covers
+      const saved = await updatePR(client, row.id, { metadata: r.meta, status: r.status, pending_emails: pendingEmails(row, r.meta, r.status) });
+      const extra = { auth: 'password', signatureStamped: true, sampleFrom: pre.from };
+      await recordChange(client, saved, r.roles.map((role) => ({ action: 'Approve', role, actorEmail: caller.email, actorName: caller.name,
+        prevStatus: row.status, newStatus: r.status, note: b.note || '', extra, at })));
+      const mails = [];
+      if (r.after.stage === 'purchasing' && r.before.stage !== 'purchasing') mails.push(purchasingRequest(saved)); // both branches (B2)
+      if (r.after.stage === 'complete') mails.push(completed(saved));
+      return { saved, mails, message: 'Đã duyệt thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
+    });
+    if (out !== RETRY) return out;
+  }
+  return fail(res, NO_SAMPLE.vi);
 }
 
 export async function handlePRReject(req, res, d) {

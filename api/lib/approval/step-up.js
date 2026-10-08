@@ -128,3 +128,31 @@ export async function stampSignature(db, companyId, entries, email, lang) {
 
 /** What the metadata keeps for an approval confirmed by password (old browser-check records stay as they are). */
 export const verificationRecord = (from, at) => ({ verified: true, method: 'password', sampleFrom: from || '', verifiedAt: at });
+
+/**
+ * stampSignature memoised for one request by (company, sample URL), failures included: a bulk approve
+ * with a slow or broken sample loads it once, not once per document. Always reports the sample's
+ * companyId/url/from so the caller can check, under its row lock, that the sample is still the same.
+ * Call it BEFORE taking a row lock: a slow or unreachable sample must never hold the lock.
+ */
+export function makeStamper(lang) {
+  const memo = new Map();
+  return async (db, companyId, entries, email) => {
+    const s = await sampleSignatureFor(db, companyId, entries, email);
+    const base = { companyId: companyId || null, url: s.url, from: s.from };
+    if (!s.url) return { ...base, ok: false, message: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
+    const k = `${companyId || ''}|${s.url}`;
+    if (!memo.has(k)) memo.set(k, stampSignature(db, companyId, entries, email, lang));
+    return { ...(await memo.get(k)), ...base };
+  };
+}
+
+/**
+ * Under the row lock: is `pre` (a makeStamper result, or null) still the approver's current sample
+ * (same company, URL and source)? A DB lookup only, never a fetch. false → redo the attempt outside the lock.
+ */
+export async function stampStillCurrent(client, pre, companyId, entries, email) {
+  if (!pre) return false;
+  const cur = await sampleSignatureFor(client, companyId, entries, email);
+  return pre.companyId === (companyId || null) && pre.url === cur.url && pre.from === cur.from;
+}

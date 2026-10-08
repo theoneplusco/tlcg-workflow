@@ -38,10 +38,10 @@ export async function handlePRDetail(req, res, d) {
   const row = await getPR(db, prNo); // archived rows included
   if (!row) return fail(res, `Không tìm thấy đề nghị: ${prNo}`);
   if (!canView(caller, row)) return fail(res, NO_ACCESS_MSG, 403);
-  // The page compares the approver's signature with this sample (the same one handlePRApprove requires); '' = none registered, null = not their turn
+  // The sample the server will stamp when this caller approves ('' = none registered → approval refused, null = not their turn)
   const pending = (row.pending_emails || []).map((e) => String(e).toLowerCase()).includes(caller.email.toLowerCase());
   const mySampleSignatureUrl = pending ? (await sampleSignatureFor(db, row.company_id, null, caller.email)).url : null;
-  return ok(res, 'Thành công', { request: { ...fullFromRow(row), mySampleSignatureUrl } });
+  return ok(res, 'Thành công', { request: { ...fullFromRow(row), mySampleSignatureUrl, approvalAuth: 'password' } });
 }
 
 export async function handlePRSearch(req, res, d) {

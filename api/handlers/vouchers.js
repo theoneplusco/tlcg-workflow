@@ -22,7 +22,7 @@ import {
 } from '../lib/vouchers/repo.js';
 import { enqueue } from '../lib/sheets/outbox.js';
 import redis from '../../db/redis.js';
-import { confirmPassword, stampSignature, verificationRecord } from '../lib/approval/step-up.js';
+import { confirmPassword, verificationRecord, makeStamper, stampStillCurrent } from '../lib/approval/step-up.js';
 import { sampleSignatureFor, NO_SAMPLE } from '../lib/approval/signature-check.js';
 import {
   historyRecord, currentRecord, voucherSpreadsheetId, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
@@ -251,22 +251,6 @@ const pendingOf = (plan, email) => {
 };
 
 /**
- * stampSignature memoised for one request by (company, sample URL), failures included: a bulk approve
- * with a slow or broken sample loads it once, not once per voucher. Always reports the sample's url/from.
- */
-function makeStamper(lang) {
-  const memo = new Map();
-  return async (db, companyId, entries, email) => {
-    const s = await sampleSignatureFor(db, companyId, entries, email);
-    const base = { companyId: companyId || null, url: s.url, from: s.from };
-    if (!s.url) return { ...base, ok: false, message: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
-    const k = `${companyId || ''}|${s.url}`;
-    if (!memo.has(k)) memo.set(k, stampSignature(db, companyId, entries, email, lang));
-    return { ...(await memo.get(k)), ...base };
-  };
-}
-
-/**
  * Approve one voucher. The sample is resolved and loaded BEFORE the row lock (a slow or unreachable sample
  * never holds the lock); inside the lock the GAS rules are re-checked and the pre-loaded stamp is used only if
  * the approver's sample (company, URL, source) is still the same. If it changed in between, the whole attempt
@@ -309,8 +293,7 @@ async function approveLocked({ voucherNumber, email, approverName, lang, pre }) 
     const pendingMine = pendingOf(plan, email);
     let stamp = { signature: '', from: '' };
     if (pendingMine.length) {
-      const cur = await sampleSignatureFor(client, row.company_id, pendingMine, email);
-      if (!pre || pre.companyId !== (row.company_id || null) || pre.url !== cur.url || pre.from !== cur.from) {
+      if (!(await stampStillCurrent(client, pre, row.company_id, pendingMine, email))) {
         await client.query('ROLLBACK');
         return { retry: true };
       }
