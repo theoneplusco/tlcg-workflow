@@ -26,3 +26,19 @@ test('fetchImageDataUrl: refusals keep the fetchSignatureImage wording', async (
   assert.equal(await run('https://drive.google.com/file/d/a/view', async () => resp(200, { 'content-type': 'image/png' }, Buffer.alloc(5))), 'resolved');
   assert.equal(await run('https://drive.google.com/file/d/a/view', async () => resp(200, { 'content-type': 'image/png' }, Buffer.alloc(5)), { maxBytes: 4 }), 'Hình ảnh quá lớn');
 });
+
+test('fetchImageDataUrl: at most MAX_REDIRECTS (4) redirects followed, 5 fetches in all', async () => {
+  const { MAX_REDIRECTS } = await import('../../api/lib/files/fetch-image.js');
+  assert.equal(MAX_REDIRECTS, 4);
+  const chain = (redirects) => {
+    let n = 0;
+    const fetchImpl = async () => { n += 1; return n <= redirects ? resp(302, { location: `https://drive.google.com/r${n}` }) : resp(200, { 'content-type': 'image/png' }); };
+    return { fetchImpl, count: () => n };
+  };
+  const ok = chain(4);
+  assert.match(await fetchImageDataUrl('https://drive.google.com/file/d/a/view', { fetchImpl: ok.fetchImpl }), /^data:image\/png;base64,/);
+  assert.equal(ok.count(), 5, '4 redirects + the image = 5 fetches');
+  const tooMany = chain(5);
+  await assert.rejects(fetchImageDataUrl('https://drive.google.com/file/d/a/view', { fetchImpl: tooMany.fetchImpl }), /chuyển hướng quá nhiều/);
+  assert.equal(tooMany.count(), 5, 'the 5th response is a redirect: refused without a 6th fetch');
+});

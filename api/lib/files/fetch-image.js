@@ -4,6 +4,9 @@ import { driveDownloadUrl, isAllowedImageUrl, MAX_IMAGE_BYTES } from './signatur
 
 export class ImageFetchError extends Error {}
 
+/** Redirects followed at most (each one re-checked against the allow-list): 4 redirects = 5 fetches in all. */
+export const MAX_REDIRECTS = 4;
+
 /** fetchImpl defaults to the global fetch at call time (tests replace globalThis.fetch). */
 export async function fetchImageDataUrl(url, { fetchImpl = (...a) => globalThis.fetch(...a), maxBytes = MAX_IMAGE_BYTES } = {}) {
   if (!isAllowedImageUrl(url)) throw new ImageFetchError('URL hình ảnh không được phép');
@@ -13,7 +16,7 @@ export async function fetchImageDataUrl(url, { fetchImpl = (...a) => globalThis.
     r = await fetchImpl(target, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
     if (r.status < 300 || r.status >= 400) break;
     const next = r.headers.get('location');
-    if (!next || hop >= 4) throw new ImageFetchError('Không tải được hình ảnh (chuyển hướng quá nhiều)');
+    if (!next || hop >= MAX_REDIRECTS) throw new ImageFetchError('Không tải được hình ảnh (chuyển hướng quá nhiều)');
     target = new URL(next, target).toString();
     if (!isAllowedImageUrl(target)) throw new ImageFetchError('URL hình ảnh không được phép');
   }
