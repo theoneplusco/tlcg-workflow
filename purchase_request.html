@@ -3352,15 +3352,24 @@
             // The Vercel proxy forwards this as data=<JSON> to GAS, which parses
             // params.data → JSON.parse(params.data). This is the most reliable path
             // through the proxy (avoids flat-param re-serialisation edge cases).
-            const sendParams = new URLSearchParams();
-            sendParams.append('data', JSON.stringify(payload));
-            const res    = await fetch(BACKEND_URL, {
-                method: 'POST', mode: 'cors', redirect: 'follow',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: sendParams.toString(),
-            });
-            const result = JSON.parse(await res.text());
-            if (result.success) {
+            const send = async (extra) => {
+                const sendParams = new URLSearchParams();
+                sendParams.append('data', JSON.stringify(extra ? Object.assign({}, payload, extra) : payload));
+                const res    = await fetch(BACKEND_URL, {
+                    method: 'POST', mode: 'cors', redirect: 'follow',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: sendParams.toString(),
+                });
+                return JSON.parse(await res.text());
+            };
+            const firstAnswer = await send();
+            // Plan 5c (Postgres only; GAS never answers needSelfApproval): the requester confirms their own approval steps
+            const result = firstAnswer && firstAnswer.needSelfApproval === true ? await ApprovalPassword.selfApproval(firstAnswer, send) : firstAnswer;
+            if (result && result.cancelled === true) { // "Hủy": nothing was sent or saved
+                showToast(result.message, 'info');
+                btn.disabled = false;
+                btn.innerHTML = orig;
+            } else if (result.success) {
                 // Clean up resubmit state if applicable
                 const resubmitHidden = document.getElementById('resubmit-pr-no');
                 if (resubmitHidden) resubmitHidden.value = '';
@@ -3383,7 +3392,8 @@
                 document.getElementById('sent-next-body').textContent = TLCI18n.t('sentNextBody', 'Phiếu vẫn mở để gửi tiếp. Sửa nội dung rồi bấm Gửi đề nghị. Số phiếu mới đã được tạo.');
                 banner.style.display = 'block';
                 goToStep(1);
-                showToast(resubmitPrNo ? '✅ Đã gửi lại đề nghị thành công!' : 'ĐỀ NGHỊ MUA HÀNG đã được gửi thành công!', 'success', 4000);
+                showToast(Array.isArray(result.autoApproved) && result.autoApproved.length ? result.message
+                    : (resubmitPrNo ? '✅ Đã gửi lại đề nghị thành công!' : 'ĐỀ NGHỊ MUA HÀNG đã được gửi thành công!'), 'success', 4000);
                 // Invalidate cache and reload list so new PR appears immediately
                 localStorage.removeItem(_PR_CACHE_KEY);
                 localStorage.removeItem(_PR_CACHE_TS_KEY);

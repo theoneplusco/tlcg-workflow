@@ -9883,10 +9883,11 @@
                 console.warn('⚠️ Payload is large (' + payloadSizeMB + 'MB). Consider reducing file sizes.');
             }
 
-            const submitToGAS = async () => {
+            const submitToGAS = async (extra) => {
                 console.log('🚀 Sending request to backend...');
                 const formData = new FormData();
-                formData.append('data', payloadString);
+                // Plan 5c: a resend after the self-approval prompt adds selfApprovalPassword / selfApprovalDeclined
+                formData.append('data', extra ? JSON.stringify(Object.assign({}, payload, extra)) : payloadString);
                 const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, {
                     method: 'POST',
                     mode: 'cors',
@@ -9900,12 +9901,16 @@
                 if (!responseText || responseText.trim() === '') throw new Error('Empty response from server');
                 let result;
                 try { result = JSON.parse(responseText); } catch (e) { throw new Error(`Invalid response from server: ${e.message}`); }
+                if (result.needSelfApproval === true) return result; // Postgres only (Plan 5c): GAS never answers it
                 if (!result.success) throw new Error(result.message || 'Failed to send approval email');
                 return result;
             };
 
             try {
-                const result = await submitToGAS();
+                const firstAnswer = await submitToGAS();
+                // Plan 5c: the requester is also an approver → one password, or "approve later" (GAS answers skip this)
+                const result = firstAnswer.needSelfApproval === true ? await ApprovalPassword.selfApproval(firstAnswer, submitToGAS) : firstAnswer;
+                if (result.cancelled === true) { showToast(result.message, 'info'); return; } // "Hủy": nothing was sent or saved
                 console.log('✅ Backend confirmed success:', result.message);
 
                 // Update UI status and history
@@ -9944,7 +9949,8 @@
                 });
                 renderApprovalHistory();
 
-                showToast(`Đã gửi yêu cầu phê duyệt cho ${validRecipients.join(', ')}${validCCRecipients.length > 0 ? ' (CC: ' + validCCRecipients.join(', ') + ')' : ''}`, 'success', 'Gửi thành công');
+                showToast(Array.isArray(result.autoApproved) && result.autoApproved.length ? result.message
+                    : `Đã gửi yêu cầu phê duyệt cho ${validRecipients.join(', ')}${validCCRecipients.length > 0 ? ' (CC: ' + validCCRecipients.join(', ') + ')' : ''}`, 'success', 'Gửi thành công');
 
             } catch (error) {
                 console.error('❌ Lỗi khi gửi yêu cầu phê duyệt qua Google Apps Script:', error);
