@@ -14,6 +14,7 @@ import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateE
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
 import { handleCreateVoucherUploadSession, handleFinalizeVoucherUpload, handleFetchSignatureImage } from './handlers/files.js';
 import { handleGetMySignature, handleSaveMySignature, handleAdminGetSignature, handleAdminSaveSignature } from './handlers/signatures.js';
+import { handleMyTaskCounts } from './handlers/my-tasks.js';
 
 // ── New handlers (Postgres) ──────────────────────────────────
 const NEW_HANDLERS = {
@@ -93,6 +94,8 @@ const NEW_HANDLERS = {
   saveMySignature:             handleSaveMySignature,
   adminGetSignature:           handleAdminGetSignature,
   adminSaveSignature:          handleAdminSaveSignature,
+  // Sidebar badges (app-sidebar.js): documents waiting for me, counted only for workflows on Postgres
+  getMyTaskCounts:             handleMyTaskCounts,
   // Voucher attachments on R2 (workflow key: files)
   createVoucherUploadSession:  handleCreateVoucherUploadSession,
   finalizeVoucherUpload:       handleFinalizeVoucherUpload,

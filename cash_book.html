@@ -48,46 +48,6 @@
         }
 
         .shell { display: flex; min-height: 100vh; }
-        .sidebar {
-            width: 280px; flex-shrink: 0;
-            background: rgba(255,255,255,0.94);
-            border-right: 0.5px solid var(--border);
-            display: flex; flex-direction: column;
-            position: sticky; top: 0; height: 100vh;
-            padding: 16px 12px;
-        }
-        .side-brand {
-            display: flex; align-items: center; gap: 10px;
-            text-decoration: none; color: inherit;
-            padding: 4px 8px 18px;
-        }
-        .side-brand img { height: 48px; width: auto; }
-        .side-brand span { font-weight: 600; font-size: 17px; }
-        .side-label {
-            font-size: 12px; color: #8e8e93; text-transform: uppercase;
-            letter-spacing: 0.04em; padding: 10px 12px 6px;
-        }
-        .side-link {
-            display: flex; align-items: center; gap: 10px;
-            padding: 8px 10px; border-radius: 10px;
-            text-decoration: none; color: #000; font-size: 15px; font-weight: 500;
-        }
-        .side-link.active { background: #007AFF; color: #fff; }
-        .side-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-        .side-ico {
-            width: 28px; height: 28px; border-radius: 8px;
-            display: flex; align-items: center; justify-content: center;
-            color: #fff; font-size: 13px; flex-shrink: 0;
-        }
-        .side-user { margin-top: auto; padding: 14px 8px 0; border-top: 0.5px solid var(--sep); }
-        .side-user-row { display: flex; align-items: center; gap: 12px; }
-        .side-user-row img { width: 40px; height: 40px; border-radius: 50%; }
-        .side-user-row p { margin: 0; }
-        .signout {
-            width: 100%; margin-top: 12px; padding: 8px;
-            background: rgba(255,59,48,0.1); color: #FF3B30;
-            border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
-        }
         .ipad-main { flex: 1; min-width: 0; }
         .appbar {
             position: sticky; top: 0; z-index: 20;
@@ -361,7 +321,7 @@
         #print-sigs { display: none; }
 
         .bar {
-            position: fixed; left: 280px; right: 0; bottom: 0; z-index: 30;
+            position: fixed; left: var(--asb-w, 0px); right: 0; bottom: 0; z-index: 30;
             display: flex; justify-content: space-between; align-items: center; gap: 12px;
             padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
             background: rgba(255,255,255,0.88);
@@ -372,10 +332,6 @@
         .bar-actions { display: flex; gap: 8px; }
         #save-hint { font-size: 13px; color: var(--text-secondary); }
 
-        @media (max-width: 900px) {
-            .sidebar { display: none; }
-            .bar { left: 0; }
-        }
         @media (max-width: 720px) {
             .filters, .rep, .balance-card, .cb-workspace, .cb-filters-row { grid-template-columns: 1fr; }
             .cb-filters-row { flex-wrap: wrap; }
@@ -402,39 +358,20 @@
         }
     </style>
 <link rel="stylesheet" href="flow-chrome.css">
+    <link rel="stylesheet" href="app-sidebar.css?v=20261009-1">
+    <script src="app-sidebar.js?v=20261009-1" data-active="cash-book" defer></script>
 </head>
 <body>
     <div class="shell">
-    <aside class="sidebar no-print">
-        <a class="side-brand" href="index.html">
-            <img src="brand_assets/tlc logo transparancy.png" alt="TLC">
-            <span>TLCGroup</span>
-        </a>
-        <div class="side-label" data-i18n="cbMenu">Menu</div>
-        <a class="side-link" href="index.html"><span class="side-ico" style="background:#007AFF"><i class="fas fa-house"></i></span><span data-i18n="navHome">Trang chủ</span></a>
-        <a class="side-link" href="index.html?page=comm"><span class="side-ico" style="background:#5856D6"><i class="fas fa-comments"></i></span><span data-i18n="cbComm">Communications</span></a>
-        <a class="side-link" href="index.html?page=profile"><span class="side-ico" style="background:#FF9500"><i class="fas fa-user"></i></span><span data-i18n="profile">Hồ sơ</span></a>
-        <div class="side-label" data-i18n="cbWorkflows">Workflows</div>
-        <a class="side-link" href="index.html?page=process-o2c"><span class="side-ico" style="background:#34C759"><i class="fas fa-cart-shopping"></i></span><span data-i18n="o2cTitle">Bán hàng (O2C)</span></a>
-        <a class="side-link" href="index.html?page=process-p2p"><span class="side-ico" style="background:#007AFF"><i class="fas fa-bag-shopping"></i></span><span data-i18n="p2pTitle">Mua hàng (P2P)</span></a>
-        <a class="side-link active" href="index.html?page=process-cash"><span class="side-ico" style="background:#FF9500"><i class="fas fa-wallet"></i></span><span data-i18n="cbNavCash">Cash &amp; Vouchers</span></a>
-        <div class="side-user">
-            <div class="side-user-row">
-                <img id="sidebar-avatar" alt="">
-                <div>
-                    <p id="sidebar-name" style="font-size:15px;font-weight:600;"></p>
-                    <p id="sidebar-role" style="font-size:13px;color:#6e6e73;"></p>
-                </div>
-            </div>
-            <button type="button" class="signout" id="sign-out" data-i18n="signOut">Sign Out</button>
-        </div>
-    </aside>
     <div class="ipad-main">
     <header class="appbar no-print">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+        <button type="button" class="asb-burger" data-asb-open aria-label="Mở menu" data-i18n-aria="openMenu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <a class="appbar-brand" href="index.html">
             <img src="brand_assets/tlc logo transparancy.png" alt="TLC">
             <span>Business Process Management (BPM)</span>
         </a>
+        </div>
         <div class="appbar-actions">
             <div class="ios-segmented">
                 <button type="button" data-lang="en" onclick="setLanguage('en')" class="ios-segmented-item" aria-label="Switch to English">EN</button>
@@ -1605,13 +1542,8 @@
         }
         async function init() {
             var name = user.name || user.email || '';
-            var role = user.role || user.position || '';
             var avatar = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(name) + '&background=' + (user.isAdmin ? 'ea580c' : '007AFF') + '&color=fff';
-            document.getElementById('sidebar-name').textContent = name;
-            document.getElementById('sidebar-role').textContent = role;
-            document.getElementById('sidebar-avatar').src = avatar;
             document.getElementById('nav-avatar').src = avatar;
-            document.getElementById('sign-out').addEventListener('click', signOut);
             var start = document.getElementById('start-date');
             var end = document.getElementById('end-date');
             var today = todayVN();

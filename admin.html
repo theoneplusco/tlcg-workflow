@@ -204,13 +204,18 @@
 </style>
 <script src="i18n.js"></script>
 <script src="signature-image.js?v=20261008-2"></script>
+    <link rel="stylesheet" href="app-sidebar.css?v=20261009-1">
+    <script src="app-sidebar.js?v=20261009-1" data-active="admin-master" defer></script>
 </head>
 <body>
 <div class="page">
   <div class="top">
+    <div style="display:flex; align-items:center; gap:12px;">
+    <button type="button" class="asb-burger" data-asb-open aria-label="Mở menu" data-i18n-aria="openMenu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div>
       <span class="kicker">TLCG Workflow</span>
       <h1>Master Data</h1>
+    </div>
     </div>
     <div style="display:flex; gap:8px;">
       <button class="btn btn-ghost" id="refresh-btn" type="button">↻ Refresh</button>

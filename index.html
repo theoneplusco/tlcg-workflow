@@ -99,38 +99,10 @@
 
             /* Tab Bar Height */
             --tab-bar-height: 83px;
-            --sidebar-width: 280px;
         }
 
-        /* iPad Sidebar Styles */
-        .ipad-sidebar {
-            width: var(--sidebar-width);
-            background: rgba(249, 249, 249, 0.94);
-            backdrop-filter: saturate(180%) blur(20px);
-            -webkit-backdrop-filter: saturate(180%) blur(20px);
-            border-right: 0.5px solid rgba(60, 60, 67, 0.29);
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100vh;
-            overflow-y: auto;
-            z-index: 50;
-            display: none;
-            flex-direction: column;
-        }
-
-        .ipad-main {
-            transition: margin-left 0.3s;
-        }
-
-        /* Show sidebar on iPad/Desktop (768px+), hide tab bar */
+        /* Tablet and desktop (768px+): no tab bar. The sidebar itself is app-sidebar.css. */
         @media (min-width: 768px) {
-            .ipad-sidebar {
-                display: flex;
-            }
-            .ipad-main {
-                margin-left: var(--sidebar-width);
-            }
             .ios-tab-bar {
                 display: none !important;
             }
@@ -146,295 +118,11 @@
             display: none;
         }
 
-        /* Hide sidebar on mobile, show tab bar */
+        /* Phones: tab bar */
         @media (max-width: 767px) {
-            .ipad-sidebar {
-                display: none !important;
-            }
             .ios-tab-bar {
                 display: block;
             }
-        }
-
-        /* Collapsed Sidebar - macOS Style */
-        .ipad-sidebar {
-            transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .ipad-sidebar.collapsed {
-            width: 72px;
-        }
-
-        .ipad-sidebar.collapsed .sidebar-header > div > span,
-        .ipad-sidebar.collapsed .sidebar-section-title,
-        .ipad-sidebar.collapsed .sidebar-item > span,
-        .ipad-sidebar.collapsed #sidebar-user-name,
-        .ipad-sidebar.collapsed #sidebar-user-role,
-        .ipad-sidebar.collapsed .sidebar-signout-btn,
-        .ipad-sidebar.collapsed .sidebar-user-info {
-            display: none;
-        }
-
-        .ipad-sidebar.collapsed .sidebar-item {
-            justify-content: center;
-            padding: 12px;
-            margin: 2px 6px;
-            width: calc(100% - 12px);
-        }
-
-        .ipad-sidebar.collapsed .sidebar-header > div:first-child {
-            justify-content: center;
-        }
-
-        .ipad-sidebar.collapsed .sidebar-header img {
-            height: 60px !important;
-            width: auto !important;
-            max-width: 60px;
-        }
-
-        .ipad-sidebar.collapsed #sidebar-user-section {
-            padding: 12px;
-        }
-
-        .ipad-sidebar.collapsed #sidebar-logged-in > div {
-            justify-content: center;
-        }
-
-        .ipad-sidebar.collapsed #sidebar-toggle {
-            position: static;
-            transform: none;
-            margin-left: auto;
-        }
-
-        /* Hover to expand collapsed sidebar */
-        .ipad-sidebar.collapsed:hover {
-            width: 280px;
-        }
-        .ipad-sidebar.collapsed .sidebar-header {
-            cursor: pointer;
-        }
-        .ipad-sidebar.collapsed:hover .sidebar-header > div > span,
-        .ipad-sidebar.collapsed:hover .sidebar-section-title,
-        .ipad-sidebar.collapsed:hover .sidebar-item > span,
-        .ipad-sidebar.collapsed:hover #sidebar-user-name,
-        .ipad-sidebar.collapsed:hover #sidebar-user-role,
-        .ipad-sidebar.collapsed:hover .sidebar-signout-btn,
-        .ipad-sidebar.collapsed:hover .sidebar-user-info {
-            display: block;
-        }
-        .ipad-sidebar.collapsed:hover .sidebar-item {
-            justify-content: flex-start;
-            padding: 10px 12px;
-            margin: 2px 8px;
-            width: calc(100% - 16px);
-        }
-        .ipad-sidebar.collapsed:hover .sidebar-header > div:first-child {
-            justify-content: flex-start;
-        }
-        .ipad-sidebar.collapsed:hover .sidebar-header img {
-            height: 60px !important;
-            width: auto !important;
-            max-width: none;
-        }
-        .ipad-sidebar.collapsed:hover #sidebar-toggle {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            margin-left: 0;
-        }
-        .ipad-sidebar.collapsed:hover #sidebar-logged-in > div {
-            justify-content: flex-start;
-        }
-
-        .ipad-main {
-            transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .ipad-main.sidebar-collapsed {
-            margin-left: 72px;
-        }
-
-        /* Sidebar Components */
-        .sidebar-header {
-            padding: 18px 16px;
-            border-bottom: 0.5px solid rgba(60, 60, 67, 0.29);
-        }
-
-        .sidebar-section {
-            padding: 8px 0;
-            position: relative;
-        }
-        
-        /* Section dividers for better visual separation */
-        .sidebar-section:not(:first-of-type)::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 16px;
-            right: 16px;
-            height: 0.5px;
-            background: rgba(60, 60, 67, 0.18);
-        }
-
-        .sidebar-section-title {
-            font-size: 12px;
-            font-weight: 600;
-            color: #6e6e73;
-            text-transform: uppercase;
-            padding: 12px 16px 6px;
-            letter-spacing: 0.5px;
-        }
-
-        .sidebar-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 16px;
-            margin: 2px 8px;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: background-color 0.25s cubic-bezier(0.4, 0.0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
-            color: #000000;
-            font-size: 15px;
-            font-weight: 400;
-            border: none;
-            background: transparent;
-            width: calc(100% - 16px);
-            text-align: left;
-            position: relative;
-        }
-        
-        /* Tooltip for collapsed sidebar items */
-        .sidebar-item::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            left: 72px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 13px;
-            white-space: nowrap;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        
-        .ipad-sidebar.collapsed .sidebar-item:hover::after {
-            opacity: 1;
-            transition-delay: 0.6s;
-        }
-        
-        .ipad-sidebar.collapsed:hover:not(.pinned) .sidebar-item:hover::after {
-            opacity: 0;
-        }
-
-        .sidebar-item:hover {
-            background: rgba(0, 0, 0, 0.04);
-            transform: translateX(2px);
-        }
-
-        .sidebar-item:active {
-            transform: scale(0.98);
-            transition: transform 0.1s cubic-bezier(0.4, 0.0, 0.2, 1);
-        }
-
-        .sidebar-item.active {
-            background: #007AFF;
-            color: white;
-        }
-        
-        /* Tooltip for collapsed sidebar items */
-        .sidebar-item::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            left: 72px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 13px;
-            white-space: nowrap;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        
-        .ipad-sidebar.collapsed .sidebar-item:hover::after {
-            opacity: 1;
-            transition-delay: 0.6s;
-        }
-        
-        .ipad-sidebar.collapsed:hover:not(.pinned) .sidebar-item:hover::after {
-            opacity: 0;
-        }
-
-        .sidebar-item.active .sidebar-icon-box {
-            background: rgba(255,255,255,0.2) !important;
-            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.4);
-        }
-        
-        .sidebar-item.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 3px;
-            height: 20px;
-            background: white;
-            border-radius: 0 2px 2px 0;
-            opacity: 0;
-            animation: slideInLeft 0.3s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
-        }
-        
-        @keyframes slideInLeft {
-            from {
-                opacity: 0;
-                transform: translateY(-50%) translateX(-5px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(-50%) translateX(0);
-            }
-        }
-
-        .sidebar-icon-box {
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            color: white;
-            flex-shrink: 0;
-            transition: transform 0.25s cubic-bezier(0.4, 0.0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-        }
-        
-        .sidebar-item:hover .sidebar-icon-box {
-            transform: scale(1.08);
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-        }
-        
-        .sidebar-item:active .sidebar-icon-box {
-            transform: scale(0.95);
-        }
-
-        .sidebar-user {
-            padding: 16px;
-            border-top: 0.5px solid rgba(60, 60, 67, 0.29);
-            margin-top: auto;
         }
 
         /* Base iOS Styling */
@@ -1547,80 +1235,12 @@
             box-shadow: 0 12px 48px rgba(0, 0, 0, 0.12);
         }
 
-        /* Mobile Menu Styles */
-        .mobile-menu-btn {
-            display: none;
-            padding: 0.5rem;
-            border-radius: 0.5rem;
-            color: #475569;
-            transition: transform 0.2s, opacity 0.2s, background-color 0.2s;
-        }
-        .mobile-menu-btn:hover {
-            background: #f1f5f9;
-            color: #007AFF;
-        }
-        @media (max-width: 1023px) {
-            .mobile-menu-btn { display: flex; }
-        }
-        .mobile-drawer {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 100;
-            visibility: hidden;
-            opacity: 0;
-            transition: visibility 0s 0.3s, opacity 0.3s;
-        }
-        .mobile-drawer.open {
-            visibility: visible;
-            opacity: 1;
-            transition: visibility 0s, opacity 0.3s;
-        }
-        .mobile-drawer-overlay {
-            position: absolute;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
-        }
-        .mobile-drawer-content {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: min(280px, 85vw);
-            height: 100%;
-            background: white;
-            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
-            transform: translateX(-100%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow-y: auto;
-        }
-        .mobile-drawer.open .mobile-drawer-content {
-            transform: translateX(0);
-        }
-        .mobile-nav-link {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 1rem 1.5rem;
-            color: #475569;
-            font-weight: 500;
-            transition: transform 0.2s, opacity 0.2s, background-color 0.2s;
-            border-left: 3px solid transparent;
-        }
-        .mobile-nav-link:hover, .mobile-nav-link.active {
-            background: #f8fafc;
-            color: #007AFF;
-            border-left-color: #007AFF;
-        }
-
         /* Focus Visible States for Accessibility */
         button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
             outline: 2px solid #007AFF;
             outline-offset: 2px;
         }
-        .nav-link:focus-visible, .mobile-nav-link:focus-visible {
+        .nav-link:focus-visible {
             outline: 2px solid #007AFF;
             outline-offset: -2px;
             border-radius: 0.5rem;
@@ -2216,6 +1836,8 @@
         }
 
     </style>
+    <link rel="stylesheet" href="app-sidebar.css?v=20261009-1">
+    <script src="app-sidebar.js?v=20261009-1" data-active="home" data-spa="index" defer></script>
 </head>
 <body class="min-h-screen flex flex-col">
     <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-white focus:text-blue-600 focus:rounded-lg focus:shadow-lg">Skip to main content</a>
@@ -2430,108 +2052,18 @@
         <!-- MAIN CONTENT -->
         <div id="main-content" class="flex flex-col flex-1">
 
-            <!-- iPad Sidebar Navigation -->
-            <aside class="ipad-sidebar" id="ipad-sidebar">
-                <div class="sidebar-header" style="position: relative; display: flex; align-items: center; justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 10px; cursor: pointer;" onclick="showPage('home')">
-                        <img src="brand_assets/tlc logo transparancy.png" alt="TLC Logo" style="height: 60px; width: auto; object-fit: contain;">
-                        <span style="font-weight: 600; font-size: 17px; color: #000000;">TLCGroup</span>
-                    </div>
-                    <button id="sidebar-toggle" onclick="event.stopPropagation(); toggleSidebar();"
-                            aria-label="Toggle sidebar"
-                            style="width: 28px; height: 28px; border-radius: 6px;
-                                   background: rgba(0,0,0,0.05); border: none; cursor: pointer;
-                                   display: flex; align-items: center; justify-content: center;
-                                   transition: background 0.2s; flex-shrink: 0;"
-                            onmouseover="this.style.background='rgba(0,0,0,0.1)'"
-                            onmouseout="this.style.background='rgba(0,0,0,0.05)'">
-                        <i id="sidebar-toggle-icon" class="fas fa-chevron-left" style="font-size: 11px; color: #8e8e93;"></i>
-                    </button>
-                </div>
-
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Menu</div>
-                    <button onclick="showPage('home'); updateSidebarActive(this);" class="sidebar-item active" id="sidebar-home" data-tooltip="Dashboard">
-                        <div class="sidebar-icon-box" style="background: #007AFF;">
-                            <i class="fas fa-house"></i>
-                        </div>
-                        <span>Dashboard</span>
-                    </button>
-                    <button onclick="showPage('comm'); updateSidebarActive(this);" class="sidebar-item" id="sidebar-comm" data-tooltip="Communications">
-                        <div class="sidebar-icon-box" style="background: #5856D6;">
-                            <i class="fas fa-comments"></i>
-                        </div>
-                        <span>Communications</span>
-                    </button>
-                    <button onclick="showPage('profile'); updateSidebarActive(this);" class="sidebar-item" id="sidebar-profile" data-tooltip="My Profile">
-                        <div class="sidebar-icon-box" style="background: #FF9500;">
-                            <i class="fas fa-user"></i>
-                        </div>
-                        <span>My Profile</span>
-                    </button>
-                    <button onclick="showPage('admin'); updateSidebarActive(this);" class="sidebar-item hidden" id="nav-admin" data-tooltip="Quản trị" data-i18n-title="navAdmin">
-                        <div class="sidebar-icon-box" style="background: #FF3B30;">
-                            <i class="fas fa-shield-alt"></i>
-                        </div>
-                        <span data-i18n="navAdmin">Quản trị</span>
-                    </button>
-                </div>
-
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Workflows</div>
-                    <button onclick="showPage('process-o2c'); updateSidebarActive(this);" class="sidebar-item" id="sidebar-o2c" data-tooltip="Order to Cash">
-                        <div class="sidebar-icon-box" style="background: #34C759;">
-                            <i class="fas fa-cart-shopping"></i>
-                        </div>
-                        <span>Order to Cash</span>
-                    </button>
-                    <button onclick="showPage('process-p2p'); updateSidebarActive(this);" class="sidebar-item" id="sidebar-p2p" data-tooltip="Purchase to Pay">
-                        <div class="sidebar-icon-box" style="background: #007AFF;">
-                            <i class="fas fa-bag-shopping"></i>
-                        </div>
-                        <span>Purchase to Pay</span>
-                    </button>
-                    <button onclick="showPage('process-cash'); updateSidebarActive(this);" class="sidebar-item" id="sidebar-cash" data-tooltip="Cash & Vouchers">
-                        <div class="sidebar-icon-box" style="background: #FF9500;">
-                            <i class="fas fa-wallet"></i>
-                        </div>
-                        <span>Cash & Vouchers</span>
-                    </button>
-                </div>
-
-                <div class="sidebar-user" id="sidebar-user-section">
-                    <div id="sidebar-logged-out">
-                        <button onclick="showLogin()" class="sidebar-item" style="background: transparent;" data-tooltip="Sign In">
-                            <div class="sidebar-icon-box" style="background: #007AFF;">
-                                <i class="fas fa-right-to-bracket"></i>
-                            </div>
-                            <span>Sign In</span>
-                        </button>
-                    </div>
-                    <div id="sidebar-logged-in" style="display: none;">
-                        <div style="display: flex; align-items: center; gap: 12px;">
-                            <img id="sidebar-avatar" src="" style="width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;" alt="User">
-                            <div class="sidebar-user-info" style="flex: 1; min-width: 0;">
-                                <p id="sidebar-user-name" style="font-size: 15px; font-weight: 600; color: #000; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></p>
-                                <p id="sidebar-user-role" style="font-size: 13px; color: #6e6e73; margin: 0;"></p>
-                            </div>
-                        </div>
-                        <button class="sidebar-signout-btn" onclick="handleLogout()" style="width: 100%; margin-top: 12px; padding: 8px; background: rgba(255,59,48,0.1); color: #FF3B30; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;">
-                            Sign Out
-                        </button>
-                    </div>
-                </div>
-            </aside>
-
             <!-- Main Content Area (shifts right on iPad) -->
             <div class="ipad-main">
             <!-- iOS Navigation Bar (visible on mobile, simpler on iPad) -->
             <nav style="position: sticky; top: 0; z-index: 100; background: rgba(249, 249, 249, 0.94); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 0.5px solid rgba(60,60,67,0.29); padding: 18px 16px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1200px; margin: 0 auto;">
+                    <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                    <button type="button" class="asb-burger" data-asb-open aria-label="Mở menu" data-i18n-aria="openMenu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
                     <!-- Left: Logo + BPM Title -->
                     <div style="display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="showPage('home')">
                         <img src="brand_assets/tlc logo transparancy.png" alt="TLC Logo" style="height: 60px; width: auto; object-fit: contain;">
                         <span style="font-weight: 600; font-size: 17px; color: #000000;">Business Process Management (BPM)</span>
+                    </div>
                     </div>
 
                     <!-- Right: Actions -->
@@ -2569,78 +2101,6 @@
                 </div>
 
             </nav>
-
-            <!-- Mobile Navigation Drawer -->
-            <div id="mobile-drawer" class="mobile-drawer" aria-hidden="true">
-                <div class="mobile-drawer-overlay" onclick="toggleMobileMenu()"></div>
-                <div class="mobile-drawer-content">
-                    <div class="p-4 border-b border-slate-200">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                                    <span class="text-white text-lg font-black italic">TLC</span>
-                                </div>
-                                <span class="font-bold text-lg text-slate-800">TLCGroup</span>
-                            </div>
-                            <button onclick="toggleMobileMenu()" class="p-2 text-slate-500 hover:text-slate-700" aria-label="Close menu">
-                                <i class="fas fa-times text-xl"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <nav class="py-4" aria-label="Mobile navigation">
-                        <button onclick="showPage('home'); toggleMobileMenu();" class="mobile-nav-link w-full" id="mobile-nav-home">
-                            <i class="fas fa-home text-lg"></i>
-                            <span>Dashboard</span>
-                        </button>
-                        <button onclick="showPage('comm'); toggleMobileMenu();" class="mobile-nav-link w-full" id="mobile-nav-comm">
-                            <i class="fas fa-comments text-lg"></i>
-                            <span>Communications</span>
-                        </button>
-                        <button onclick="showPage('profile'); toggleMobileMenu();" class="mobile-nav-link w-full" id="mobile-nav-profile">
-                            <i class="fas fa-tasks text-lg"></i>
-                            <span>My Tasks</span>
-                        </button>
-                        <button onclick="showPage('admin'); toggleMobileMenu();" class="mobile-nav-link w-full hidden" id="mobile-nav-admin">
-                            <i class="fas fa-shield-alt text-lg text-orange-600"></i>
-                            <span class="text-orange-600 font-bold">Admin</span>
-                        </button>
-                        <div class="border-t border-slate-200 mt-4 pt-4">
-                            <p class="px-6 text-xs font-bold text-slate-400 uppercase mb-2">Workflows</p>
-                            <button onclick="showPage('process-o2c'); toggleMobileMenu();" class="mobile-nav-link w-full">
-                                <i class="fas fa-shopping-cart text-lg text-emerald-600"></i>
-                                <span>Order to Cash</span>
-                            </button>
-                            <button onclick="showPage('process-p2p'); toggleMobileMenu();" class="mobile-nav-link w-full">
-                                <i class="fas fa-shopping-bag text-lg text-blue-600"></i>
-                                <span>Purchase to Pay</span>
-                            </button>
-                            <button onclick="showPage('process-cash'); toggleMobileMenu();" class="mobile-nav-link w-full">
-                                <i class="fas fa-wallet text-lg text-amber-600"></i>
-                                <span>Cash & Vouchers</span>
-                            </button>
-                        </div>
-                    </nav>
-                    <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200 bg-slate-50">
-                        <div id="mobile-user-section" class="hidden">
-                            <div class="flex items-center space-x-3 mb-3">
-                                <img id="mobile-user-avatar" src="" class="w-10 h-10 rounded-full border-2 border-white shadow-sm" alt="User avatar">
-                                <div>
-                                    <p id="mobile-user-name" class="text-sm font-semibold text-slate-800"></p>
-                                    <p id="mobile-user-role" class="text-xs text-slate-500"></p>
-                                </div>
-                            </div>
-                            <button onclick="handleLogout(); toggleMobileMenu();" class="w-full bg-red-50 text-red-600 py-2 rounded-lg text-sm font-semibold hover:bg-red-100 transition">
-                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                            </button>
-                        </div>
-                        <div id="mobile-login-section">
-                            <button onclick="showLogin(); toggleMobileMenu();" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition">
-                                <i class="fas fa-sign-in-alt mr-2"></i>Sign In
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Home Dashboard - Kissflow Style -->
             <main id="page-home" class="mx-auto px-4" style="max-width: 1280px; padding-top: 12px; padding-bottom: 100px; background: #F2F2F7;">
@@ -3928,83 +3388,6 @@
             console.info('[TLCG Demo] Localhost preview session applied (no password).');
         }
         
-        // Sidebar expand/collapse state
-        let sidebarCollapsed = localStorage.getItem('tlc_sidebar_collapsed') === 'true';
-
-        // Toggle sidebar expand/collapse
-        function toggleSidebar() {
-            const sidebar = document.getElementById('ipad-sidebar');
-            const main = document.querySelector('.ipad-main');
-            const icon = document.getElementById('sidebar-toggle-icon');
-
-            if (!sidebar) return;
-
-            sidebarCollapsed = !sidebarCollapsed;
-
-            if (sidebarCollapsed) {
-                sidebar.classList.add('collapsed');
-                if (main) main.classList.add('sidebar-collapsed');
-                if (icon) {
-                    icon.classList.remove('fa-chevron-left');
-                    icon.classList.add('fa-chevron-right');
-                }
-            } else {
-                sidebar.classList.remove('collapsed');
-                if (main) main.classList.remove('sidebar-collapsed');
-                if (icon) {
-                    icon.classList.remove('fa-chevron-right');
-                    icon.classList.add('fa-chevron-left');
-                }
-            }
-
-            // Save state to localStorage
-            localStorage.setItem('tlc_sidebar_collapsed', sidebarCollapsed);
-        }
-        
-        // Initialize sidebar state on page load
-        function initSidebar() {
-            const sidebar = document.getElementById('ipad-sidebar');
-            const main = document.querySelector('.ipad-main');
-            const icon = document.getElementById('sidebar-toggle-icon');
-
-            if (!sidebar || !main) return;
-
-            // Load collapsed state from localStorage (default to expanded)
-            const savedCollapsed = localStorage.getItem('tlc_sidebar_collapsed');
-            sidebarCollapsed = savedCollapsed === 'true';
-
-            if (sidebarCollapsed) {
-                // Start collapsed
-                sidebar.classList.add('collapsed');
-                main.classList.add('sidebar-collapsed');
-                if (icon) {
-                    icon.classList.remove('fa-chevron-left');
-                    icon.classList.add('fa-chevron-right');
-                }
-            } else {
-                // Start expanded
-                sidebar.classList.remove('collapsed');
-                main.classList.remove('sidebar-collapsed');
-                if (icon) {
-                    icon.classList.remove('fa-chevron-right');
-                    icon.classList.add('fa-chevron-left');
-                }
-            }
-        }
-        
-        // Keyboard shortcut to toggle sidebar (Cmd/Ctrl + B)
-        document.addEventListener('keydown', function(e) {
-            // Check for Cmd+B (Mac) or Ctrl+B (Windows/Linux)
-            if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
-                e.preventDefault();
-                const sidebar = document.getElementById('ipad-sidebar');
-                // Only toggle if sidebar is visible (iPad/Desktop mode)
-                if (sidebar && window.innerWidth >= 768) {
-                    toggleSidebar();
-                }
-            }
-        });
-
         const companiesData = [
             { name: "CÔNG TY TNHH TƯ VẤN TLC", addr: "B.3.09, Tầng 3, Lô B, Số 34-35 Bến Vân Đồn, HCM", tax: "0313519756", rep: "Lê Ngân Anh", accountant: "Nguyễn Thị Nhanh" },
             { name: "CÔNG TY TNHH EGG VENTURES", addr: "Lầu 7, Tòa nhà Vincom Center, 72 Lê Thánh Tôn, HCM", tax: "0314494060", rep: "Phạm Thị Dung", accountant: "Nguyễn Văn An" },
@@ -4112,68 +3495,6 @@
             }
         });
 
-        // Mobile Menu Toggle Function
-        function toggleMobileMenu() {
-            const drawer = document.getElementById('mobile-drawer');
-            const menuBtn = document.getElementById('mobile-menu-btn');
-            if (!drawer) return;
-
-            const isOpen = drawer.classList.contains('open');
-            if (isOpen) {
-                drawer.classList.remove('open');
-                drawer.setAttribute('aria-hidden', 'true');
-                menuBtn?.setAttribute('aria-expanded', 'false');
-                document.body.style.overflow = '';
-            } else {
-                drawer.classList.add('open');
-                drawer.setAttribute('aria-hidden', 'false');
-                menuBtn?.setAttribute('aria-expanded', 'true');
-                document.body.style.overflow = 'hidden';
-                updateMobileUserInfo();
-            }
-        }
-
-        // Update mobile drawer user info
-        function updateMobileUserInfo() {
-            const mobileUserSection = document.getElementById('mobile-user-section');
-            const mobileLoginSection = document.getElementById('mobile-login-section');
-            const mobileAdminNav = document.getElementById('mobile-nav-admin');
-
-            if (currentUser) {
-                if (mobileUserSection) mobileUserSection.classList.remove('hidden');
-                if (mobileLoginSection) mobileLoginSection.classList.add('hidden');
-
-                const mobileUserName = document.getElementById('mobile-user-name');
-                const mobileUserRole = document.getElementById('mobile-user-role');
-                const mobileUserAvatar = document.getElementById('mobile-user-avatar');
-
-                if (mobileUserName) mobileUserName.textContent = currentUser.name || 'User';
-                if (mobileUserRole) mobileUserRole.textContent = currentUser.role || currentUser.department || '';
-                if (mobileUserAvatar) {
-                    mobileUserAvatar.src = currentUser.profilePhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name || 'U')}&background=667eea&color=fff`;
-                }
-
-                // Show admin nav for admins
-                if (mobileAdminNav && currentUser.isAdmin) {
-                    mobileAdminNav.classList.remove('hidden');
-                }
-            } else {
-                if (mobileUserSection) mobileUserSection.classList.add('hidden');
-                if (mobileLoginSection) mobileLoginSection.classList.remove('hidden');
-                if (mobileAdminNav) mobileAdminNav.classList.add('hidden');
-            }
-        }
-
-        // Close mobile menu on escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                const drawer = document.getElementById('mobile-drawer');
-                if (drawer && drawer.classList.contains('open')) {
-                    toggleMobileMenu();
-                }
-            }
-        });
-
         // iOS Tab Bar - Set Active Tab
         function setActiveTab(clickedTab) {
             document.querySelectorAll('.ios-tab-item').forEach(tab => {
@@ -4198,37 +3519,11 @@
             const tabId = tabMap[pageId] || 'tab-home';
             const tab = document.getElementById(tabId);
             setActiveTab(tab);
-
-            // Also update sidebar
-            updateSidebar(pageId);
+            updatePageTitle(pageId);
         }
 
-        // Update iPad sidebar active state
-        function updateSidebarActive(clickedItem) {
-            document.querySelectorAll('.sidebar-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            if (clickedItem) {
-                clickedItem.classList.add('active');
-            }
-        }
-
-        // Update sidebar based on page
-        function updateSidebar(pageId) {
-            const sidebarMap = {
-                'home': 'sidebar-home',
-                'process-o2c': 'sidebar-o2c',
-                'process-p2p': 'sidebar-p2p',
-                'process-cash': 'sidebar-cash',
-                'profile': 'sidebar-profile',
-                'comm': 'sidebar-comm',
-                'admin': 'nav-admin'
-            };
-            const sidebarId = sidebarMap[pageId] || 'sidebar-home';
-            const sidebarItem = document.getElementById(sidebarId);
-            updateSidebarActive(sidebarItem);
-
-            // Update page title in header
+        // Page title in the header (the sidebar's active item follows showPage in app-sidebar.js)
+        function updatePageTitle(pageId) {
             const pageTitles = {
                 'home': 'Dashboard',
                 'process-o2c': 'Order to Cash',
@@ -4241,30 +3536,6 @@
             const titleEl = document.getElementById('page-title-header');
             if (titleEl) {
                 titleEl.textContent = pageTitles[pageId] || 'Dashboard';
-            }
-        }
-
-        // Update sidebar user info
-        function updateSidebarUser() {
-            const loggedOut = document.getElementById('sidebar-logged-out');
-            const loggedIn = document.getElementById('sidebar-logged-in');
-
-            if (currentUser) {
-                if (loggedOut) loggedOut.style.display = 'none';
-                if (loggedIn) loggedIn.style.display = 'block';
-
-                const nameEl = document.getElementById('sidebar-user-name');
-                const roleEl = document.getElementById('sidebar-user-role');
-                const avatarEl = document.getElementById('sidebar-avatar');
-
-                if (nameEl) nameEl.textContent = currentUser.name || 'User';
-                if (roleEl) roleEl.textContent = currentUser.role || '';
-                if (avatarEl) {
-                    avatarEl.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name || 'U')}&background=007AFF&color=fff`;
-                }
-            } else {
-                if (loggedOut) loggedOut.style.display = 'block';
-                if (loggedIn) loggedIn.style.display = 'none';
             }
         }
 
@@ -5201,8 +4472,8 @@
             const loginBtnSection = document.getElementById('login-button-section');
             const userInfoSection = document.getElementById('user-info-section');
 
-            // Update iPad sidebar user section
-            updateSidebarUser();
+            // Shared sidebar: name, role, admin menu, badges
+            if (window.AppSidebar) AppSidebar.refresh();
 
             if(!currentUser) {
                 // Show login button, hide user info

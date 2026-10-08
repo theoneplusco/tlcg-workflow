@@ -1,0 +1,199 @@
+/* app-sidebar.css — the one sidebar of every page (app-sidebar.js). Icon rail (64px) + panel (276px).
+   Wide screens (≥1100px): rail + panel, the panel can be folded into the rail.
+   Tablets (768–1099px): rail only; the panel opens over the page.
+   Phones (<768px): hidden; any [data-asb-open] button opens the panel as a drawer.
+   Everything is scoped under #app-sidebar and reset with `all: unset`, so page styles never leak in. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+:root { --asb-w: 0px; }
+html.asb-on.asb-wide { --asb-w: 340px; }
+html.asb-on.asb-rail { --asb-w: 64px; }
+
+/* Make room for the sidebar; the pages' old sidebar offsets no longer apply */
+html.asb-on body { padding-left: var(--asb-w) !important; transition: padding-left .2s ease; }
+html.asb-on .ipad-main,
+html.asb-on .ipad-main.sidebar-collapsed { margin-left: 0 !important; }
+html.asb-on .ipad-sidebar { display: none !important; }
+
+/* Menu button the pages put in their phone header */
+.asb-burger {
+    display: none; align-items: center; justify-content: center; flex: none;
+    width: 44px; height: 44px; border-radius: 12px; border: 1px solid #E4E1DC; background: #FFFFFF;
+    color: #23211D; cursor: pointer; padding: 0; margin: 0;
+}
+.asb-burger:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; }
+html.asb-on.asb-phone .asb-burger { display: inline-flex; }
+
+#app-sidebar { display: none; }
+html.asb-on #app-sidebar { display: block; }
+
+#app-sidebar button, #app-sidebar a, #app-sidebar input { all: unset; box-sizing: border-box; }
+#app-sidebar *, #app-sidebar *::before, #app-sidebar *::after { box-sizing: border-box; }
+#app-sidebar svg { display: block; flex: none; }
+
+#app-sidebar .asb {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 45;
+    display: flex; height: 100vh; height: 100dvh;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #1E1E1E; -webkit-font-smoothing: antialiased; font-size: 15px; line-height: 1.35;
+    text-align: left; letter-spacing: normal;
+}
+
+/* ── Rail ─────────────────────────────────────────────── */
+#app-sidebar .asb-rail {
+    width: 64px; flex: none; background: #E9EDF6; border-right: 1px solid #D9E0EE;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0;
+    overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+}
+#app-sidebar .asb-rail-sep { width: 32px; height: 1px; background: #C9D3E8; margin: 6px 0; flex: none; }
+#app-sidebar .asb-rail-btn {
+    position: relative; width: 44px; height: 44px; border-radius: 12px; flex: none;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; color: #3A3F4E;
+    border: 2px solid transparent;
+}
+#app-sidebar .asb-rail-btn:hover { background: #DCE3F2; }
+#app-sidebar .asb-rail-btn.is-on { background: #FFFFFF; color: #1F4FB5; box-shadow: 0 1px 2px rgba(20,30,60,.14); }
+#app-sidebar .asb-dot {
+    position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%;
+    background: #2563EB; border: 2px solid #E9EDF6;
+}
+#app-sidebar .asb-avatar {
+    width: 40px; height: 40px; border-radius: 50%; background: #1F4FB5; color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; cursor: pointer; flex: none;
+}
+#app-sidebar .asb-avatar.is-admin { background: #B45309; }
+#app-sidebar .asb-grow { flex: 1; min-height: 8px; }
+
+/* Group tiles: one colour per workflow, the same in the rail and the panel */
+#app-sidebar .asb-tile { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex: none; }
+#app-sidebar .asb-tile-o2c  { background: #D5F0EC; color: #0F6E66; }
+#app-sidebar .asb-tile-p2p  { background: #DCE6FB; color: #1F4FB5; }
+#app-sidebar .asb-tile-cash { background: #FCE8CF; color: #9A4A07; }
+
+/* ── Panel ────────────────────────────────────────────── */
+#app-sidebar .asb-panel {
+    width: 276px; flex: none; background: #F5F4F1; border-right: 1px solid #E4E1DC;
+    display: none; flex-direction: column; gap: 16px; padding: 18px 14px 12px;
+    overflow-y: auto; overscroll-behavior: contain;
+}
+html.asb-wide #app-sidebar .asb-panel { display: flex; }
+/* .asb is a stacking context: lift all of it above the scrim while the panel is open over the page */
+html.asb-peek #app-sidebar .asb { z-index: 1001; }
+html.asb-peek #app-sidebar .asb-panel {
+    display: flex; position: fixed; top: 0; bottom: 0; left: 64px;
+    box-shadow: 8px 0 32px rgba(20,30,60,.22);
+}
+html.asb-phone #app-sidebar .asb-rail { display: none; }
+html.asb-phone.asb-peek #app-sidebar .asb-panel { left: 0; width: min(316px, calc(100vw - 48px)); }
+#app-sidebar .asb-scrim { display: none; }
+html.asb-peek #app-sidebar .asb-scrim { display: block; position: fixed; inset: 0; z-index: 1000; background: rgba(20,22,30,.42); }
+html.asb-phone:not(.asb-peek) #app-sidebar .asb { display: none; }
+
+#app-sidebar .asb-brand { display: flex; align-items: center; gap: 8px; padding: 0 0 0 6px; min-height: 44px; }
+#app-sidebar .asb-brand a { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
+#app-sidebar .asb-brand img { height: 40px; width: auto; }
+#app-sidebar .asb-brand span { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: #23211D; }
+
+#app-sidebar .asb-org { background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 14px; padding: 11px 14px; display: flex; flex-direction: column; gap: 2px; }
+#app-sidebar .asb-org b { font-size: 15px; font-weight: 800; color: #23211D; }
+#app-sidebar .asb-org span { font-size: 13px; font-weight: 500; color: #5E5A53; }
+
+/* Find */
+#app-sidebar .asb-find { position: relative; }
+#app-sidebar .asb-find > svg { position: absolute; left: 12px; top: 12px; color: #6B6862; pointer-events: none; }
+#app-sidebar .asb-find input {
+    display: block; width: 100%; min-height: 42px; border: 1px solid #E1DED8; border-radius: 12px; background: #FFFFFF;
+    padding: 0 52px 0 38px; font-family: inherit; font-size: 14px; color: #23211D; cursor: text;
+}
+#app-sidebar .asb-find input::placeholder { color: #7A766E; opacity: 1; }
+#app-sidebar .asb-find input:focus-visible { outline: 2px solid #2563EB; outline-offset: 1px; }
+#app-sidebar .asb-kbd {
+    position: absolute; right: 8px; top: 9px; font-size: 12px; font-weight: 700; color: #5E5A53;
+    background: #F1EFEB; border: 1px solid #E1DED8; border-radius: 6px; padding: 2px 6px; pointer-events: none;
+}
+#app-sidebar .asb-results {
+    margin-top: 6px; background: #FFFFFF; border: 1px solid #E3E1DC; border-radius: 12px; padding: 6px;
+    box-shadow: 0 8px 24px rgba(20,30,60,.10); display: flex; flex-direction: column; gap: 2px;
+}
+#app-sidebar .asb-results[hidden] { display: none; }
+#app-sidebar .asb-result { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: 9px; font-size: 14px; font-weight: 600; color: #2D2B27; cursor: pointer; }
+#app-sidebar .asb-result small { margin-left: auto; font-size: 12px; font-weight: 600; color: #6B6862; }
+#app-sidebar .asb-result:hover, #app-sidebar .asb-result.is-on { background: #E3E8F0; color: #1F4FB5; }
+#app-sidebar .asb-empty { padding: 10px; font-size: 13px; color: #6B6862; }
+
+/* Menu items */
+#app-sidebar .asb-list { display: flex; flex-direction: column; gap: 2px; }
+#app-sidebar .asb-item {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; color: #2D2B27; cursor: pointer;
+}
+#app-sidebar .asb-item:hover { background: #ECE9E4; }
+#app-sidebar .asb-item > .asb-label { flex: 1; min-width: 0; }
+#app-sidebar .is-current { background: #E3E8F0 !important; color: #1F4FB5 !important; font-weight: 700 !important; box-shadow: inset 3px 0 0 #2563EB; }
+
+#app-sidebar .asb-count {
+    min-width: 22px; height: 22px; border-radius: 11px; background: #2563EB; color: #FFFFFF;
+    font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; flex: none;
+}
+#app-sidebar .asb-count.is-soft { min-width: 20px; height: 20px; border-radius: 10px; background: #DCE6FB; color: #1F4FB5; }
+
+#app-sidebar .asb-tasks { margin: 2px 0 4px 25px; padding-left: 12px; border-left: 1px solid #DAD6CF; display: flex; flex-direction: column; gap: 2px; }
+#app-sidebar .asb-tasks p { margin: 0; padding: 8px 10px; font-size: 13px; color: #5E5A53; }
+
+#app-sidebar .asb-heading { font-size: 12px; font-weight: 800; color: #6B6862; letter-spacing: .08em; text-transform: uppercase; padding: 0 12px 4px; }
+
+/* Workflow groups */
+#app-sidebar .asb-group {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 4px 8px; border-radius: 12px;
+    font-size: 14.5px; font-weight: 700; color: #23211D; cursor: pointer; text-wrap: balance;
+}
+#app-sidebar .asb-group:hover { background: #ECE9E4; }
+#app-sidebar .asb-group > .asb-label { flex: 1; min-width: 0; }
+#app-sidebar .asb-chev { color: #8A867E; transition: transform .15s; }
+#app-sidebar .asb-group[aria-expanded="true"] .asb-chev { transform: rotate(90deg); }
+#app-sidebar .asb-children { margin: 0 0 4px 25px; padding-left: 12px; border-left: 1px solid #DAD6CF; display: flex; flex-direction: column; gap: 2px; }
+#app-sidebar .asb-children[hidden] { display: none; }
+#app-sidebar .asb-sub {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 40px;
+    padding: 0 10px 0 12px; border-radius: 9px; font-size: 14px; font-weight: 600; color: #3A3833; cursor: pointer;
+}
+#app-sidebar .asb-sub:hover { background: #ECE9E4; }
+
+/* Language + account */
+#app-sidebar .asb-lang { display: flex; gap: 4px; padding: 4px; background: #ECE9E4; border-radius: 10px; }
+#app-sidebar .asb-lang button {
+    flex: 1; min-height: 34px; border-radius: 8px; text-align: center; font-size: 13px; font-weight: 700; color: #5E5A53; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+#app-sidebar .asb-lang button.active { background: #FFFFFF; color: #1E1E1E; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+#app-sidebar .asb-me { display: flex; align-items: center; gap: 10px; padding: 10px 2px 2px 6px; border-top: 1px solid #E4E1DC; }
+#app-sidebar .asb-me-link { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 10px; cursor: pointer; border-radius: 10px; }
+#app-sidebar .asb-me-link .asb-avatar { width: 36px; height: 36px; font-size: 13px; }
+#app-sidebar .asb-me-text { display: flex; flex-direction: column; min-width: 0; }
+#app-sidebar .asb-me-text b { font-size: 14px; font-weight: 700; color: #23211D; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#app-sidebar .asb-me-text span { font-size: 12px; font-weight: 500; color: #5E5A53; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#app-sidebar .asb-icon-btn { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #5E5A53; flex: none; }
+#app-sidebar .asb-icon-btn:hover { background: #ECE9E4; }
+#app-sidebar .asb-signout:hover { color: #B42318; }
+/* × only when the panel is open over the page (after .asb-icon-btn, which sets display) */
+#app-sidebar .asb-icon-btn.asb-close { display: none; }
+html.asb-peek #app-sidebar .asb-icon-btn.asb-close { display: flex; }
+
+/* Rail pop-out (tablet rail and folded panel) */
+#app-sidebar .asb-fly {
+    position: fixed; left: 72px; z-index: 1002; width: 248px; background: #FFFFFF; border: 1px solid #E3E1DC;
+    border-radius: 14px; box-shadow: 0 12px 32px rgba(20,30,60,.16); padding: 8px; display: flex; flex-direction: column; gap: 2px;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+#app-sidebar .asb-fly[hidden] { display: none; }
+#app-sidebar .asb-fly .asb-heading { padding: 8px 12px 6px; }
+
+#app-sidebar a:focus-visible, #app-sidebar button:focus-visible { outline: 2px solid #2563EB; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+    html.asb-on body, #app-sidebar .asb-chev { transition: none !important; }
+}
+@media print {
+    #app-sidebar, .asb-burger { display: none !important; }
+    html.asb-on body { padding-left: 0 !important; }
+}

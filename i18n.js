@@ -178,6 +178,7 @@
       navPaymentRequest: 'Đề Nghị Thanh Toán',
       navVoucher: 'Phiếu Thu Chi',
       notifications: 'Thông báo',
+      openMenu: 'Mở menu',
       myTasks: 'Việc cần làm của tôi',
       myTaskFilterTitle: 'Chỉ hiện việc cần làm của tôi',
       refreshListTitle: 'Làm mới danh sách',
@@ -359,6 +360,7 @@
       // Keep Vietnamese — official workflow name (same as VI chrome)
       navVoucher: 'Phiếu Thu Chi',
       notifications: 'Notifications',
+      openMenu: 'Open menu',
       myTasks: 'My tasks',
       myTaskFilterTitle: 'Show only my tasks',
       refreshListTitle: 'Refresh list',

@@ -34,10 +34,15 @@
         #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:10px 18px; border-radius:20px; font-size:13px; display:none; z-index:99; }
         .amend-item { padding:10px 0; border-bottom:0.5px solid var(--border); font-size:13px; }
     </style>
+    <link rel="stylesheet" href="app-sidebar.css?v=20261009-1">
+    <script src="app-sidebar.js?v=20261009-1" data-active="p2p-contract" defer></script>
 </head>
 <body>
 <nav style="background:rgba(255,255,255,0.9);backdrop-filter:blur(12px);border-bottom:0.5px solid var(--border);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:10px;">
+    <button type="button" class="asb-burger" data-asb-open aria-label="Mở menu" data-i18n-aria="openMenu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <a href="index.html" style="text-decoration:none;color:var(--primary);font-weight:600;"><i class="fas fa-arrow-left"></i> <span data-i18n="navHome">Trang chủ</span></a>
+    </div>
     <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;" data-i18n="ctPageTitle">HỢP ĐỒNG MUA SẮM</span>
     <span data-tlc-lang-switcher style="display:inline-flex;justify-content:flex-end;min-width:80px;"></span>
 </nav>

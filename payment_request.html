@@ -45,70 +45,15 @@
             --error-color: #FF3B30;
             --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
             --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-            --sidebar-width: 280px;
             --ios-font: var(--font-body);
             --ios-radius-sm: 8px;
             --ios-radius-md: 12px;
             --ios-radius-lg: 14px;
         }
 
-        /* ── iPad Sidebar ─────────────────────────────────────────── */
-        .ipad-sidebar {
-            width: var(--sidebar-width);
-            background: rgba(249, 249, 249, 0.94);
-            backdrop-filter: saturate(180%) blur(20px);
-            -webkit-backdrop-filter: saturate(180%) blur(20px);
-            border-right: 0.5px solid rgba(60, 60, 67, 0.29);
-            position: fixed;
-            top: 0; left: 0;
-            height: 100vh;
-            overflow-y: auto;
-            z-index: 50;
-            display: none;
-            flex-direction: column;
-            transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .ipad-main { transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
-        @media (min-width: 768px) {
-            .ipad-sidebar { display: flex; }
-            .ipad-main { margin-left: var(--sidebar-width); }
-            .mobile-nav { display: none !important; }
-        }
-        @media (max-width: 767px) {
-            .ipad-sidebar { display: none !important; }
-            .mobile-nav { display: flex; }
-        }
-        .ipad-sidebar.collapsed { width: 72px; }
-        .ipad-sidebar.collapsed .sidebar-header > div > span,
-        .ipad-sidebar.collapsed .sidebar-section-title,
-        .ipad-sidebar.collapsed .sidebar-item > span,
-        .ipad-sidebar.collapsed .sidebar-signout-text,
-        .ipad-sidebar.collapsed .sidebar-user-info { display: none; }
-        .ipad-sidebar.collapsed .sidebar-item { justify-content: center; padding: 12px; margin: 2px 6px; width: calc(100% - 12px); }
-        .ipad-sidebar.collapsed .sidebar-header > div:first-child { justify-content: center; }
-        .ipad-sidebar.collapsed .sidebar-header img { height: 60px !important; width: auto !important; max-width: 60px; }
-        .ipad-sidebar.collapsed #sidebar-toggle { position: static; transform: none; margin-left: auto; }
-        .ipad-sidebar.collapsed .sidebar-signout-btn { display: none; }
-        .ipad-main.sidebar-collapsed { margin-left: 72px; }
-        .ipad-sidebar.collapsed:hover { width: 280px; }
-        .ipad-sidebar.collapsed:hover .sidebar-header > div > span,
-        .ipad-sidebar.collapsed:hover .sidebar-section-title,
-        .ipad-sidebar.collapsed:hover .sidebar-item > span,
-        .ipad-sidebar.collapsed:hover .sidebar-signout-btn,
-        .ipad-sidebar.collapsed:hover .sidebar-user-info { display: block; }
-        .ipad-sidebar.collapsed:hover .sidebar-item { justify-content: flex-start; padding: 10px 12px; margin: 2px 8px; width: calc(100% - 16px); }
-        .ipad-sidebar.collapsed:hover .sidebar-header > div:first-child { justify-content: flex-start; }
-        .ipad-sidebar.collapsed:hover .sidebar-header img { height: 60px !important; width: auto !important; max-width: none; }
-        .ipad-sidebar.collapsed:hover #sidebar-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin-left: 0; }
-        .sidebar-header { padding: 18px 16px; border-bottom: 0.5px solid rgba(60, 60, 67, 0.29); }
-        .sidebar-section { padding: 8px 0; position: relative; }
-        .sidebar-section:not(:first-of-type)::before { content: ''; position: absolute; top: 0; left: 16px; right: 16px; height: 0.5px; background: rgba(60, 60, 67, 0.18); }
-        .sidebar-section-title { font-size: 12px; font-weight: 600; color: #6e6e73; text-transform: uppercase; padding: 12px 16px 6px; letter-spacing: 0.5px; }
-        .sidebar-item { display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 10px 16px; margin: 2px 8px; border-radius: 10px; cursor: pointer; transition: all 0.25s cubic-bezier(0.4, 0.0, 0.2, 1); color: #000000; font-size: 15px; font-weight: 400; border: none; background: transparent; width: calc(100% - 16px); text-align: left; }
-        .sidebar-item:hover { background: rgba(0, 0, 0, 0.04); transform: translateX(2px); }
-        .sidebar-item.active { background: #007AFF; color: white; }
-        .sidebar-icon-box { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
-        .sidebar-item.active .sidebar-icon-box { background: rgba(255,255,255,0.2) !important; }
+        /* Phone header below 768px; the sidebar itself is app-sidebar.css */
+        @media (min-width: 768px) { .mobile-nav { display: none !important; } }
+        @media (max-width: 767px) { .mobile-nav { display: flex; } }
 
         /* ── Global reset ──────────────────────────────────────────── */
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -451,76 +396,10 @@
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
     </style>
 <link rel="stylesheet" href="flow-chrome.css">
+    <link rel="stylesheet" href="app-sidebar.css?v=20261009-1">
+    <script src="app-sidebar.js?v=20261009-1" data-active="p2p-payment" defer></script>
 </head>
 <body class="min-h-screen" style="background: #F2F2F7;">
-
-    <!-- ── Sidebar ──────────────────────────────────────────────────── -->
-    <aside class="ipad-sidebar" id="ipad-sidebar">
-        <div class="sidebar-header" style="position: relative; display: flex; align-items: center; justify-content: space-between;">
-            <div style="display: flex; align-items: center; gap: 10px; cursor: pointer;" onclick="window.location.href='index.html'">
-                <img src="brand_assets/tlc logo transparancy.png" alt="TLC Logo" style="height: 60px; width: auto; object-fit: contain;">
-                <span style="font-weight: 600; font-size: 17px; color: #000000;">TLCGroup</span>
-            </div>
-            <button id="sidebar-toggle" onclick="event.stopPropagation(); toggleSidebar();"
-                    style="width: 28px; height: 28px; border-radius: 6px; background: rgba(0,0,0,0.05); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;"
-                    onmouseover="this.style.background='rgba(0,0,0,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.05)'">
-                <i id="sidebar-toggle-icon" class="fas fa-chevron-left" style="font-size: 11px; color: #8e8e93;"></i>
-            </button>
-        </div>
-        <div class="sidebar-section">
-            <div class="sidebar-section-title">Menu</div>
-            <button onclick="window.location.href='index.html'" class="sidebar-item">
-                <div class="sidebar-icon-box" style="background: #007AFF;"><i class="fas fa-house"></i></div>
-                <span>Dashboard</span>
-            </button>
-            <button onclick="window.location.href='index.html#comm'" class="sidebar-item">
-                <div class="sidebar-icon-box" style="background: #5856D6;"><i class="fas fa-comments"></i></div>
-                <span>Communications</span>
-            </button>
-            <button onclick="window.location.href='index.html#profile'" class="sidebar-item">
-                <div class="sidebar-icon-box" style="background: #FF9500;"><i class="fas fa-user"></i></div>
-                <span>My Profile</span>
-            </button>
-        </div>
-        <div class="sidebar-section">
-            <div class="sidebar-section-title">Workflows</div>
-            <button onclick="window.location.href='purchase_request.html'" class="sidebar-item" data-tooltip="Đề Nghị Mua Hàng" data-i18n-title="navPurchaseRequest" data-page="purchase-request">
-                <div class="sidebar-icon-box" style="background:#007AFF;"><i class="fas fa-file-pen"></i></div>
-                <span data-i18n="navPurchaseRequest">Đề Nghị Mua Hàng</span>
-            </button>
-            <button onclick="window.location.href='contract.html'" class="sidebar-item" data-tooltip="Hợp Đồng" data-i18n-title="contract" data-page="contract">
-                <div class="sidebar-icon-box" style="background:#5856D6;"><i class="fas fa-file-contract"></i></div>
-                <span data-i18n="contract">Hợp Đồng</span>
-            </button>
-            <button onclick="window.location.href='acceptance_minutes.html'" class="sidebar-item" data-tooltip="Biên Bản Nghiệm Thu" data-i18n-title="navAcceptance" data-page="acceptance-minutes">
-                <div class="sidebar-icon-box" style="background:#34C759;"><i class="fas fa-clipboard-check"></i></div>
-                <span data-i18n="navAcceptance">Biên Bản Nghiệm Thu</span>
-            </button>
-            <button class="sidebar-item active">
-                <div class="sidebar-icon-box" style="background: #5856D6;"><i class="fas fa-file-invoice-dollar"></i></div>
-                <span data-i18n="navPaymentRequest">Đề Nghị Thanh Toán</span>
-            </button>
-            <button onclick="window.open('voucher.html', '_blank')" class="sidebar-item">
-                <div class="sidebar-icon-box" style="background: #FF9500;"><i class="fas fa-file-invoice"></i></div>
-                <span data-i18n="navVoucher">Phiếu Thu Chi</span>
-            </button>
-        </div>
-        <div class="sidebar-user" style="margin-top: auto; padding: 16px;">
-            <div id="sidebar-logged-in" style="display: none;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <img id="sidebar-avatar" src="" style="width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;" alt="User">
-                    <div class="sidebar-user-info" style="flex: 1; min-width: 0;">
-                        <p id="sidebar-user-name" style="font-size: 15px; font-weight: 600; color: #000; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></p>
-                        <p id="sidebar-user-role" style="font-size: 13px; color: #6e6e73; margin: 0;"></p>
-                    </div>
-                </div>
-                <button onclick="handleLogout()" class="sidebar-signout-btn" style="width: 100%; margin-top: 12px; padding: 8px; background: rgba(255,59,48,0.1); color: #FF3B30; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span class="sidebar-signout-text">Sign Out</span>
-                </button>
-            </div>
-        </div>
-    </aside>
 
     <!-- ── Main content ──────────────────────────────────────────────── -->
     <div class="ipad-main">
@@ -528,9 +407,12 @@
         <!-- Mobile nav -->
         <nav class="mobile-nav sticky top-0 z-50 bg-white border-b border-gray-200 px-6 py-4 shadow-sm" style="display: flex;">
             <div class="max-w-7xl mx-auto flex items-center justify-between w-full">
+                <div class="flex items-center gap-3">
+                <button type="button" class="asb-burger" data-asb-open aria-label="Mở menu" data-i18n-aria="openMenu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
                 <div class="flex items-center space-x-3 cursor-pointer" onclick="window.location.href='index.html'">
                     <img src="brand_assets/tlc logo transparancy.png" alt="TLC Logo" style="height: 40px; width: auto;">
                     <span class="font-semibold text-lg text-gray-900">TLCGroup</span>
+                </div>
                 </div>
                 <button onclick="window.location.href='index.html'" class="text-gray-600 font-medium flex items-center gap-2 px-3 py-2" style="background: transparent; border-radius: 8px; border: none;">
                     <i class="fas fa-arrow-left text-sm"></i>
@@ -1956,42 +1838,12 @@
         setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 350); }, duration);
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  SIDEBAR
-    // ═══════════════════════════════════════════════════════════════════
-    function toggleSidebar() {
-        const sidebar = document.getElementById('ipad-sidebar');
-        const main    = document.querySelector('.ipad-main');
-        const icon    = document.getElementById('sidebar-toggle-icon');
-        sidebar.classList.toggle('collapsed');
-        main.classList.toggle('sidebar-collapsed');
-        const collapsed = sidebar.classList.contains('collapsed');
-        icon.classList.toggle('fa-chevron-left', !collapsed);
-        icon.classList.toggle('fa-chevron-right', collapsed);
-        localStorage.setItem('tlc_sidebar_collapsed', collapsed);
-    }
-
-    function initSidebar() {
-        const sidebar = document.getElementById('ipad-sidebar');
-        const main    = document.querySelector('.ipad-main');
-        const icon    = document.getElementById('sidebar-toggle-icon');
-        if (localStorage.getItem('tlc_sidebar_collapsed') === 'true') {
-            sidebar.classList.add('collapsed');
-            main.classList.add('sidebar-collapsed');
-            if (icon) { icon.classList.remove('fa-chevron-left'); icon.classList.add('fa-chevron-right'); }
-        }
-    }
-
     function initUserState() {
         try {
             const u = JSON.parse(localStorage.getItem('tlc_current_user') || 'null');
             if (!u) { document.getElementById('nav-login-btn')?.classList.remove('hidden'); return; }
             const avatarUrl = u.profilePhoto ||
                 `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name||'U')}&background=007AFF&color=fff`;
-            document.getElementById('sidebar-logged-in').style.display  = 'block';
-            document.getElementById('sidebar-avatar').src               = avatarUrl;
-            document.getElementById('sidebar-user-name').textContent    = u.name  || '';
-            document.getElementById('sidebar-user-role').textContent    = u.role || u.department || '';
             document.getElementById('nav-login-btn')?.classList.add('hidden');
             document.getElementById('nav-user-avatar')?.classList.remove('hidden');
             const navAvatar = document.getElementById('nav-avatar');
@@ -2196,7 +2048,6 @@
     //  INIT
     // ═══════════════════════════════════════════════════════════════════
     document.addEventListener('DOMContentLoaded', async () => {
-        initSidebar();
         initUserState();
         bootstrapConfig();
         addInvoiceRow();

@@ -34,6 +34,43 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
 ---
 
+### 2026-10-09: cloud session — one shared sidebar on every page
+- **Why:** each page had its own sidebar. voucher.html listed the documents, cash_book.html listed the three workflows, and contract, admin and approval flows had none. The user approved a design ("TLCG sidebar redesign" canvas): an icon rail plus a panel, workflow groups that open, EN/VI following the switch, applied to every page.
+- **Did:**
+  - New `app-sidebar.js` + `app-sidebar.css` (plain script, no dependencies). Each page includes them with its place: `data-active="cash-voucher"`; index.html adds `data-spa="index"`.
+  - Pages using it: index, voucher, purchase_request, payment_request, acceptance_minutes, cash_book, contract, admin, approval_flows. The old sidebars, their CSS and JS were removed, along with index's dead phone drawer (nothing opened it).
+  - Layout by width:
+    - Wide (≥1100px): rail + panel (340px). The toggle or Cmd/Ctrl+B folds the panel into the rail (64px); this is remembered (`tlc_sidebar_collapsed`).
+    - Tablet (768–1099px): rail only; the toggle opens the panel over the page.
+    - Phone: a menu button in each page header (`.asb-burger[data-asb-open]`) opens it as a drawer.
+  - Panel contents, top to bottom:
+    - Brand and org card.
+    - Find box (Cmd/Ctrl+K): finds pages in EN or VI (accents optional) and opens a PR number (`?prNo=`) or a voucher number (`?viewStatus=`).
+    - Trang chủ; Việc của tôi (the documents waiting for you); Trao đổi; Quản trị (admins only).
+    - Workflow groups:
+      - Order to Cash: one link.
+      - Purchase to Pay: Tổng quan / Đề Nghị Mua Hàng / Hợp Đồng / Biên Bản Nghiệm Thu / Đề Nghị Thanh Toán.
+      - Cash & Vouchers: Tổng quan / Phiếu Thu Chi / Sổ Quỹ.
+    - EN/VI switch, then your name, role and sign out.
+  - Groups: the current page's group opens; others remember whether they are open (`tlc_sidebar_groups`). In the rail, a group tile shows a pop-out list of its documents.
+  - Badges: new always-on action `getMyTaskCounts` (`api/handlers/my-tasks.js`) counts documents whose `pending_emails` include you. It counts only workflows on Postgres (vouchers → Phiếu Thu Chi, p2p → Đề Nghị Mua Hàng); a workflow still on GAS gets no badge rather than a wrong one. The browser caches the counts for 60 s (sessionStorage).
+  - index.html: sidebar links open its pages with `showPage` (the URL becomes `?page=…`), and the current item follows `showPage`. After login or logout, `updateUI` calls `AppSidebar.refresh()`.
+  - Tests:
+    - `tests/server/my-tasks.test.js` (2); full suite 396/396.
+    - Browser check 90/90: every page at wide/tablet/phone sizes, current item, badges, groups, EN/VI, find, fold, pop-out, drawer, index navigation, admin item, sign out.
+    - Earlier voucher/cash checks still pass.
+- **Found:**
+  - index.html has no Communications page: `showPage('comm')` shows the home page (it did before too). The "Trao đổi" item is kept as before; it needs a page.
+  - The voucher-number collision (fresh browser counter) showed up again in the scratch DB; not related.
+  - payment_request.html has one stray `</div>` (before this change too).
+- **Deploy on the Mini:** `git pull` then `pm2 reload tlcg-workflow` (no migration). Script tags carry `?v=20261009-1`; bump it when `app-sidebar.*` changes.
+- **Left / next:**
+  - A Communications page, or drop the item.
+  - Badges for payment requests, acceptance minutes and cash book come with their move to Postgres (Plans 6–8).
+  - The email approve/reject pages (`approve_*.html`, `reject_*.html`) stay without a sidebar on purpose; they are one-action pages opened from emails.
+
+---
+
 ### 2026-10-08 (night): cloud session — profile signature used in every workflow
 - **Checked:** vouchers and purchase requests on Postgres already stamp the profile signature (shared `sampleSignatureFor`). Pages that still take a signature *image* did not: voucher (requester signature, receipt confirmation, GAS-path approval), purchase request (requester, GAS-path approval), acceptance minutes (receiver, department head), `approve_voucher.html`, `approve_payment_request.html`, cash book (signer). `payment_request.html` and `contract.html` take no signature.
 - **Did:** new `my-signature.js` (`MySignature.get / fillInput / watch`), included on those 6 pages.
