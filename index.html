@@ -20,7 +20,7 @@
     <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
     <script src="i18n.js"></script>
     <script src="approval-password.js"></script>
-    <script src="signature-image.js"></script>
+    <script src="signature-image.js?v=20261008-2"></script>
     <style>
         /* ============================================
            iOS Design System - Apple Human Interface
@@ -3587,9 +3587,9 @@
                         <i class="fas fa-signature"></i>
                         <span>Chữ ký mẫu</span>
                     </h3>
-                    <p class="text-sm text-slate-500 mb-4">Chữ ký này được đóng lên phiếu mỗi khi bạn phê duyệt. Tải ảnh chữ ký (PNG hoặc JPG, nền trắng). Bạn sẽ được hỏi mật khẩu đăng nhập để lưu.</p>
+                    <p class="text-sm text-slate-500 mb-4">Chữ ký này được đóng lên phiếu mỗi khi bạn phê duyệt. Chụp hoặc quét chữ ký trên giấy trắng rồi tải lên (PNG hoặc JPG). Hệ thống tự xóa nền giấy, chỉ giữ nét mực (ô caro trong khung là phần trong suốt), để chữ ký in lên phiếu gọn gàng. Bạn sẽ được hỏi mật khẩu đăng nhập để lưu.</p>
                     <div class="flex flex-col md:flex-row md:items-center gap-4">
-                        <div id="my-sig-preview" class="flex items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50" style="width:320px;max-width:100%;height:140px;">
+                        <div id="my-sig-preview" class="flex items-center justify-center rounded-xl border border-dashed border-slate-300" style="width:320px;max-width:100%;height:140px;background-color:#fff;background-image:linear-gradient(45deg,#e5e7eb 25%,transparent 25%),linear-gradient(-45deg,#e5e7eb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e5e7eb 75%),linear-gradient(-45deg,transparent 75%,#e5e7eb 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;" title="Ô caro = phần trong suốt">
                             <span class="text-sm text-slate-400">Đang tải…</span>
                         </div>
                         <div class="flex flex-col gap-2">

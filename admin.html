@@ -203,7 +203,7 @@
   }
 </style>
 <script src="i18n.js"></script>
-<script src="signature-image.js"></script>
+<script src="signature-image.js?v=20261008-2"></script>
 </head>
 <body>
 <div class="page">
@@ -273,7 +273,7 @@
     <div style="margin-top:14px;border-top:1px solid var(--line, #e2e8f0);padding-top:12px;">
       <b>Chữ ký mẫu</b> <span style="color:var(--muted);font-size:13px;">(đóng lên phiếu khi người này phê duyệt)</span>
       <div style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap;">
-        <div id="acct-sig-preview" style="width:220px;height:90px;border:1px dashed #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:var(--muted);font-size:13px;">Đang tải…</div>
+        <div id="acct-sig-preview" style="width:220px;height:90px;border:1px dashed #cbd5e1;border-radius:8px;display:flex;align-items:center;justify-content:center;background-color:#fff;background-image:linear-gradient(45deg,#e5e7eb 25%,transparent 25%),linear-gradient(-45deg,#e5e7eb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e5e7eb 75%),linear-gradient(-45deg,transparent 75%,#e5e7eb 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;color:var(--muted);font-size:13px;" title="Ô caro = phần trong suốt">Đang tải…</div>
         <input type="file" id="acct-sig-file" accept="image/png,image/jpeg" hidden>
         <button class="btn btn-ghost btn-sm" type="button" id="acct-sig-btn">Tải chữ ký mới</button>
       </div>
