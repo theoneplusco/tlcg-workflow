@@ -92,3 +92,7 @@ GAS also uses these Google services:
 3. Run the sample-size check (Plan 5b Task 7 step 3) against production data and fix every sample that fails or is over 750 KB. Known now: one Drive sample returns 404 (`1_7jJRd7…`, linh.le's sample as INS legal rep and RIOT chief accountant).
 4. Tell approvers that on the new system they approve with their login password and no longer upload a signature.
 5. The approval password check always requires a signed-in user, and its lockout counter belongs to that user, so nobody can lock out a colleague's approvals. Login and change-password are throttled per device+account (10 per 15 minutes) and per account (50 per hour), with no hard per-account lock. Ship index.html together with the server, because change-password now requires the login token.
+6. Host checks on the Mini (and any production host):
+   - `redis-cli INFO server | grep redis_version` must be 7.0 or newer. Login throttling uses `EXPIRE … NX` and switches itself off on older Redis.
+   - `lsof -nP -iTCP:3001 -sTCP:LISTEN` must show 127.0.0.1 only, and `tailscale serve status` must show nothing on 3001. The login throttle trusts CF-Connecting-IP, which is safe only behind the tunnel. Optionally set Express `trust proxy` to `'loopback'`.
+7. Known trade-off: a stranger making 50 wrong guesses in an hour can block one person's login for up to an hour. That follows from the "no hard per-account lock" decision.
