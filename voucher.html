@@ -14,6 +14,7 @@
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <script src="i18n.js"></script>
     <script src="voucher-steps.js"></script>
+    <script src="approval-password.js"></script>
     <style>
         :root {
             /* iOS System Colors */
@@ -6130,6 +6131,7 @@
                 showToast('Không xác định được người dùng hiện tại. Vui lòng đăng nhập lại.', 'error');
                 return;
             }
+            if (window.__vouchersOnPostgres) return bulkApproveWithPassword(voucherNumbers, user);
 
             // 1. Require signature
             if (!approverSignatureData) {
@@ -6266,6 +6268,67 @@
                 showToast('Lỗi kết nối khi duyệt: ' + err.message, 'error');
             } finally {
                 if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Xác nhận Duyệt'; }
+            }
+        }
+
+        /** Postgres: one password for the selected vouchers, one request; the server stamps each approval. */
+        async function bulkApproveWithPassword(voucherNumbers, user) {
+            const password = await ApprovalPassword.ask({ count: voucherNumbers.length });
+            if (password === null) return;
+            const confirmBtn = document.getElementById('bulk-modal-confirm-btn');
+            if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Đang duyệt...'; }
+            try {
+                const result = await pgApi('bulkApprove', { voucherNumbers: voucherNumbers, approverEmail: user.email,
+                    approverName: user.name || user.email, approverPassword: password });
+                if (!result.success) { showToast(result.message || 'Lỗi duyệt hàng loạt', 'error'); return; }
+                const failed = (result.data && result.data.failed) || [];
+                showToast(result.message, 'success');
+                if (failed.length) {
+                    const MAX_SHOWN = 5;
+                    const detail = failed.slice(0, MAX_SHOWN).map(f => `${f.voucherNumber}: ${f.error}`).join('<br>') +
+                        (failed.length > MAX_SHOWN ? `<br>...và ${failed.length - MAX_SHOWN} phiếu khác` : '');
+                    showToast(detail, 'warning', `${failed.length} phiếu chưa duyệt được`);
+                }
+                clearBulkSelection();
+                document.getElementById('bulk-approve-modal-overlay').classList.remove('show');
+                loadRecentVouchers(true);
+            } catch (err) {
+                showToast('Lỗi kết nối khi duyệt: ' + err.message, 'error');
+            } finally {
+                if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Xác nhận Duyệt'; }
+            }
+        }
+
+        /** Postgres: approve the open voucher with the login password; the server stamps the registered sample. */
+        async function approveFromModalWithPassword() {
+            const no = currentModalVoucher.voucherNumber;
+            const password = await ApprovalPassword.ask({});
+            if (password === null) return;
+            const modalLoading = document.getElementById('modal-loading');
+            const modalContent = document.getElementById('modal-content');
+            const modalFooter = document.getElementById('modal-footer');
+            modalLoading.classList.add('show');
+            modalContent.style.opacity = '0.5';
+            modalFooter.querySelectorAll('button').forEach(btn => btn.disabled = true);
+            try {
+                const result = await pgApi('approveVoucher', { voucher: { voucherNumber: no, approverEmail: getCurrentUserEmail() || '',
+                    approverName: getCurrentUserName() || '', approverPassword: password } });
+                modalLoading.classList.remove('show');
+                modalContent.style.opacity = '1';
+                if (result.success) {
+                    showToast(result.message || 'Đã phê duyệt phiếu thành công!', 'success');
+                    voucherHistoryCache.delete(no);
+                    closeVoucherModal();
+                    loadRecentVouchers(true);
+                } else {
+                    showToast(result.message || 'Lỗi phê duyệt', 'error');
+                    modalFooter.querySelectorAll('button').forEach(btn => btn.disabled = false);
+                }
+            } catch (error) {
+                modalLoading.classList.remove('show');
+                modalContent.style.opacity = '1';
+                modalFooter.querySelectorAll('button').forEach(btn => btn.disabled = false);
+                showToast('Lỗi khi phê duyệt: ' + error.message, 'error');
             }
         }
 
@@ -6652,7 +6715,7 @@
             // Approver signature section (only for actionable states AND only for approvers, not requesters)
             let approverSignatureSection = '';
             const vStateForSig = normalizeVoucherState(voucher);
-            if ((vStateForSig.bucket === 'pending' || vStateForSig.bucket === 'in-progress') && (!isRequester || isAlsoCurrentApprover)) {
+            if ((vStateForSig.bucket === 'pending' || vStateForSig.bucket === 'in-progress') && (!isRequester || isAlsoCurrentApprover) && !(window.__vouchersOnPostgres || VoucherSteps.onPostgres(voucher))) {
                 approverSignatureSection = `
                     <div class="approver-signature-section">
                         <h4 data-i18n="approverSignature">✍️ Chữ ký người phê duyệt</h4>
@@ -6955,6 +7018,13 @@
             document.getElementById('bulk-modal-count').textContent = checked.length;
             refreshBulkSignaturePreview();
             const overlay = document.getElementById('bulk-approve-modal-overlay');
+            // Postgres: the password is asked on confirm; no signature upload
+            const pgBulk = !!window.__vouchersOnPostgres;
+            const sigSection = document.getElementById('bulk-signature-section');
+            sigSection.style.display = pgBulk ? 'none' : '';
+            if (sigSection.previousElementSibling) sigSection.previousElementSibling.textContent = pgBulk
+                ? 'Bạn sẽ nhập mật khẩu đăng nhập một lần để xác nhận. Hệ thống đóng chữ ký mẫu đã đăng ký của bạn lên các phiếu.'
+                : 'Vui lòng tải lên chữ ký của bạn để xác nhận phê duyệt tất cả các phiếu đã chọn.';
             overlay.classList.add('show');
         }
 
@@ -7059,6 +7129,7 @@
         // Approve voucher from modal
         async function approveFromModal() {
             if (!currentModalVoucher) return;
+            if (window.__vouchersOnPostgres || VoucherSteps.onPostgres(currentModalVoucher)) return approveFromModalWithPassword();
             
             if (!approverSignatureData) {
                 showToast('Vui lòng tải lên chữ ký trước khi phê duyệt', 'error');

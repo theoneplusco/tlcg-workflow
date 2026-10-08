@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đề Nghị Mua Hàng - TLCGroup</title>
     <script src="i18n.js"></script>
+    <script src="approval-password.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -4957,8 +4958,9 @@
                 ? `<img src="${_prApproverSigData}" style="max-height:48px;max-width:160px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px;background:white;">`
                 : `<span style="font-size:11px;color:#94a3b8;">Chưa có chữ ký — bắt buộc trước khi duyệt</span>`;
 
+            const pwMode = !!(_prDetail && _prDetail.prNo === pr.prNo && _prDetail.approvalAuth === 'password');
             actionsHtml += `
-            <div style="width:100%;border:1px dashed #cbd5e1;border-radius:8px;padding:8px 10px;background:#f8fafc;margin-bottom:4px;">
+            ${pwMode ? '' : `<div style="width:100%;border:1px dashed #cbd5e1;border-radius:8px;padding:8px 10px;background:#f8fafc;margin-bottom:4px;">
                 <div style="font-size:11px;font-weight:600;color:#475569;margin-bottom:6px;">✍️ Chữ ký người phê duyệt</div>
                 <div id="pr-approver-sig-preview" style="min-height:48px;display:flex;align-items:center;margin-bottom:6px;">${sigPreview}</div>
                 <label class="pr-action-btn pr-btn-secondary" style="cursor:pointer;font-size:12px;padding:6px 12px;">
@@ -4967,7 +4969,7 @@
                     <input type="file" accept="image/png,image/jpeg,image/jpg" style="display:none;"
                            onchange="handlePRApproverSigUpload(event)">
                 </label>
-            </div>
+            </div>`}
             <button class="pr-action-btn pr-btn-approve" onclick="approvePR('${safePrNo}', '${approveRole}', '${String(pr.submittedAt || '').replace(/'/g, '')}')">
                 <i class="fas fa-check" aria-hidden="true"></i> Duyệt
             </button>
@@ -4992,6 +4994,8 @@
         try { currentUser = JSON.parse(localStorage.getItem('tlc_current_user') || '{}'); } catch(e) {}
         const myEmail = (currentUser.email || '').toLowerCase().trim();
         if (!myEmail) { showToast('Vui lòng đăng nhập trước.', 'error'); return; }
+        // Postgres: the login password confirms the approval and the server stamps the registered sample
+        if (_prDetail && _prDetail.prNo === prNo && _prDetail.approvalAuth === 'password') return approvePRWithPassword(prNo, role);
 
         // Require signature upload before proceeding
         if (!_prApproverSigData) {
@@ -5069,6 +5073,25 @@
                 showToast('✅ Đã duyệt thành công!', 'success');
                 const metaKey = role + 'Status';
                 _patchLocalPR(prNo, result.data?.status, { [metaKey]: 'Approved' });
+                _redrawOpenPR(prNo);
+            } else {
+                showToast(result.message || 'Lỗi khi duyệt.', 'error');
+            }
+        } catch (err) {
+            showToast('Lỗi kết nối: ' + err.message, 'error');
+        }
+    }
+
+    async function approvePRWithPassword(prNo, role) {
+        const password = await ApprovalPassword.ask({});
+        if (password === null) return;
+        try {
+            const params = new URLSearchParams({ action: 'approvePurchaseRequest', prNo, approverRole: role, note: '', approverPassword: password });
+            const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() });
+            const result = JSON.parse(await res.text());
+            if (result.success) {
+                showToast('✅ Đã duyệt thành công!', 'success');
+                _patchLocalPR(prNo, result.data?.status, { [role + 'Status']: 'Approved' });
                 _redrawOpenPR(prNo);
             } else {
                 showToast(result.message || 'Lỗi khi duyệt.', 'error');

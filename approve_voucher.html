@@ -6,6 +6,7 @@
     <title>Phê duyệt Phiếu</title>
     <script src="i18n.js"></script>
     <script src="voucher-steps.js"></script>
+    <script src="approval-password.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -616,6 +617,10 @@
                 return false;
             }
             pgContext = json.data;
+            if (pgContext.approvalAuth === 'password') {
+                // Postgres: no upload or comparison; the password confirms it is me and the server stamps my registered sample
+                document.getElementById('signature-section').style.display = 'none';
+            }
             approverEmail = pgContext.me.email;
             const steps = document.getElementById('flow-steps');
             steps.innerHTML = VoucherSteps.stepsHtml(pgContext.approvalPlan);
@@ -701,8 +706,37 @@
             input.value = '';
         }
 
+        /** Postgres: the login password confirms the approval; the server stamps the registered sample. */
+        async function approveVoucherWithPassword() {
+            const password = await ApprovalPassword.ask({});
+            if (password === null) return;
+            document.getElementById('loading').classList.add('show');
+            document.querySelector('.button-group').style.display = 'none';
+            document.getElementById('approve-btn').disabled = true;
+            let result;
+            try {
+                const formData = new FormData();
+                formData.append('data', JSON.stringify({ action: 'approveVoucher',
+                    voucher: { voucherNumber: voucherNumber, approverEmail: approverEmail, approverPassword: password } }));
+                const response = await fetch(GOOGLE_APPS_SCRIPT_WEB_APP_URL, { method: 'POST', body: formData });
+                result = await response.json();
+            } catch (e) {
+                result = { success: false, message: 'Lỗi kết nối: ' + e.message };
+            }
+            document.getElementById('loading').classList.remove('show');
+            if (result && result.success) {
+                showMessage(result.message || 'Đã phê duyệt thành công.', 'success');
+                setTimeout(() => { window.close(); }, 3000);
+                return;
+            }
+            showMessage('Lỗi: ' + ((result && result.message) || 'Có lỗi xảy ra khi phê duyệt'), 'error');
+            document.querySelector('.button-group').style.display = 'flex';
+            document.getElementById('approve-btn').disabled = false;
+        }
+
         // Approve voucher
         async function approveVoucher() {
+            if (pgContext && pgContext.approvalAuth === 'password') return approveVoucherWithPassword();
             // Validate requestor email
             if (!requestorEmail || requestorEmail.trim() === '') {
                 showMessage('Lỗi: Không tìm thấy email người đề nghị. Vui lòng kiểm tra lại link phê duyệt.', 'error');
