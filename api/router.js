@@ -8,7 +8,8 @@ import { handlePRSubmit, handlePRResubmit } from './handlers/pr/submit.js';
 import { handlePRApprove, handlePRReject, handlePRSendBack } from './handlers/pr/decide.js';
 import { handlePRHistory, handlePRDetail, handlePRSearch, handleP2PHistory, handleGoodsCatalog, handlePurchaseOrderTypes, handleAddSupplier, handleValidatePRForDirectPayment } from './handlers/pr/reads.js';
 import { handleAdminApprovalFlowGet, handleAdminApprovalFlowSave, handleAdminApprovalFlowPreview } from './handlers/admin-approval.js';
-import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn } from './handlers/admin-master.js';
+import { handleAdminMasterTables, handleAdminMasterGet, handleAdminMasterUpdateCell, handleAdminMasterAddColumn, handleAdminMasterDeleteColumn, handleAdminMasterRenameColumn,
+  handleAdminMasterAudit, handleAdminExchangeRateAdd, handleAdminExchangeRateDelete } from './handlers/admin-master.js';
 import { handleAdminListEmployees, handleAdminCreateEmployee, handleAdminUpdateEmployee, handleAdminEmployeeOptions } from './handlers/admin-employees.js';
 import { handleGetCashBook, handleSaveCashCount, handleSignCashCount } from './handlers/cash-book.js';
 import { handleCreateVoucherUploadSession, handleFinalizeVoucherUpload, handleFetchSignatureImage } from './handlers/files.js';
@@ -78,6 +79,9 @@ const NEW_HANDLERS = {
   adminMasterAddColumn:        handleAdminMasterAddColumn,
   adminMasterDeleteColumn:     handleAdminMasterDeleteColumn,
   adminMasterRenameColumn:     handleAdminMasterRenameColumn,
+  adminMasterAudit:            handleAdminMasterAudit,
+  adminExchangeRateAdd:        handleAdminExchangeRateAdd,
+  adminExchangeRateDelete:     handleAdminExchangeRateDelete,
   adminApprovalFlowGet:        handleAdminApprovalFlowGet,
   adminApprovalFlowSave:       handleAdminApprovalFlowSave,
   adminApprovalFlowPreview:    handleAdminApprovalFlowPreview,

@@ -232,8 +232,9 @@ async function importSheetOnly(client, def, data) {
 // ── Main ────────────────────────────────────────────────────────
 
 async function main() {
-  const keys = ONLY.length ? ONLY : Object.keys(MASTER_TABLES);
-  for (const k of keys) if (!MASTER_TABLES[k]) throw new Error(`Unknown table "${k}". Use: ${Object.keys(MASTER_TABLES).join(', ')}`);
+  const sheetKeys = Object.keys(MASTER_TABLES).filter((k) => MASTER_TABLES[k].sheet); // app-only tables (exchange_rates) are never imported
+  const keys = ONLY.length ? ONLY : sheetKeys;
+  for (const k of keys) if (!MASTER_TABLES[k] || !MASTER_TABLES[k].sheet) throw new Error(`Unknown table "${k}". Use: ${sheetKeys.join(', ')}`);
   console.log(`[Import] Source: ${DIR ? 'CSV folder ' + DIR : 'Google Sheets (live)'}`);
 
   for (const key of keys) {

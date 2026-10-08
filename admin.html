@@ -174,6 +174,7 @@
   dialog label.lbl { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
   dialog input.field { width: 100%; }
   dialog .err { color: var(--red); font-size: 12px; min-height: 16px; margin-top: 6px; }
+  #ask-body table.grid th, #ask-body table.grid td { padding: 6px 10px; white-space: nowrap; font-size: 12px; }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
   .actions .left { margin-right: auto; }
   .changes { list-style: none; padding: 0; margin: 0; max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
@@ -329,6 +330,7 @@
 
   // ── Value rules + label style — same logic as api/lib/master-registry.js ──
   const DATE_RE = /^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})$/;
+  const FX_RATE_MESSAGE = 'Tỷ giá phải là số nguyên dương (VND cho 1 đơn vị).';
   function checkRule(rule, raw) {
     let v = raw == null ? '' : String(raw).trim();
     if (!rule) return { ok: true, value: v };
@@ -349,6 +351,10 @@
         if (rule.min != null && n < rule.min) return { ok: false, message: 'Không được nhỏ hơn ' + rule.min + '.' };
         return { ok: true, value: v };
       }
+      case 'rate': {
+        const n = Number(v.replace(/,/g, ''));
+        return /^(\d+|\d{1,3}(,\d{3})+)$/.test(v) && n >= 1 && n < 1e12 ? { ok: true, value: v } : { ok: false, message: FX_RATE_MESSAGE };
+      }
       default: return { ok: true, value: v };
     }
   }
@@ -361,6 +367,7 @@
       case 'date': return req + 'Date: YYYY-MM-DD';
       case 'digits': return req + 'Digits only';
       case 'number': return req + (rule.integer ? 'Whole number' : 'Number') + (rule.min != null ? ' ≥ ' + rule.min : '');
+      case 'rate': return req + 'Whole VND for 1 unit, e.g. 26000';
       default: return 'Required';
     }
   }
@@ -377,13 +384,15 @@
   }
 
   // ── Generic confirmation dialog ──────────────────────────────
-  // ask({ title, html, input: { label, value, placeholder }, requireText, buttons: [{ text, value, kind }] })
+  // ask({ title, html, input: { label, value, placeholder }, requireText, buttons: [{ text, value, kind }], wide, check })
+  // check(): optional; returns a message to keep the dialog open on submit (for fields inside `html`).
   // Resolves with the clicked button's value (the input text for 'submit'), or null on Esc / Cancel.
   const askDialog = document.getElementById('ask');
   function ask(opts) {
     return new Promise((resolve) => {
       const input = document.getElementById('ask-input');
       const errEl = document.getElementById('ask-err');
+      askDialog.classList.toggle('wide', !!opts.wide);
       document.getElementById('ask-title').textContent = opts.title;
       document.getElementById('ask-body').innerHTML = opts.html || '';
       errEl.textContent = '';
@@ -433,6 +442,8 @@
       document.getElementById('ask-form').onsubmit = (e) => {
         e.preventDefault();
         if (primary && primary.disabled) return;
+        const problem = opts.check ? opts.check() : '';
+        if (problem) { errEl.style.color = ''; errEl.textContent = problem; return; }
         finish(opts.input ? input.value.trim() : 'submit');
       };
       askDialog.oncancel = (e) => { e.preventDefault(); finish(null); };
@@ -476,6 +487,9 @@
           '<span class="pos" id="nav-pos"></span>' +
           '<select class="field jump" id="nav-jump" aria-label="Jump to column"></select>' +
           '<button class="btn" id="add-col" type="button">+ Column</button>' +
+          '<button class="btn" id="add-cur" type="button" hidden>+ Currency</button>' +
+          '<button class="btn btn-ghost" id="del-cur" type="button" hidden>Remove currency</button>' +
+          '<button class="btn btn-ghost" id="audit-btn" type="button" hidden>History</button>' +
           '<span class="menu-wrap"><button class="btn btn-ghost" id="cols-btn" type="button" aria-haspopup="true" aria-expanded="false">Columns ▾</button>' +
             '<div class="menu" id="cols-menu" hidden></div></span>' +
           '<button class="icon-btn" id="density" type="button" title="Compact rows" aria-label="Toggle compact rows">☰</button>' +
@@ -493,6 +507,9 @@
 
     document.getElementById('search').addEventListener('input', (e) => { state.query = e.target.value; applyFilter(); });
     document.getElementById('add-col').addEventListener('click', addColumn);
+    document.getElementById('add-cur').addEventListener('click', addCurrency);
+    document.getElementById('del-cur').addEventListener('click', removeCurrency);
+    document.getElementById('audit-btn').addEventListener('click', showAudit);
     document.getElementById('cols-btn').addEventListener('click', toggleColumnsMenu);
     document.getElementById('density').addEventListener('click', () => { prefs.set('compact', !prefs.get('compact', false)); applyDensity(); });
     document.getElementById('fullscreen').addEventListener('click', toggleFullscreen);
@@ -581,6 +598,8 @@
       }
     }
     state.data = cache[key];
+    document.getElementById('audit-btn').hidden = !state.data.table.audit;
+    document.getElementById('add-cur').hidden = document.getElementById('del-cur').hidden = key !== 'exchange_rates';
     applyFilter(true);
   }
 
@@ -867,6 +886,116 @@
     } catch (err) { handleError(err); }
   }
 
+  /** Who changed what in an audited table (exchange rates). */
+  async function showAudit() {
+    let data;
+    try { data = await api('adminMasterAudit', { table: state.tab }); } catch (err) { return handleError(err); }
+    // A removed row is named by its first column's value in the log (e.g. the currency code)
+    const first = state.data.columns[0] && state.data.columns[0].name;
+    const gone = {};
+    data.entries.forEach((e) => { if (e.column === first && !gone[e.rowId]) gone[e.rowId] = e.oldValue || e.newValue; });
+    const label = (id) => { const r = state.data.rows.find((x) => x.id === id); return r ? rowLabel(r) : (gone[id] ? gone[id] + ' (removed)' : '#' + id); };
+    const rows = data.entries.map((e) => '<tr><td>' + esc(new Date(e.at).toLocaleString()) + '</td><td>' + esc(label(e.rowId)) + '</td><td>' +
+      esc(formatLabel(e.column)) + '</td><td>' + esc(e.oldValue || '—') + ' → ' + esc(e.newValue || '—') + '</td><td>' + esc(e.actorEmail) + '</td></tr>').join('');
+    await ask({
+      title: 'History — ' + state.data.table.title,
+      wide: true,
+      html: data.entries.length
+        ? '<div style="overflow-x:auto;max-height:60vh"><table class="grid"><thead><tr><th>When</th><th>Row</th><th>Column</th><th>Change</th><th>By</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p>No changes yet.</p>',
+      buttons: [{ text: 'Close', value: null, kind: 'ghost' }],
+    });
+  }
+
+  /** Exchange rates: add a currency (3-letter code + whole VND rate), confirmed before it is saved. */
+  async function addCurrency() {
+    if (!(await guardPending('add a currency'))) return;
+    const rules = {};
+    state.data.columns.forEach((c) => { rules[c.name] = c.rule; });
+    const ci = fxColumn('Currency');
+    let code = '', rate = '';
+    for (;;) {
+      const asked = ask({
+        title: 'Add a currency',
+        html: '<p>Rates are whole VND for 1 unit of the currency. VND itself needs no rate.</p>' +
+          '<label class="lbl" for="fx-code">Currency code</label><input class="field" id="fx-code" maxlength="3" autocomplete="off" placeholder="GBP" value="' + esc(code) + '" style="text-transform:uppercase">' +
+          '<label class="lbl" for="fx-rate">VND for 1 unit</label><input class="field" id="fx-rate" inputmode="numeric" autocomplete="off" placeholder="33000" value="' + esc(rate) + '">',
+        check: () => {
+          const c = checkRule(rules.Currency, document.getElementById('fx-code').value);
+          if (!c.ok) return 'Currency code: ' + c.message;
+          if (c.value === 'VND') return 'VND là tiền gốc, không cần tỷ giá.';
+          if (state.data.rows.some((r) => r.v[ci] === c.value)) return 'Loại tiền ' + c.value + ' đã có.';
+          const r = checkRule(rules.Rate_To_VND, document.getElementById('fx-rate').value);
+          return r.ok ? '' : 'Rate: ' + r.message;
+        },
+        buttons: [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Review', value: 'submit', kind: 'primary' }]
+      });
+      document.getElementById(code ? 'fx-rate' : 'fx-code').focus();
+      if (!(await asked)) return;
+      code = checkRule(rules.Currency, document.getElementById('fx-code').value).value;
+      rate = checkRule(rules.Rate_To_VND, document.getElementById('fx-rate').value).value;
+      const ok = await ask({
+        title: 'Add ' + code + '?',
+        html: '<ul class="summary"><li>New currency <b>' + esc(code) + '</b></li><li>Rate <b>' + esc(rate) + '</b> VND for 1 ' + esc(code) + '</li></ul>' +
+          '<p style="color:var(--muted);font-size:12px">Purchase requests in ' + esc(code) + ' are converted to VND with this rate. The change is recorded in History.</p>',
+        buttons: [{ text: 'Back', value: 'back', kind: 'ghost' }, { text: 'Add ' + code, value: 'submit', kind: 'primary' }]
+      });
+      if (ok === 'back') continue;
+      if (!ok) return;
+      break;
+    }
+    try {
+      await api('adminExchangeRateAdd', { currency: code, rate: rate });
+      bumpTabCount(1);
+      showMessage(true, 'Added ' + esc(code) + ' at ' + esc(rate) + ' VND.');
+      await reloadTab();
+    } catch (err) { handleError(err); }
+  }
+
+  /** Exchange rates: remove a currency. The server refuses while a purchase request uses it. */
+  async function removeCurrency() {
+    if (!(await guardPending('remove a currency'))) return;
+    const rows = state.data.rows;
+    const ci = fxColumn('Currency'), ri = fxColumn('Rate_To_VND');
+    if (!rows.length) return showMessage(false, 'There is no currency to remove.');
+    const picked = await ask({
+      title: 'Remove a currency',
+      html: '<p>Pick the currency to remove. A currency used by any purchase request cannot be removed.</p>' +
+        rows.map((r, i) => '<label style="display:flex;gap:8px;align-items:center;padding:4px 0"><input type="radio" name="fx-pick" value="' + r.id + '"' + (i === 0 ? ' checked' : '') + '> <b>' +
+          esc(r.v[ci]) + '</b> <span style="color:var(--muted)">' + (r.v[ri] ? esc(r.v[ri]) + ' VND' : 'no rate') + '</span></label>').join(''),
+      buttons: [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Next', value: 'submit', kind: 'primary' }]
+    });
+    if (!picked) return;
+    const sel = document.querySelector('#ask-body input[name="fx-pick"]:checked');
+    const row = sel && rows.find((r) => r.id === Number(sel.value));
+    if (!row) return;
+    const code = row.v[ci];
+    const ok = await ask({
+      title: 'Remove ' + code + '?',
+      html: '<p>' + esc(code) + ' and its rate are removed. Purchase requests can no longer be submitted in ' + esc(code) + '. The change is recorded in History.</p>',
+      requireText: code,
+      buttons: [{ text: 'Cancel', value: null, kind: 'ghost' }, { text: 'Remove ' + code, value: 'submit', kind: 'danger' }]
+    });
+    if (!ok) return;
+    try {
+      await api('adminExchangeRateDelete', { id: row.id });
+      bumpTabCount(-1);
+      showMessage(true, 'Removed ' + esc(code) + '.');
+      await reloadTab();
+    } catch (err) { handleError(err); }
+  }
+
+  /** Index of an exchange-rate column by its name. */
+  function fxColumn(name) {
+    return state.data.columns.findIndex((c) => c.name === name);
+  }
+
+  /** Keep the row count on the current tab in step after adding / removing a row. */
+  function bumpTabCount(n) {
+    const t = state.tables.find((x) => x.key === state.tab);
+    if (t) t.rows += n;
+  }
+
   async function renameColumn(c) {
     const label = await ask({
       title: 'Rename column',
@@ -943,6 +1072,7 @@
     const j = Number(cell.dataset.col);
     const row = state.data.rows.find((r) => r.id === id);
     const col = state.data.columns[j];
+    if (col.readOnly) return showHint(cell, 'This value is fixed. It is used by the app.', true);
     const rule = col.rule;
     const key = id + '|' + j;
     const saved = row.v[j];

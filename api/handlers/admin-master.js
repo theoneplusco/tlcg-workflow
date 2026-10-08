@@ -1,5 +1,6 @@
 // api/handlers/admin-master.js — Admin grid over the migrated master sheets:
-// list tables, read a table, edit a cell, add / delete a column.
+// list tables, read a table, edit a cell, add / delete a column; the audit log of audited
+// tables; add / remove an exchange-rate currency (app-only table).
 import pool from '../../db/pool.js';
 import { MASTER_TABLES, getMasterTable, isProtectedColumn, coreColumns, coreCellValue, columnRule, checkRule, formatLabel } from '../lib/master-registry.js';
 import { requireAdmin, clearMasterDataCache } from './admin-employees.js';
@@ -27,6 +28,7 @@ function visibleColumns(def, columnRows) {
       label: formatLabel(c.label || c.name),
       core: Object.prototype.hasOwnProperty.call(def.core, c.name),
       locked: isProtectedColumn(def, c.name),
+      readOnly: (def.readOnly || []).includes(c.name),
       rule: columnRule(def, c.name),
     }));
 }
@@ -61,11 +63,13 @@ export async function handleAdminMasterTables(req, res) {
   try {
     const entries = Object.entries(MASTER_TABLES);
     const counts = await Promise.all(entries.map(([, def]) =>
-      pool.query(`SELECT COUNT(*)::int AS n FROM ${def.table}`).then((r) => r.rows[0].n)));
+      pool.query(`SELECT COUNT(*)::int AS n FROM ${def.table}`).then((r) => r.rows[0].n)
+        .catch((e) => { if (e.code === '42P01') return null; throw e; }))); // table of a migration not applied yet
     return res.json({
       success: true,
       data: {
-        tables: entries.map(([key, def], i) => ({ key, title: def.title, sheet: def.sheet, rows: counts[i] })),
+        tables: entries.map(([key, def], i) => ({ key, title: def.title, sheet: def.sheet, audit: !!def.audit, rows: counts[i] }))
+          .filter((t) => t.rows !== null),
       },
     });
   } catch (err) {
@@ -99,7 +103,7 @@ export async function handleAdminMasterGet(req, res) {
     return res.json({
       success: true,
       data: {
-        table: { key, title: def.title, sheet: def.sheet },
+        table: { key, title: def.title, sheet: def.sheet, audit: !!def.audit },
         columns,
         rows: rows.map((r) => {
           const out = { id: r.id, v: columns.map((c) => cellValue(def, r, c.name)) };
@@ -123,7 +127,39 @@ export async function handleAdminMasterGet(req, res) {
   }
 }
 
-/** adminMasterUpdateCell — edit one value. Typed columns are validated. */
+/** Write one checked value on `q` (pool or transaction client). Returns { value } | { error }. */
+async function writeCell(q, key, def, id, column, clean, admin) {
+  const core = def.core[column];
+  if (!core) {
+    const { rowCount } = await q.query(
+      `UPDATE ${def.table} SET extra = jsonb_set(extra, ARRAY[$1::text], to_jsonb($2::text), true), updated_at = NOW() WHERE id = $3`,
+      [column, clean, id]);
+    return rowCount ? { value: clean } : { error: 'Không tìm thấy dòng.' };
+  }
+  let value;
+  try { value = core.type.parse(clean); } catch (e) { return { error: e.message }; }
+  if (key === 'employees' && id === admin.id) {
+    if (core.col === 'is_admin' && !value) return { error: 'Không thể tự bỏ quyền quản trị của mình.' };
+    if (core.col === 'status' && value !== 'active') return { error: 'Không thể tự vô hiệu hoá tài khoản của mình.' };
+  }
+  // Keep the text as typed beside the typed value (see coreCellValue)
+  const { rows } = await q.query(
+    `UPDATE ${def.table}
+        SET ${core.col} = $1, extra = jsonb_set(extra, ARRAY[$3::text], to_jsonb($4::text), true), updated_at = NOW()
+      WHERE id = $2
+      RETURNING ${core.col}`,
+    [value, id, column, clean]);
+  return rows[0] ? { value: coreCellValue(core, clean, rows[0][core.col]) } : { error: 'Không tìm thấy dòng.' };
+}
+
+/** One master_audit row on `q` (inside the caller's transaction). */
+function audit(q, key, id, column, oldValue, newValue, email) {
+  return q.query(
+    `INSERT INTO master_audit (table_key, row_id, column_name, old_value, new_value, actor_email) VALUES ($1, $2, $3, $4, $5, $6)`,
+    [key, id, column, oldValue, newValue, email]);
+}
+
+/** adminMasterUpdateCell — edit one value. Typed columns are validated; audited tables log who changed what. */
 export async function handleAdminMasterUpdateCell(req, res) {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
@@ -135,8 +171,9 @@ export async function handleAdminMasterUpdateCell(req, res) {
   const column = String(req.body.column || '');
   const raw = req.body.value == null ? '' : String(req.body.value);
   if (!id || !column) return res.json({ success: false, message: 'Thiếu thông tin.' });
-  if (def.hidden.includes(column)) return res.json({ success: false, message: 'Cột này không sửa ở đây.' });
+  if (def.hidden.includes(column) || (def.readOnly || []).includes(column)) return res.json({ success: false, message: 'Cột này không sửa ở đây.' });
 
+  let client = null;
   try {
     const names = await loadColumns(key, def);
     if (!names.includes(column)) return res.json({ success: false, message: 'Cột không tồn tại.' });
@@ -144,50 +181,132 @@ export async function handleAdminMasterUpdateCell(req, res) {
     // Column rule first (allowed values / format), then the typed column's own parse
     const checked = checkRule(columnRule(def, column), raw);
     if (!checked.ok) return res.json({ success: false, message: checked.message });
-    const clean = checked.value;
 
-    const core = def.core[column];
-    let value;
-    if (core) {
-      try {
-        value = core.type.parse(clean);
-      } catch (e) {
-        return res.json({ success: false, message: e.message });
+    let out;
+    if (def.audit) {
+      client = await pool.connect();
+      await client.query('BEGIN');
+      const before = (await client.query(`SELECT id, extra, ${coreColumns(def).join(', ')} FROM ${def.table} WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+      out = before ? await writeCell(client, key, def, id, column, checked.value, admin) : { error: 'Không tìm thấy dòng.' };
+      if (out.error) {
+        await client.query('ROLLBACK');
+      } else {
+        await audit(client, key, id, column, cellValue(def, before, column), out.value, admin.email);
+        await client.query('COMMIT');
       }
-      if (key === 'employees' && id === admin.id) {
-        if (core.col === 'is_admin' && !value) return res.json({ success: false, message: 'Không thể tự bỏ quyền quản trị của mình.' });
-        if (core.col === 'status' && value !== 'active') return res.json({ success: false, message: 'Không thể tự vô hiệu hoá tài khoản của mình.' });
-      }
-      // Keep the text as typed beside the typed value (see coreCellValue)
-      const { rows } = await pool.query(
-        `UPDATE ${def.table}
-            SET ${core.col} = $1,
-                extra = jsonb_set(extra, ARRAY[$3::text], to_jsonb($4::text), true),
-                updated_at = NOW()
-          WHERE id = $2
-          RETURNING ${core.col}`,
-        [value, id, column, clean]
-      );
-      if (!rows[0]) return res.json({ success: false, message: 'Không tìm thấy dòng.' });
-      value = coreCellValue(core, clean, rows[0][core.col]);
     } else {
-      value = clean;
-      const { rowCount } = await pool.query(
-        `UPDATE ${def.table} SET extra = jsonb_set(extra, ARRAY[$1::text], to_jsonb($2::text), true),
-                updated_at = NOW()
-         WHERE id = $3`,
-        [column, value, id]
-      );
-      if (!rowCount) return res.json({ success: false, message: 'Không tìm thấy dòng.' });
+      out = await writeCell(pool, key, def, id, column, checked.value, admin);
     }
+    if (out.error) return res.json({ success: false, message: out.error });
 
     clearMasterDataCache();
     console.log(`[AdminMaster] ${admin.email} set ${key}#${id}.${column}`);
-    return res.json({ success: true, data: { value } });
+    return res.json({ success: true, data: { value: out.value } });
   } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') return res.json({ success: false, message: 'Giá trị này đã tồn tại ở dòng khác.' });
     console.error('[AdminMaster] update error:', err.message);
     return res.status(500).json({ success: false, message: 'Lỗi server' });
+  } finally {
+    if (client) client.release();
+  }
+}
+
+/** adminMasterAudit — the last 200 changes of an audited table, newest first. */
+export async function handleAdminMasterAudit(req, res) {
+  if (!(await requireAdmin(req, res))) return;
+  const t = tableFromBody(req, res);
+  if (!t) return;
+  if (!t.def.audit) return res.json({ success: false, message: 'Bảng này không lưu lịch sử thay đổi.' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT row_id, column_name, old_value, new_value, actor_email, created_at FROM master_audit
+        WHERE table_key = $1 ORDER BY id DESC LIMIT 200`, [t.key]);
+    return res.json({ success: true, data: { entries: rows.map((r) => ({ rowId: r.row_id, column: r.column_name,
+      oldValue: r.old_value, newValue: r.new_value, actorEmail: r.actor_email, at: r.created_at })) } });
+  } catch (err) {
+    console.error('[AdminMaster] audit error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi server' });
+  }
+}
+
+// ── Exchange-rate currencies (decision 2026-10-07): admins add a currency with its rate, and remove
+// one only while no PR uses it. Each add / remove writes Currency + Rate_To_VND rows to master_audit.
+const FX_KEY = 'exchange_rates';
+
+/** adminExchangeRateAdd { currency, rate } → { id } */
+export async function handleAdminExchangeRateAdd(req, res) {
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+  const def = MASTER_TABLES[FX_KEY];
+  const cur = checkRule(def.rules.Currency, req.body?.currency);
+  if (!cur.ok) return res.json({ success: false, message: cur.message });
+  if (cur.value === 'VND') return res.json({ success: false, message: 'VND là tiền gốc, không cần tỷ giá.' });
+  const rate = checkRule(def.rules.Rate_To_VND, req.body?.rate);
+  if (!rate.ok) return res.json({ success: false, message: rate.message });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO exchange_rates (currency, rate_to_vnd, extra, sheet_row)
+       SELECT $1, $2, jsonb_build_object('Rate_To_VND', $3::text), COALESCE(MAX(sheet_row), 0) + 1 FROM exchange_rates
+       ON CONFLICT (currency) DO NOTHING RETURNING id`,
+      [cur.value, Number(rate.value.replace(/,/g, '')), rate.value]);
+    if (!rows[0]) {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, message: `Loại tiền ${cur.value} đã có.` });
+    }
+    const id = rows[0].id;
+    await audit(client, FX_KEY, id, 'Currency', '', cur.value, admin.email);
+    await audit(client, FX_KEY, id, 'Rate_To_VND', '', rate.value, admin.email);
+    await client.query('COMMIT');
+    clearMasterDataCache();
+    console.log(`[AdminMaster] ${admin.email} added currency ${cur.value}`);
+    return res.json({ success: true, message: `Đã thêm ${cur.value}.`, data: { id } });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[AdminMaster] addCurrency error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi server' });
+  } finally {
+    client.release();
+  }
+}
+
+/** adminExchangeRateDelete { id } — refused while any PR (any case of the code) uses the currency. */
+export async function handleAdminExchangeRateDelete(req, res) {
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+  const def = MASTER_TABLES[FX_KEY];
+  const id = parseInt(req.body?.id, 10);
+  if (!id) return res.json({ success: false, message: 'Thiếu thông tin.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const row = (await client.query(`SELECT id, extra, currency, rate_to_vnd FROM exchange_rates WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+    if (!row) {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, message: 'Không tìm thấy dòng.' });
+    }
+    const used = await client.query(`SELECT 1 FROM purchase_requests WHERE UPPER(TRIM(currency)) = $1 LIMIT 1`, [row.currency]);
+    if (used.rowCount) {
+      await client.query('ROLLBACK');
+      return res.json({ success: false, message: `Không xoá được ${row.currency}: đã có đề nghị mua hàng dùng loại tiền này.` });
+    }
+    await client.query(`DELETE FROM exchange_rates WHERE id = $1`, [id]);
+    await audit(client, FX_KEY, id, 'Currency', row.currency, '', admin.email);
+    await audit(client, FX_KEY, id, 'Rate_To_VND', cellValue(def, row, 'Rate_To_VND'), '', admin.email);
+    await client.query('COMMIT');
+    clearMasterDataCache();
+    console.log(`[AdminMaster] ${admin.email} removed currency ${row.currency}`);
+    return res.json({ success: true, message: `Đã xoá ${row.currency}.` });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[AdminMaster] deleteCurrency error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi server' });
+  } finally {
+    client.release();
   }
 }
 

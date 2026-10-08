@@ -32,13 +32,16 @@ test('missingVoucherSchema: real test database has migration 006', { skip: !proc
   try { assert.equal(await missingVoucherSchema(['vouchers'], db), null); } finally { await db.end(); }
 });
 
-const fakeDb2 = (t, o) => ({ query: async () => ({ rows: [{ t, o }] }) });
+const fakeDb2 = (t, o, x = 'exchange_rates') => ({ query: async () => ({ rows: [{ t, o, x }] }) });
 test('missingP2PSchema: p2p off → not checked', async () => {
   assert.equal(await missingP2PSchema(['vouchers'], fakeDb2(null, null)), null);
 });
 test('missingP2PSchema: p2p on without migration 007 → names the file', async () => {
   assert.match(await missingP2PSchema(['p2p'], fakeDb2(null, 'sheet_outbox')), /007_purchase_requests\.sql/);
   assert.match(await missingP2PSchema(['p2p'], fakeDb2('purchase_order_types', null)), /006_sheet_outbox\.sql/);
+});
+test('missingP2PSchema: p2p on without migration 008 → names the file', async () => {
+  assert.match(await missingP2PSchema(['p2p'], fakeDb2('purchase_order_types', 'sheet_outbox', null)), /008_exchange_rates\.sql/);
 });
 test('missingP2PSchema: database unreachable → not fatal (null), the error is logged', async () => {
   const { error } = console;
@@ -47,7 +50,7 @@ test('missingP2PSchema: database unreachable → not fatal (null), the error is 
     assert.equal(await missingP2PSchema(['p2p'], { query: async () => { throw new Error('ECONNREFUSED'); } }), null);
   } finally { console.error = error; }
 });
-test('missingP2PSchema: real test database has migrations 006 and 007', { skip: !process.env.TEST_DATABASE_URL && 'needs TEST_DATABASE_URL' }, async () => {
+test('missingP2PSchema: real test database has migrations 006, 007 and 008', { skip: !process.env.TEST_DATABASE_URL && 'needs TEST_DATABASE_URL' }, async () => {
   const pg = (await import('pg')).default;
   const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
   try { assert.equal(await missingP2PSchema(['p2p'], db), null); } finally { await db.end(); }

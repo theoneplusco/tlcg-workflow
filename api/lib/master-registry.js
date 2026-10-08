@@ -4,6 +4,9 @@
 // listed in `core` maps to a typed column that app logic reads; every other
 // header lives in the row's `extra` JSONB. Core and `locked` headers cannot be
 // deleted from the admin page; `hidden` headers are never sent to the browser.
+// `readOnly` headers are shown but never edited; `audit: true` writes every
+// change to master_audit; `sheet: null` marks an app-only table (no Google
+// Sheet tab) that scripts/import-master-sheets.js never imports.
 
 export const SPREADSHEET_ID = '1ujmPbtEdkGLgEshfhvV8gRB6R0GLI31jsZM5rDOJS0g';
 
@@ -52,6 +55,7 @@ function str(v) {
 // ── Value rules (checked on every admin edit; sent to the browser too) ──
 // enum: fixed choices (case-insensitive match, saved in the canonical case)
 // pattern: regex + example; email / date / digits / number: common formats
+// rate: a whole number of VND ≥ 1 (exchange rates)
 const oneOf = (...values) => ({ type: 'enum', values });
 const YES_NO = oneOf('Yes', 'No');
 const TRUE_FALSE_UPPER = oneOf('TRUE', 'FALSE');
@@ -60,6 +64,8 @@ const EMAIL = { type: 'email' };
 const DATE = { type: 'date' };
 const DIGITS = { type: 'digits' };
 const AMOUNT = { type: 'number', min: 0 };
+// Exchange rate: a whole number of VND for 1 unit of the currency (decision 2026-10-07)
+export const FX_RATE_MESSAGE = 'Tỷ giá phải là số nguyên dương (VND cho 1 đơn vị).';
 const URL = { type: 'pattern', pattern: '^https?://\\S+$', example: 'https://drive.google.com/…' };
 
 export const MASTER_TABLES = {
@@ -221,6 +227,27 @@ export const MASTER_TABLES = {
       Status: { ...oneOf('Active', 'Disable'), required: true },
     },
   },
+  // App-only (no Google Sheet tab): the PR full-branch threshold is 2,000,000 VND (decision 2026-10-07);
+  // other currencies are converted with these rates. A row without a rate refuses PR submits in that currency.
+  // Rows are added / removed with adminExchangeRateAdd / adminExchangeRateDelete (admin-master.js).
+  exchange_rates: {
+    title: 'Exchange rates',
+    sheet: null,
+    gid: null,
+    table: 'exchange_rates',
+    core: {
+      Currency:    { col: 'currency', type: required },
+      Rate_To_VND: { col: 'rate_to_vnd', type: number },
+    },
+    hidden: [],
+    locked: [],
+    readOnly: ['Currency'],
+    audit: true,
+    rules: {
+      Currency: { type: 'pattern', pattern: '^[A-Z]{3}$', example: 'USD', upper: true, required: true },
+      Rate_To_VND: { type: 'rate', required: true },
+    },
+  },
 };
 
 export function getMasterTable(key) {
@@ -302,6 +329,11 @@ export function checkRule(rule, raw) {
       if (rule.min != null && n < rule.min) return { ok: false, message: `Không được nhỏ hơn ${rule.min}.` };
       return { ok: true, value: v };
     }
+    case 'rate':
+      // Whole VND, digits with optional thousands commas ("26000", "26,000"); no decimals, no "26.000"
+      // and below 10^12 (the NUMERIC(18,6) column)
+      return /^(\d+|\d{1,3}(,\d{3})+)$/.test(v) && Number(v.replace(/,/g, '')) >= 1 && Number(v.replace(/,/g, '')) < 1e12
+        ? { ok: true, value: v } : { ok: false, message: FX_RATE_MESSAGE };
     default:
       return { ok: true, value: v };
   }
