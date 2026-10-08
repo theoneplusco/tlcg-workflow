@@ -115,7 +115,7 @@ export function checkSubmission(b, fx = defaultFx(b.currency)) {
   const grandTotal = sumTotals(norm.items);
   if (!fx.currency) return { error: BAD_CURRENCY };
   if (fx.rateToVnd == null) return { error: missingRateMessage(fx.currency) };
-  const grandTotalVnd = toVnd(grandTotal, fx.rateToVnd);
+  const grandTotalVnd = toVnd(grandTotal, fx.rateToVnd, fx.currency);
   const branch = computeBranch(purchaseType, grandTotalVnd);
   if (branch === 'full' && empty('contractApprover')) {
     return { error: 'Đề nghị này (Dịch vụ hoặc giá trị ≥ 2.000.000₫) yêu cầu người thẩm định hợp đồng.' };

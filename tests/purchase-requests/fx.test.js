@@ -35,7 +35,10 @@ test('toVnd: exact integer arithmetic, no float drift on large totals', () => {
   assert.equal(toVnd('9999999999.99', '26000.000000'), 259999999999740, 'pg NUMERIC strings');
   assert.equal(toVnd(0.1 + 0.2, 10), 3, '0.30000000000000004 × 10 → 3');
   assert.equal(toVnd(4.125, 3), 12, '12.375 → 12 (half-up only at .5)');
-  assert.equal(toVnd(0.5, 1), 0.5, 'VND (rate 1) is never rounded');
+  assert.equal(toVnd(0.5, 1, 'VND'), 0.5, 'VND is never rounded');
+  assert.equal(toVnd('1500.5', 1, 'VNĐ'), 1500.5, 'VNĐ is VND');
+  assert.equal(toVnd(0.5, 1, 'USD'), 1, 'a non-VND currency at rate 1 is still rounded half-up');
+  assert.equal(toVnd(2.4, 1, 'XTS'), 2, 'rate 1, non-VND: 2.4 → 2');
   assert.equal(toVnd(76.9, 26000), 1999400);
   assert.equal(toVnd(5733726.543, 2500), 14334316358, 'exact …357.5 → …358 (float multiply: …357)');
   assert.equal(toVnd(9074078460.88, 21579), 195809539107330, 'exact …329.52 → …330 (6-decimal scaling: …329)');

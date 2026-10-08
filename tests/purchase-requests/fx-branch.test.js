@@ -23,4 +23,5 @@ test('FxBranch: no rate → the raw total (GAS rule), never a guess sent to the 
   assert.equal(FB.branch('goods', 100, 'EUR', rates), 'simplified');
   assert.equal(FB.branch('goods', 2500000, 'USD', null), 'full', 'GAS mode: raw total');
   assert.equal(FB.toVnd(1500.5, 'VNĐ', rates), 1500.5);
+  assert.equal(FB.toVnd(0.5, 'XTS', { XTS: 1 }), 1, 'a non-VND currency at rate 1 is still rounded half-up (as rates.js)');
 });

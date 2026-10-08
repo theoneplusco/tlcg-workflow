@@ -22,13 +22,13 @@ function decimal(n) {
  * VND equivalent in whole đồng, rounded half-up. Integer arithmetic on minor units: the total and the rate are
  * read as the decimals they print as and multiplied as BigInt, never as floats — 5,733,726.543 × 2,500 is
  * 14,334,316,357.5 → …358 (a float multiply gives …357.4999 → …357), and 9,999,999,999.99 USD × 26,000 is
- * exactly 259,999,999,999,740. Rate 1 (VND) returns the total unchanged (a VND total is never rounded).
- * Accepts pg NUMERIC strings.
+ * exactly 259,999,999,999,740. A VND total (the `currency`, not the rate, decides) is returned unchanged, never
+ * rounded; any other currency is rounded half-up, even at rate 1. Accepts pg NUMERIC strings.
  */
-export function toVnd(total, rate) {
+export function toVnd(total, rate, currency) {
   const t = Number(total);
   const r = Number(rate);
-  if (r === 1) return t;
+  if (currency != null && normalizeCurrency(currency) === 'VND') return t;
   if (!Number.isFinite(t) || !Number.isFinite(r)) return NaN;
   if (Math.abs(t) >= 1e15 || Math.abs(r) >= 1e15) return Math.round(t * r); // beyond any real PR (and NUMERIC(20,2))
   const [tv, td] = decimal(t);
