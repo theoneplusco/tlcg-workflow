@@ -16,7 +16,7 @@ import { VN, vnDay, parseDue, dueTomorrow } from '../lib/vouchers/reminders.js';
 
 export async function runVoucherReminders(db = pool, today = vnDay()) {
   const { rows } = await db.query(
-    `SELECT * FROM vouchers WHERE status NOT IN ('Đã duyệt', 'Đã từ chối', 'Received') AND COALESCE(due_date, '') <> ''`);
+    `SELECT * FROM vouchers WHERE status NOT IN ('Đã duyệt', 'Đã từ chối', 'Received', 'Đã xóa') AND COALESCE(due_date, '') <> ''`);
   let sent = 0;
   for (const row of rows) {
     const due = parseDue(row.due_date);

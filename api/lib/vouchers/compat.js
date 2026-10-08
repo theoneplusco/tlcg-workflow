@@ -18,6 +18,7 @@ export const STATUS = {
   approved: 'Đã duyệt',
   rejected: 'Đã từ chối',
   received: 'Received',
+  deleted: 'Đã xóa', // withdrawn by its requester before anyone else approved; hidden from lists, kept for history
 };
 
 const lower = (s) => String(s || '').trim().toLowerCase();

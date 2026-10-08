@@ -3,7 +3,7 @@
 // the old GAS proxy (for actions not yet migrated).
 import { handleGetMasterData, handleGetCompanies, handleGetCompanyApprovers, handleGetEmployees, handleGetSuppliers, handleGetVendorBanks } from './handlers/master-data.js';
 import { handleLogin, handleChangePassword, handleRequestPasswordReset, handleVerifyOTP, handleResetPassword } from './handlers/auth.js';
-import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus, handleVoucherApprovalContext } from './handlers/vouchers.js';
+import { handleVoucherSubmit, handleVoucherApprove, handleVoucherReject, handleVoucherAcknowledge, handleVoucherBulkApprove, handleVoucherSummary, handleVoucherHistory, handleVoucherApprovalStatus, handleVoucherApprovalContext, handleVoucherDelete } from './handlers/vouchers.js';
 import { handlePRSubmit, handlePRResubmit } from './handlers/pr/submit.js';
 import { handlePRApprove, handlePRReject, handlePRSendBack } from './handlers/pr/decide.js';
 import { handlePRHistory, handlePRDetail, handlePRSearch, handleP2PHistory, handleGoodsCatalog, handlePurchaseOrderTypes, handleAddSupplier, handleValidatePRForDirectPayment, handleExchangeRates } from './handlers/pr/reads.js';
@@ -47,6 +47,7 @@ const NEW_HANDLERS = {
   getVoucherHistory:      handleVoucherHistory,
   getApprovalStatus:      handleVoucherApprovalStatus,
   getApprovalContext:     handleVoucherApprovalContext,
+  deleteVoucher:          handleVoucherDelete,
   // No-op kept for old clients. voucher.html's syncToSheets caller is dead code; the Voucher_History /
   // Voucher_Current copy comes from sheet_outbox (queued by every voucher change). GAS's old target,
   // the 'Phiếu Thu Chi' tab, is no longer written.
@@ -100,7 +101,7 @@ const NEW_HANDLERS = {
 const WORKFLOW_ACTIONS = {
   cash: ['getCashBook', 'getCashCount', 'getCashBookSummary', 'getRecentCashCounts', 'saveCashCount', 'signCashCount'],
   vouchers: ['sendApprovalEmail', 'approveVoucher', 'rejectVoucher', 'acknowledgeReceipt', 'bulkApprove',
-    'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext', 'syncToSheets'],
+    'getVoucherSummary', 'getVoucherHistory', 'getApprovalStatus', 'getApprovalContext', 'deleteVoucher', 'syncToSheets'],
   files: ['createVoucherUploadSession', 'finalizeVoucherUpload', 'fetchSignatureImage'],
   p2p: ['purchaseRequest', 'resubmitPurchaseRequest', 'approvePurchaseRequest', 'rejectPurchaseRequest', 'sendBackPurchaseRequest',
     'getPurchaseRequestHistory', 'getPurchaseRequest', 'searchPurchaseRequests', 'getP2PHistory', 'getGoodsCatalog',

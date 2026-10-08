@@ -27,6 +27,23 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
 ---
 
+### 2026-10-08 (later): cloud session — wf.tl-c.us deployed; requester can delete a voucher
+- **Did (with the user, on the Mac Mini):** wf.tl-c.us now runs this branch.
+  - The Mini's app folder is `/Users/theoneplus_server/tlcg-workflow` (its own git copy, not the MacBook folder). It was on `cursor/purchase-request-slim-list` with many uncommitted files: a full copy is in `/Users/theoneplus_server/tlcg-workflow-backup-20261008` and the changes are in `git stash` ("mini local changes before plan 5c").
+  - Database `tlcg_workflow`: backup `/Users/theoneplus_server/tlcg_workflow-backup-20261008.sql`, then migrations 001–008 applied.
+  - `.env` (backup `.env.bak-20261008`): `PG_WORKFLOWS=vouchers,files`, `APP_BASE_URL=https://wf.tl-c.us`, `RESEND_API_KEY` commented out (no emails while testing; a failed email is retried 3 times, then dropped, never sent later). `p2p` is not on yet: it needs `P2P_SPREADSHEET_ID` and the USD/EUR rates.
+  - Vouchers imported from the Sheet: `node scripts/import-vouchers.js --live` (450 vouchers, 1865 history rows). Re-run it to pick up vouchers made on workflow.tl-c.us since.
+  - Verified by the user: the self-approval prompt appears on wf.tl-c.us.
+- **Did: requester can delete a voucher** (user's rule: only while nobody has approved).
+  - New action `deleteVoucher` (vouchers on Postgres only). Allowed for the requester or the signed-in person who submitted it, while the flow is open and nobody **else** has approved. The deleter's own Plan 5c auto-approval does not block it.
+  - Not erased: status becomes `Đã xóa`, the voucher leaves every list and reminder, approve/reject refuse it ("Phiếu này đã bị người đề nghị xóa."), history + audit (`Delete`) + Sheet copy record it, the number is never reused. The approvers who were waiting get `[ĐÃ XÓA] Phiếu <số>`.
+  - Page: a red "Xóa phiếu" button in the voucher modal, shown only when the server says `canDelete` (getApprovalContext); confirm dialog, then the list reloads.
+  - Tests: `tests/vouchers/delete.test.js` (4); full suite 385/385; browser check 7/7.
+- **Found:** voucher numbers come from a counter in each browser's localStorage (`voucher.html` ~line 8222). Two devices of the same person on the same day can produce the same number; the server then refuses the second with "đã được gửi trước đó". Existing behaviour, not fixed.
+- **Left / next:** deploy this change to wf.tl-c.us (on the Mini: `git pull`, `pm2 reload tlcg-workflow`); turn emails back on when testing is done; then p2p on the Mini, `gas-regress.cjs`, Plan 6. The "no password reset for admins" patch below is still pending.
+
+---
+
 ### 2026-10-08: cloud session (Claude Code on the web)
 Picked up after Cursor hit its limit. Cursor had finished Plan 5c Tasks 1–4 (self-approval module, vouchers, purchase requests, page prompt) and pushed them with a "WIP from Cursor" commit.
 

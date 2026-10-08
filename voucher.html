@@ -6332,6 +6332,47 @@
             }
         }
 
+        /** Postgres only: the requester may delete a voucher nobody else has approved yet (the server decides: canDelete). */
+        async function addDeleteButtonIfAllowed(voucher) {
+            if (!(window.__vouchersOnPostgres || VoucherSteps.onPostgres(voucher))) return;
+            let ctx = null;
+            try { ctx = await pgApi('getApprovalContext', { voucherNumber: voucher.voucherNumber }); } catch (e) { return; }
+            if (!ctx || !ctx.success || !ctx.data || !ctx.data.canDelete) return;
+            if (!currentModalVoucher || currentModalVoucher.voucherNumber !== voucher.voucherNumber) return; // modal moved on
+            const footer = document.getElementById('modal-footer');
+            if (!footer || footer.querySelector('#modal-delete-btn')) return;
+            const btn = document.createElement('button');
+            btn.id = 'modal-delete-btn';
+            btn.className = 'modal-btn';
+            btn.style.cssText = 'background: #fff; color: #dc2626; border: 1px solid #fca5a5; margin-right: auto;';
+            btn.textContent = 'Xóa phiếu';
+            btn.onclick = deleteVoucherFromModal;
+            footer.insertBefore(btn, footer.firstChild);
+        }
+
+        async function deleteVoucherFromModal() {
+            if (!currentModalVoucher) return;
+            const no = currentModalVoucher.voucherNumber;
+            if (!confirm(`Xóa phiếu ${no}?\n\nPhiếu sẽ bị xóa khỏi danh sách và người duyệt không cần duyệt nữa. Không thể hoàn tác.`)) return;
+            const btn = document.getElementById('modal-delete-btn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Đang xóa...'; }
+            try {
+                const result = await pgApi('deleteVoucher', { voucherNumber: no });
+                if (result.success) {
+                    showToast(result.message || 'Đã xóa phiếu', 'success');
+                    voucherHistoryCache.delete(no);
+                    closeVoucherModal();
+                    loadRecentVouchers(true);
+                } else {
+                    showToast(result.message || 'Không xóa được phiếu', 'error');
+                    if (btn) { btn.disabled = false; btn.textContent = 'Xóa phiếu'; }
+                }
+            } catch (error) {
+                showToast('Lỗi khi xóa phiếu: ' + error.message, 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Xóa phiếu'; }
+            }
+        }
+
         // Open voucher detail modal
         async function openVoucherDetail(voucherNumber) {
             console.log('=== OPENING VOUCHER DETAIL ===');
@@ -6522,6 +6563,7 @@
                                 </button>
                             `;
                         }
+                        addDeleteButtonIfAllowed(voucher);
                     } else if (voucher.status === 'Rejected') {
                         if (isRequester) {
                             // Requester can edit and resubmit their rejected voucher

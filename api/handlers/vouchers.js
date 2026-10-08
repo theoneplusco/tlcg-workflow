@@ -55,6 +55,11 @@ const MSG = {
     alreadyFullyApproved: 'Phiếu đã được duyệt hoàn toàn.',
     companyNotFound: 'Không tìm thấy công ty trong Dữ liệu gốc: ',
     flowProblems: 'Chưa thể gửi phiếu: {0} Vui lòng liên hệ quản trị viên để cập nhật Dữ liệu gốc.',
+    voucherDeleted: 'Phiếu này đã bị người đề nghị xóa.',
+    deleteNotYours: 'Chỉ người đề nghị hoặc người đã gửi phiếu mới xóa được phiếu này.',
+    deleteClosed: 'Phiếu đã kết thúc quy trình, không thể xóa.',
+    deleteAlreadyApproved: 'Không thể xóa: phiếu đã được {0} phê duyệt.',
+    deleted: 'Đã xóa phiếu {0}.',
   },
   en: {
     voucherAlreadySubmitted: 'This voucher was already submitted (voucher no: {0}). Please check the voucher history.',
@@ -75,6 +80,11 @@ const MSG = {
     alreadyFullyApproved: 'This voucher is already fully approved.',
     companyNotFound: 'Company not found in Master Data: ',
     flowProblems: 'Cannot submit yet: {0} Please ask an administrator to update Master Data.',
+    voucherDeleted: 'This voucher was deleted by its requester.',
+    deleteNotYours: 'Only the requester or the person who submitted this voucher can delete it.',
+    deleteClosed: 'This voucher has finished its approval flow and cannot be deleted.',
+    deleteAlreadyApproved: 'Cannot delete: {0} already approved this voucher.',
+    deleted: 'Voucher {0} deleted.',
   },
 };
 const msg = (lang, key, arg) => {
@@ -391,6 +401,7 @@ async function approveLocked({ voucherNumber, email, approverName, lang, pre }) 
     await client.query('BEGIN');
     const row = await lockVoucher(client, voucherNumber);
     if (!row) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'voucherNotFound') + voucherNumber }; }
+    if (row.status === STATUS.deleted) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'voucherDeleted') }; }
     const plan = planOf(row);
     const mine = plan.steps.flatMap((s) => s.approvers).filter((a) => a.email === email);
     if (!mine.length) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'approverInfoNotFound') }; }
@@ -537,6 +548,7 @@ export async function handleVoucherReject(req, res) {
     await client.query('BEGIN');
     const row = await lockVoucher(client, v.voucherNumber);
     if (!row) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'voucherNotFound') + v.voucherNumber); }
+    if (row.status === STATUS.deleted) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'voucherDeleted')); }
     const plan = planOf(row);
     if (plan.status === 'rejected') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'alreadyRejected')); }
     if (plan.status === 'approved') { await client.query('ROLLBACK'); return fail(res, msg(lang, 'alreadyFullyApproved')); }
@@ -640,6 +652,83 @@ export async function handleVoucherAcknowledge(req, res) {
   return res.json({ success: true, message: 'Đã xác nhận nhận tiền thành công. Quy trình phiếu hoàn tất.' });
 }
 
+// ── Delete (withdraw) ────────────────────────────────────────
+
+/**
+ * Why `email` may not delete this voucher, or '' when they may (decision 2026-10-08): only its requester or the
+ * signed-in person who submitted it, only while the flow is open, and only while nobody else has approved — the
+ * deleter's own approvals (e.g. a Plan 5c auto-approval) do not block it.
+ */
+function deleteBlocked(row, plan, email, lang) {
+  if (row.status === STATUS.deleted) return msg(lang, 'voucherDeleted');
+  const meta = row.metadata || {};
+  if (!email || (email !== lower(row.requestor_email) && email !== lower(meta.submittedByEmail))) return msg(lang, 'deleteNotYours');
+  if (plan.status === 'approved' || plan.status === 'rejected' || meta.acknowledgedSignature) return msg(lang, 'deleteClosed');
+  const others = plan.steps.flatMap((s) => s.approvers).filter((a) => a.status === 'approved' && a.email !== email);
+  return others.length ? msg(lang, 'deleteAlreadyApproved', nameList(others)) : '';
+}
+
+/**
+ * deleteVoucher { voucherNumber } — the requester withdraws a voucher sent by mistake. The row is kept with status
+ * "Đã xóa" (history, audit and the voucher number stay; it leaves every list and can no longer be approved); the
+ * approvers who were waiting on it are told.
+ */
+export async function handleVoucherDelete(req, res) {
+  const b = req.body || {};
+  const lang = b.lang;
+  const voucherNumber = String(b.voucherNumber || '').trim();
+  if (!voucherNumber) return fail(res, msg(lang, 'missingVoucherNo'));
+  const actor = await resolveApprover(req, res, '', lang); // signed in only: the token says who deletes
+  if (!actor) return;
+  const email = actor.email;
+
+  const client = await pool.connect();
+  let view, waiting;
+  const at = now();
+  try {
+    await client.query('BEGIN');
+    const row = await lockVoucher(client, voucherNumber);
+    if (!row) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'voucherNotFound') + voucherNumber); }
+    const plan = planOf(row);
+    const blocked = deleteBlocked(row, plan, email, lang);
+    if (blocked) { await client.query('ROLLBACK'); return fail(res, blocked); }
+    waiting = stepWaiting(plan).filter((a) => a.email !== email);
+    const name = actor.caller.name || email;
+    const meta = row.metadata || {};
+    if (meta.selfApproval) meta.selfApproval = { ...meta.selfApproval, stamps: [] };
+    meta.deletedAt = at;
+    meta.deletedBy = email;
+    const lastAction = 'Đã xóa bởi ' + name;
+    await client.query(
+      `UPDATE vouchers SET metadata = $1, status = $2, last_action = $3, current_approver = '', pending_emails = '{}',
+              updated_at = NOW() WHERE id = $4`,
+      [JSON.stringify(meta), STATUS.deleted, lastAction, row.id]
+    );
+    view = voucherView(row);
+    const hist = { ...view, status: STATUS.deleted, action: lastAction, approverEmail: email, meta: withoutStamps(meta),
+      note: `Người đề nghị đã xóa phiếu (${name})` };
+    await appendHistory(client, hist);
+    await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: row.progress_done });
+    await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Delete', role: 'requester',
+      actorEmail: email, actorName: name, prevStatus: row.status, newStatus: STATUS.deleted });
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[Vouchers] delete error:', err.message);
+    return res.status(500).json({ success: false, message: 'Lỗi: ' + err.message });
+  } finally {
+    client.release();
+  }
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  for (const a of waiting) {
+    await queueMail({ to: a.email, subject: `[ĐÃ XÓA] Phiếu ${voucherNumber}`,
+      html: `<p>Phiếu ${esc(voucherNumber)} (${esc(view.company)}, ${esc(Number(view.amount).toLocaleString('vi-VN'))} đ) đã được người đề nghị xóa.</p>` +
+        '<p>Bạn không cần phê duyệt phiếu này nữa.</p>' });
+  }
+  await publishEvent('voucher:deleted', { voucherNumber, status: STATUS.deleted });
+  return res.json({ success: true, message: msg(lang, 'deleted', voucherNumber) });
+}
+
 // ── Reads ────────────────────────────────────────────────────
 
 /**
@@ -671,8 +760,8 @@ export async function handleVoucherSummary(req, res) {
     const cols = `voucher_number, voucher_type, company_name, employee_name, requestor_email, amount, status, last_action,
                   updated_at, progress_done, progress_total, approver_emails, pending_emails, current_approver`;
     const { rows } = admin
-      ? await pool.query(`SELECT ${cols} FROM vouchers`)
-      : await pool.query(`SELECT ${cols} FROM vouchers WHERE LOWER(requestor_email) = $1 OR $1 = ANY(approver_emails)`, [email]);
+      ? await pool.query(`SELECT ${cols} FROM vouchers WHERE status <> $1`, [STATUS.deleted])
+      : await pool.query(`SELECT ${cols} FROM vouchers WHERE (LOWER(requestor_email) = $1 OR $1 = ANY(approver_emails)) AND status <> $2`, [email, STATUS.deleted]);
     return res.json({ success: true, message: 'Thành công', data: summarize(rows, { email, isAdmin: admin }, callerApproverRole) });
   } catch (err) {
     console.error('[Vouchers] summary error:', err.message);
@@ -785,7 +874,8 @@ export async function handleVoucherApprovalContext(req, res) {
     const myEntries = open >= 0 ? plan.steps[open].approvers.filter((a) => a.email === caller.email && a.status !== 'approved') : [];
 
     let reason = '';
-    if (plan.status === 'rejected') reason = msg(lang, 'voucherRejectedCannotApprove');
+    if (row.status === STATUS.deleted) reason = msg(lang, 'voucherDeleted');
+    else if (plan.status === 'rejected') reason = msg(lang, 'voucherRejectedCannotApprove');
     else if (plan.status === 'approved') reason = msg(lang, 'alreadyFullyApproved');
     else if (!inPlan) reason = msg(lang, 'approverInfoNotFound');
     else if (!myEntries.length) {
@@ -810,7 +900,8 @@ export async function handleVoucherApprovalContext(req, res) {
         me: { email: caller.email, name: caller.name, isAdmin: caller.isAdmin },
         myEntries,
         canApprove: !reason,
-        canReject: plan.status !== 'approved' && plan.status !== 'rejected' && inPlan,
+        canReject: row.status !== STATUS.deleted && plan.status !== 'approved' && plan.status !== 'rejected' && inPlan,
+        canDelete: !deleteBlocked(row, plan, caller.email, lang),
         reason,
         sampleSignatureUrl,
         sampleFrom,
