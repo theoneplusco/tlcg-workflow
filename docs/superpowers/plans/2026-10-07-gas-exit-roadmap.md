@@ -30,6 +30,7 @@ GAS also uses these Google services:
    - `syncToSheets` is replaced.
    - The generic Sheet copy engine is built, then used for vouchers first.
 2. ✅ **Plan 5: Purchase requests at GAS parity** (`2026-10-07-purchase-requests-on-postgres.md`). Done 2026-10-07: e2e with every GAS URL dead passed after two page bug fixes; zero PR calls to GAS (acceptance-minutes history still GAS → Plan 7); GAS-mode regression 11/11.
+2b. ✅ **Plan 5b: Approve with the registered signature + password; VND threshold** (`2026-10-07-signature-stamp-and-vnd-threshold.md`). Done 2026-10-08: e2e with every GAS URL dead 50/53, with the 3 print failures fixed in 6327038; zero GAS calls; GAS-mode regression 14/14.
    - Check each existing handler against GAS.
    - Add the 8 missing actions.
    - Add an importer for Purchase_Request_History and Purchase_Request_Archive.
@@ -83,3 +84,11 @@ GAS also uses these Google services:
 4. Check once on the real Sheet that the mirror's ISO audit timestamps stay text (not turned into dates by Sheets). The importer's dedupe of audit rows depends on it.
 5. `P2P_SPREADSHEET_ID` must equal the GAS `MASTER_SPREADSHEET_ID`. The server refuses to start with `p2p` on and `P2P_SPREADSHEET_ID` unset, and the importer `--live` reads this id.
 6. `p2p` and `payments` go on together with Plans 6–7, never `p2p` alone. Until Plan 6, the server refuses to start with `payments` in `PG_WORKFLOWS`, and the direct-payment check fails closed.
+
+
+## Switch-day additions (Plan 5b)
+1. Apply `db/migrations/008_exchange_rates.sql` on the Mini. The server refuses to start with `p2p` on while it is missing.
+2. Before turning `p2p` on, an admin enters the USD and EUR rates in Master Data › Exchange rates. They are seeded empty, and a PR in a currency without a rate is refused.
+3. Run the sample-size check (Plan 5b Task 7 step 3) against production data and fix every sample that fails or is over 750 KB. Known now: one Drive sample returns 404 (`1_7jJRd7…`, linh.le's sample as INS legal rep and RIOT chief accountant).
+4. Tell approvers that on the new system they approve with their login password and no longer upload a signature.
+5. `VOUCHER_REQUIRE_LOGIN=true` also stops anyone who is not signed in from triggering another person's password lockout.
