@@ -3,7 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { PW, FAKE_STAMP, useStepUp } from '../approval/step-up-helpers.js';
-import { failKey, lockKey } from '../../api/lib/approval/step-up.js';
+import { failKey, lockKey, stampDeps, clearStampCache } from '../../api/lib/approval/step-up.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const skip = !url && 'set TEST_DATABASE_URL to run';
@@ -11,6 +11,7 @@ let h, pool, redis, saveVersion, company, people, cleanup;
 const A = 'sa-a@x.vn';
 const B = 'sa-b@x.vn';
 const C = 'sa-c@x.vn';
+const D = 'sa-d@x.vn';
 const SIG = (e) => `https://drive/sample-${e}`;
 const NOTE = (label) => `Tự động duyệt khi gửi phiếu (người đề nghị là ${label})`;
 
@@ -58,8 +59,8 @@ before(async () => {
                     TRUNCATE email_queue; TRUNCATE approval_flows; TRUNCATE sheet_outbox`);
   company = (await pool.query(`SELECT * FROM companies WHERE company_key = 'M.I'`)).rows[0];
   people = { accountant: company.accountant_email.toLowerCase(), legal: company.legal_rep_email.toLowerCase(), treasurer: company.treasurer_email.toLowerCase() };
-  cleanup = await useStepUp(pool, redis, [people.accountant, people.legal, people.treasurer, A, B, C]);
-  for (const e of [A, B, C]) await pool.query(`UPDATE employees SET extra = extra || jsonb_build_object('Signature', $2::text) WHERE LOWER(email) = $1`, [e, SIG(e)]);
+  cleanup = await useStepUp(pool, redis, [people.accountant, people.legal, people.treasurer, A, B, C, D]);
+  for (const e of [A, B, C, D]) await pool.query(`UPDATE employees SET extra = extra || jsonb_build_object('Signature', $2::text) WHERE LOWER(email) = $1`, [e, SIG(e)]);
 });
 after(async () => {
   if (!pool) return;
@@ -95,6 +96,7 @@ test('requester = step 1 (default flow): asked once, nothing stored; with the pa
   assert.ok(hist.every((x) => !JSON.stringify(x.metadata.selfApproval || {}).includes('data:')), 'history rows never carry the stamp copy');
   const log = await auditRows(no);
   assert.deepEqual(log.map((a) => [a.action, a.actor_email, a.note]), [['Submit', people.accountant, 'Tự duyệt'], ['Approve', people.accountant, NOTE('Kế toán trưởng')]]);
+  assert.equal(log[0].extra.submittedBy, people.accountant, 'Submit audit: the token email of the submitter');
   assert.deepEqual([log[1].extra.auth, log[1].extra.auto, log[1].extra.signatureStamped], ['password', true, true]);
   const ob = await outbox(no);
   assert.deepEqual(ob.filter((o) => o.tab === 'Voucher_Current').map((o) => o.record.approvalProgress), [0, 1], 'auto-approval mirrored like any approval');
@@ -217,6 +219,7 @@ test('no prompt without a token: consent needs a signed-in submitter (never a bo
   assert.equal(v.status, 'Đang treo');
   assert.equal(v.metadata.selfApproval, undefined);
   assert.deepEqual(await asked(noToken), [people.accountant], 'the approver named on the form is emailed as today');
+  assert.equal((await auditRows(noToken))[0].extra.submittedBy, undefined, 'no token: no submittedBy');
 });
 
 test('filing for someone else (decision 1): the signed-in submitter\'s own steps are prompted; consent is theirs', { skip }, async () => {
@@ -234,6 +237,16 @@ test('filing for someone else (decision 1): the signed-in submitter\'s own steps
   assert.equal(v.status, 'Đang duyệt (1/3)');
   assert.equal((await history(onBehalf)).pop().note, NOTE('Kế toán trưởng'));
   assert.deepEqual(await asked(onBehalf), [people.legal]);
+  assert.equal((await auditRows(onBehalf))[0].actor_email, 'sub@x.vn', 'Submit audit actor: the requestor, as today');
+  assert.equal((await auditRows(onBehalf))[0].extra.submittedBy, people.accountant);
+  // The auto-approved steps are the submitter's: they get the notice, the requester's confirmation does not claim them
+  const all = await mails(onBehalf);
+  const conf = all.find((m) => m.to_email === 'sub@x.vn' && m.subject.startsWith('[THÔNG BÁO]'));
+  assert.doesNotMatch(conf.body_html, /tự động duyệt khi gửi phiếu/);
+  const notice = all.filter((m) => m.to_email === people.accountant && m.subject.startsWith('[THÔNG BÁO]'));
+  assert.equal(notice.length, 1);
+  assert.equal(notice[0].subject, `[THÔNG BÁO] Phiếu ${onBehalf}: đã tự động duyệt bước của bạn`);
+  assert.match(notice[0].body_html, /tự động duyệt khi gửi phiếu \(đã xác nhận bằng mật khẩu\): bước 1 \(Kế toán trưởng\)\./);
 
   // A signed-in submitter who holds no step: no prompt, submitted as today (the requester on the form is not asked)
   const plain = newNo();
@@ -289,5 +302,97 @@ test('bulk approve: each voucher auto-advances the requester step; one batch ema
     const batch = (await pool.query(`SELECT to_email, body_html FROM email_queue WHERE subject LIKE '[PHÊ DUYỆT HÀNG LOẠT]%' ORDER BY id DESC LIMIT 1`)).rows[0];
     assert.equal(batch.to_email, C);
     assert.ok(nos.every((no) => batch.body_html.includes(no)));
+  } finally { await pool.query(`TRUNCATE approval_flows`); }
+});
+
+const reject = async (no, who) => callAs(h.handleVoucherReject, { voucher: { voucherNumber: no, rejectReason: 'Sai số tiền' } }, await jwtFor(who));
+const historyApi = async (no, who) => callAs(h.handleVoucherHistory, { voucherNumber: no }, await jwtFor(who));
+
+test('reject: the stamp copy is dropped and never reaches history rows or the history API', { skip }, async () => {
+  await flow([{ name: 'Kiểm tra', approvers: [person(A)] }, { name: 'Phê duyệt', approvers: [person(B)] }, { name: 'Chi tiền', approvers: [person(C)] }]);
+  try {
+    const no = newNo();
+    assert.equal((await submitAs(no, B, { selfApprovalPassword: PW })).success, true);
+    assert.equal((await reject(no, A)).success, true);
+    const v = await voucher(no);
+    assert.equal(v.status, 'Đã từ chối');
+    assert.deepEqual(v.metadata.selfApproval.stamps, [], 'final voucher: no stamp copy kept');
+    assert.ok((await history(no)).every((x) => !JSON.stringify(x.metadata).includes('data:')), 'no data URL in any history row');
+    const api = await historyApi(no, A);
+    assert.equal(api.success, true, api.message);
+    assert.equal(JSON.stringify(api.data).includes('data:'), false);
+  } finally { await pool.query(`TRUNCATE approval_flows`); }
+});
+
+test('acknowledge: history rows never carry a stored stamp copy', { skip }, async () => {
+  await flow([{ name: 'Duyệt', approvers: [person(B)] }]);
+  try {
+    const no = newNo();
+    assert.equal((await submitAs(no, B, { selfApprovalPassword: PW })).success, true);
+    assert.equal((await voucher(no)).status, 'Đã duyệt');
+    // Even if a stamp copy were still stored, the history row must not carry it
+    await pool.query(`UPDATE vouchers SET metadata = jsonb_set(metadata, '{selfApproval,stamps}', $2::jsonb) WHERE voucher_number = $1`,
+      [no, JSON.stringify([{ key: 'person', url: SIG(B), from: 'employee', signature: FAKE_STAMP('copy') }])]);
+    const ack = await callAs(h.handleVoucherAcknowledge, { voucherNumber: no, requesterSignature: 'https://drive/ack-sig' }, await jwtFor(B));
+    assert.equal(ack.success, true, ack.message);
+    const last = (await history(no)).pop();
+    assert.match(last.note, /đã xác nhận/);
+    assert.equal(JSON.stringify(last.metadata.selfApproval).includes('data:'), false);
+  } finally { await pool.query(`TRUNCATE approval_flows`); }
+});
+
+test('group step: an auto-approval that does not close the step does not re-email approvers already asked', { skip }, async () => {
+  await flow([{ name: 'Kiểm tra', approvers: [person(A)] }, { name: 'Nhóm', approvers: [person(C), person(B), person(D)] }]);
+  try {
+    const no = newNo();
+    assert.equal((await submitAs(no, B, { selfApprovalPassword: PW })).success, true);
+    await pool.query(`UPDATE employees SET extra = extra || jsonb_build_object('Signature', 'https://drive/sample-tmp') WHERE LOWER(email) = $1`, [B]);
+    assert.equal((await approve(no, A)).success, true);
+    assert.deepEqual(await asked(no), [A, C, B, D], 'sample changed: B waits by hand and is asked with the group');
+    await pool.query(`UPDATE employees SET extra = extra || jsonb_build_object('Signature', $2::text) WHERE LOWER(email) = $1`, [B, SIG(B)]);
+    const r = await approve(no, C);
+    assert.equal(r.message, `Đã phê duyệt thành công. Đang chờ ${D} cùng duyệt bước này.`);
+    const v = await voucher(no);
+    assert.deepEqual(v.metadata.approvalPlan.steps[1].approvers.map((x) => x.status), ['approved', 'approved', 'pending']);
+    assert.deepEqual(await asked(no), [A, C, B, D], 'D already asked: not emailed again');
+  } finally {
+    await pool.query(`UPDATE employees SET extra = extra || jsonb_build_object('Signature', $2::text) WHERE LOWER(email) = $1`, [B, SIG(B)]);
+    await pool.query(`TRUNCATE approval_flows`);
+  }
+});
+
+/** Change the flow while the consent is being taken (between the password check and the transaction). */
+const changeFlowDuringConsent = async (steps, fn) => {
+  const orig = stampDeps.fetchImage;
+  clearStampCache();
+  stampDeps.fetchImage = async (url) => { await flow(steps); return FAKE_STAMP(url); };
+  try { return await fn(); } finally { stampDeps.fetchImage = orig; clearStampCache(); }
+};
+
+test('flow changed between the ask and the transaction: asked again with the new steps, nothing stored', { skip }, async () => {
+  await flow([{ name: 'Kiểm tra', approvers: [person(A)] }, { name: 'Phê duyệt', approvers: [person(B)] }, { name: 'Chi tiền', approvers: [person(C)] }]);
+  try {
+    const no = newNo();
+    const r = await changeFlowDuringConsent(
+      [{ name: 'Kiểm tra', approvers: [person(A)] }, { name: 'Phê duyệt', approvers: [person(B)] }, { name: 'Chi tiền', approvers: [person(B)] }],
+      () => submitAs(no, B, { selfApprovalPassword: PW }));
+    assert.deepEqual([r.success, r.needSelfApproval, r.message], [false, true, 'Quy trình duyệt của phiếu vừa thay đổi. Vui lòng xác nhận lại.']);
+    assert.deepEqual(r.selfApproval.steps.map((x) => x.step), [2, 3]);
+    assert.equal(await voucher(no), undefined);
+  } finally { await pool.query(`TRUNCATE approval_flows`); }
+});
+
+test('flow changed so the submitter holds no step any more: the consent is dropped, submitted as today', { skip }, async () => {
+  await flow([{ name: 'Kiểm tra', approvers: [person(A)] }, { name: 'Phê duyệt', approvers: [person(B)] }, { name: 'Chi tiền', approvers: [person(C)] }]);
+  try {
+    const no = newNo();
+    const r = await changeFlowDuringConsent(
+      [{ name: 'Kiểm tra', approvers: [person(A)] }, { name: 'Chi tiền', approvers: [person(C)] }],
+      () => submitAs(no, B, { selfApprovalPassword: PW }));
+    assert.equal(r.success, true, r.message);
+    assert.equal(r.message, 'Đã gửi yêu cầu phê duyệt thành công');
+    const v = await voucher(no);
+    assert.equal(v.metadata.selfApproval, undefined);
+    assert.equal(v.metadata.approvalPlan.steps.length, 2);
   } finally { await pool.query(`TRUNCATE approval_flows`); }
 });

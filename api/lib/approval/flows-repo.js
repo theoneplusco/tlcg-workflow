@@ -4,15 +4,17 @@ import { DEFAULT_STEPS, validateSteps } from './engine.js';
 /**
  * The flow in force for a company at `at`: the company's own newest due
  * version, else the workflow default's, else the built-in steps.
+ * No `at` → compared in SQL against clock_timestamp(): effective_from has microseconds, a JS Date only
+ * milliseconds, so "now" from JS could fall just before a version saved a moment ago.
  */
-export async function getActiveFlow(db, workflow, companyId, at = new Date()) {
+export async function getActiveFlow(db, workflow, companyId, at = null) {
   const { rows } = await db.query(
     `SELECT id, version, steps, company_id, effective_from, created_by, created_at, note
        FROM approval_flows
-      WHERE workflow = $1 AND (company_id = $2 OR company_id IS NULL) AND effective_from <= $3
+      WHERE workflow = $1 AND (company_id = $2 OR company_id IS NULL) AND effective_from <= COALESCE($3::timestamptz, clock_timestamp())
       ORDER BY (company_id IS NULL), version DESC
       LIMIT 1`,
-    [workflow, companyId, at]
+    [workflow, companyId, at == null ? null : at]
   );
   const r = rows[0];
   if (r) {

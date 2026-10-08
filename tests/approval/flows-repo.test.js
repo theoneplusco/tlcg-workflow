@@ -59,3 +59,10 @@ test('loadCompanyContext returns the company and employees by email', { skip }, 
   assert.equal(company.company_key, 'TA');
   assert.equal(employeesByEmail.get('dir@x.vn').full_name, 'Dir Ector');
 });
+
+test('a version saved a moment ago is active at once (DB microseconds vs JS milliseconds)', { skip }, async () => {
+  for (let i = 0; i < 40; i += 1) {
+    const v = await saveVersion(db, { workflow: 'voucher', companyId: coB, steps: [step('director')], createdBy: 't@x.vn' });
+    assert.equal((await getActiveFlow(db, 'voucher', coB)).version, v.version, `iteration ${i}`);
+  }
+});

@@ -249,7 +249,8 @@ export async function handleVoucherSubmit(req, res) {
     await appendHistory(client, hist);
     await mirrorVoucher(client, hist, { at: submittedAt, submittedAt, progressDone: idx.done });
     await audit(client, { docNo: voucherNo, company: company.company_name, action: 'Submit', role: 'requester',
-      actorEmail: lower(v.requestorEmail), actorName: v.employee, newStatus: STATUS.submitted, note: description });
+      actorEmail: lower(v.requestorEmail), actorName: v.employee, newStatus: STATUS.submitted, note: description,
+      extra: actor.caller ? { submittedBy: actor.caller.email } : {} });
     if (consent) {
       // The requester's own step(s) from step 1 on, in order, in this same commit
       const adv = await autoAdvanceVoucher(client, { ...row, metadata: meta, status: STATUS.submitted });
@@ -278,12 +279,20 @@ export async function handleVoucherSubmit(req, res) {
       await queueMail({ ...approvalRequest(view, plan, a), replyTo: email.replyTo });
     }
   }
+  const link = `${baseUrl()}/voucher.html?viewStatus=${encodeURIComponent(voucherNo)}`;
+  const button = `<p style="margin-top: 15px;"><a href="${link}" style="background: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">🔍 Xem trạng thái phê duyệt</a></p>`;
+  // Filed for someone else (decision 1): the auto-approved steps are the SUBMITTER's, so they are told, not the requester
+  const onBehalf = auto.length > 0 && consent && consent.by !== lower(v.requestorEmail);
   if (reqMail && reqMail.to) {
-    const link = `${baseUrl()}/voucher.html?viewStatus=${encodeURIComponent(voucherNo)}`;
     const sentTo = waiting.length ? ` Đã gửi email đến ${nameList(waiting)} để ${auto.length ? 'tiếp tục' : 'bắt đầu'} phê duyệt.` : '';
-    const html = String(reqMail.body || '').replace(/đã được gửi phê duyệt/g, `đã được gửi phê duyệt.${sentTo}`) + selfEmailHtml(auto) +
-      `<p style="margin-top: 15px;"><a href="${link}" style="background: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">🔍 Xem trạng thái phê duyệt</a></p>`;
+    const html = String(reqMail.body || '').replace(/đã được gửi phê duyệt/g, `đã được gửi phê duyệt.${sentTo}`) +
+      (onBehalf ? '' : selfEmailHtml(auto)) + button;
     await queueMail({ to: reqMail.to, replyTo: email.replyTo, subject: reqMail.subject || '[THÔNG BÁO] Phiếu đã được gửi phê duyệt', html });
+  }
+  if (onBehalf) {
+    const esc = (t) => String(t || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    await queueMail({ to: consent.by, replyTo: email.replyTo, subject: `[THÔNG BÁO] Phiếu ${voucherNo}: đã tự động duyệt bước của bạn`,
+      html: `<p>Bạn đã gửi phiếu ${esc(voucherNo)} thay cho ${esc(v.employee || v.requestorEmail)}.</p>` + selfEmailHtml(auto) + button });
   }
   await publishEvent('voucher:submitted', { voucherNumber: voucherNo, status: statusText(plan) });
   return res.json(auto.length
@@ -425,7 +434,10 @@ async function approveLocked({ voucherNumber, email, approverName, lang, pre }) 
     await client.query('COMMIT');
     const finished = finalPlan.status === 'approved';
     await publishEvent('voucher:approved', { voucherNumber, status: adv.row.status, isFinal: finished });
-    return { ok: true, view: voucherView(row), plan: finalPlan, stepDone: done.stepDone || adv.auto.length > 0, finished, auto: adv.auto };
+    // A step closed when the open step moved (by this approval or the auto-advance after it): only then are the
+    // next approvers asked, so approvers already asked for a still-open group step are not emailed again
+    const stepDone = pendingStep(finalPlan) !== pendingStep(plan);
+    return { ok: true, view: voucherView(row), plan: finalPlan, stepDone, finished, auto: adv.auto };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -539,11 +551,13 @@ export async function handleVoucherReject(req, res) {
     const email = actor.email;
     const who = plan.steps.flatMap((s) => s.approvers).find((a) => a.email === email);
     const meta = row.metadata || {};
+    // The voucher is final: the stored stamp copy of a self-approval consent is no longer needed
+    if (meta.selfApproval) meta.selfApproval = { ...meta.selfApproval, stamps: [] };
     view = voucherView(row);
     const lastAction = 'Từ chối bởi ' + (who.name || email);
     const idx = await saveState(client, row, { plan: next, meta, status: STATUS.rejected, lastAction });
     const hist = {
-      ...view, status: STATUS.rejected, action: lastAction, approverEmail: email, meta, rejectionReason: reason,
+      ...view, status: STATUS.rejected, action: lastAction, approverEmail: email, meta: withoutStamps(meta), rejectionReason: reason,
       note: `Từ chối bởi ${who.label || who.name || email}\nLý do: ${reason}`,
     };
     await appendHistory(client, hist);
@@ -604,7 +618,7 @@ export async function handleVoucherAcknowledge(req, res) {
     );
     view = voucherView(row);
     const hist = {
-      ...view, status: STATUS.received, action: lastAction, approverEmail: requesterEmail, approvedAt: at, meta,
+      ...view, status: STATUS.received, action: lastAction, approverEmail: requesterEmail, approvedAt: at, meta: withoutStamps(meta),
       note: (isThu ? 'Người thu tiền đã xác nhận: ' : 'Người nhận tiền đã xác nhận: ') + (b.requesterName || requesterEmail),
       acknowledgedAt: at, acknowledgedBy: requesterEmail, signatureUrl: b.requesterSignature,
     };
