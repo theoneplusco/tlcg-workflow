@@ -3,7 +3,8 @@ import { PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-s
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import busboy from 'busboy';
 import { getS3, R2_BUCKET, R2_PUBLIC_URL, attachmentKey, validateUpload, contentDisposition, baseType, ALLOWED_TYPES, MAX_ATTACHMENT_BYTES } from '../lib/files/r2.js';
-import { driveDownloadUrl, isAllowedImageUrl, MAX_IMAGE_BYTES } from '../lib/files/signature-fetch.js';
+import { isAllowedImageUrl } from '../lib/files/signature-fetch.js';
+import { fetchImageDataUrl, ImageFetchError } from '../lib/files/fetch-image.js';
 import { callerFromRequest, requireLogin } from '../lib/auth-caller.js';
 
 const ok = (res, message, data) => res.json({ success: true, message, data });
@@ -107,23 +108,6 @@ export async function handleFetchSignatureImage(req, res, who = callerFromReques
   if (!url) return fail(res, 'Thiếu URL hình ảnh');
   if (!isAllowedImageUrl(url)) return fail(res, 'URL hình ảnh không được phép');
   try {
-    let target = driveDownloadUrl(url);
-    let r;
-    for (let hop = 0; ; hop += 1) {
-      r = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
-      if (r.status < 300 || r.status >= 400) break;
-      const next = r.headers.get('location');
-      if (!next || hop >= 4) return fail(res, 'Không tải được hình ảnh (chuyển hướng quá nhiều)');
-      target = new URL(next, target).toString();
-      if (!isAllowedImageUrl(target)) return fail(res, 'URL hình ảnh không được phép');
-    }
-    if (!r.ok) return fail(res, `Không tải được hình ảnh (HTTP ${r.status})`);
-    const contentLength = Number(r.headers.get('content-length'));
-    if (contentLength > MAX_IMAGE_BYTES) return fail(res, 'Hình ảnh quá lớn');
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > MAX_IMAGE_BYTES) return fail(res, 'Hình ảnh quá lớn');
-    const mime = (r.headers.get('content-type') || 'image/png').split(';')[0];
-    if (!/^image\//.test(mime)) return fail(res, 'Tệp không phải hình ảnh');
-    return ok(res, 'Success', { imageBase64: `data:${mime};base64,${buf.toString('base64')}` });
-  } catch (e) { return fail(res, 'Lỗi: ' + e.message); }
+    return ok(res, 'Success', { imageBase64: await fetchImageDataUrl(url) });
+  } catch (e) { return fail(res, e instanceof ImageFetchError ? e.message : 'Lỗi: ' + e.message); }
 }
