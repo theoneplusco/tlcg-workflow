@@ -7463,7 +7463,7 @@
                     return;
                 }
 
-                const voucher = currentModalVoucher;
+                let voucher = currentModalVoucher;
                 let meta = { ...(currentModalMeta || voucher.meta || {}) }; // Use merged meta
                 console.log('printVoucher: voucher data loaded', voucher.voucherNumber);
 
@@ -7542,11 +7542,49 @@
             }
             // A role's signature prints once that person has signed. GAS: same as the step
             // count; approval flows: roles may sit in any step, so check each one.
-            const signed = (role) => companyApprovers?.[role]?.status === 'approved';
             const pgFlow = !!(meta.approvalPlan || voucher.meta?.approvalPlan);
-            const accountantSig = (pgFlow ? signed('accountant') : progressNum >= 1) ? getSig('accountantSignature', companyApprovers?.accountant?.signature) : '';
-            const legalRepSig   = (pgFlow ? signed('legalRep')   : progressNum >= 2) ? getSig('legalRepSignature',   companyApprovers?.legalRep?.signature)   : '';
-            const treasurerSig  = (pgFlow ? signed('treasurer')  : progressNum >= 3) ? getSig('treasurerSignature',  companyApprovers?.treasurer?.signature)  : '';
+            // Postgres: per-role state lives in the plan and under companyApprovers.approvers
+            // (compat.js legacyCompanyApprovers), not in the flat entries filled above from
+            // getCompanyApprovers. Map it to role → { status, signature, name, time }.
+            const pgRoles = pgFlow ? (() => {
+                const plan = VoucherSteps.planOf(meta) || VoucherSteps.planOf(voucher) || null;
+                const nested = meta.companyApprovers?.approvers || voucher.meta?.companyApprovers?.approvers || {};
+                const planRole = { accountant: 'chief_accountant', legalRep: 'legal_rep', treasurer: 'treasurer' };
+                const out = {};
+                ['accountant', 'legalRep', 'treasurer'].forEach((role) => {
+                    const fromPlan = (plan?.steps || []).flatMap((s) => s.approvers || []).filter((a) => a.role === planRole[role]);
+                    const a = fromPlan.find((x) => x.status === 'approved') || fromPlan[0] || null;
+                    const n = nested[role] || null;
+                    if (!a && !n) return;
+                    out[role] = {
+                        status: a ? a.status : n.status,
+                        signature: (a && a.signature) || (n && n.signature) || '',
+                        name: (a && a.name) || (n && n.name) || '',
+                        time: (a && a.at) || (n && n.approvedAt) || ''
+                    };
+                });
+                return out;
+            })() : null;
+            if (pgRoles) {
+                companyApprovers = { ...(companyApprovers || {}) };
+                Object.keys(pgRoles).forEach((role) => {
+                    companyApprovers[role] = { ...(companyApprovers[role] || {}), status: pgRoles[role].status,
+                        approvedAt: pgRoles[role].time, name: pgRoles[role].name || companyApprovers[role]?.name || '' };
+                });
+                // Status badge: the plan is the truth on Postgres (keep "Received")
+                const planStatus = (VoucherSteps.planOf(meta) || VoucherSteps.planOf(voucher) || {}).status;
+                const raw = String(voucher.status || '').toLowerCase();
+                if (!raw.includes('received') && !raw.includes('xác nhận')) {
+                    if (planStatus === 'approved') voucher = { ...voucher, status: 'Đã duyệt' };
+                    else if (planStatus === 'rejected') voucher = { ...voucher, status: 'Đã từ chối' };
+                }
+            }
+            const signed = (role) => companyApprovers?.[role]?.status === 'approved';
+            // Postgres: the stamped sample in meta first, then the one stored on the plan step
+            const pgSig = (role) => pgRoles?.[role]?.signature || companyApprovers?.[role]?.signature;
+            const accountantSig = (pgFlow ? signed('accountant') : progressNum >= 1) ? getSig('accountantSignature', pgFlow ? pgSig('accountant') : companyApprovers?.accountant?.signature) : '';
+            const legalRepSig   = (pgFlow ? signed('legalRep')   : progressNum >= 2) ? getSig('legalRepSignature',   pgFlow ? pgSig('legalRep')   : companyApprovers?.legalRep?.signature)   : '';
+            const treasurerSig  = (pgFlow ? signed('treasurer')  : progressNum >= 3) ? getSig('treasurerSignature',  pgFlow ? pgSig('treasurer')  : companyApprovers?.treasurer?.signature)  : '';
             console.log('printVoucher: accountantSig =', !!accountantSig, '| legalRepSig =', !!legalRepSig, '| treasurerSig =', !!treasurerSig);
 
             // Determine voucher type title
