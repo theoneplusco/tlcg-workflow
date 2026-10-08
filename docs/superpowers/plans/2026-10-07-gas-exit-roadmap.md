@@ -35,6 +35,11 @@ GAS also uses these Google services:
    - Add the 8 missing actions.
    - Add an importer for Purchase_Request_History and Purchase_Request_Archive.
    - Add the Sheet copy and an e2e run.
+2c. ✅ **Plan 5c: the requester's own approval steps auto-approved (password once at submit)** (`2026-10-08-self-approval-auto.md`). Done 2026-10-08: e2e with every GAS URL dead 41/41 (the 11 plan scenarios plus Hủy/Escape from decision 5); GAS-mode regression against the stub 6/6; unit tests 381/381. Plans 6–7 call `api/lib/approval/self-approval.js` from their submit and approval paths.
+   - Run in a cloud container, not on the MacBook: `tlcg_v_test` was rebuilt from `db/schema.sql`, the 8 migrations and `tlcg_companies_embed.json` (M.I chief accountant = nhanh.nguyen@tl-c.com.vn, AP purchaser = tlc.ap@tl-c.com.vn). Drive was unreachable, so the stamp fetch was answered by a test-only stub (one colour per sample id); the real Drive fetch was last checked in Plan 5b.
+   - Still to run on the Mini or the MacBook: the read-only `gas-regress.cjs` against live GAS (Plan 5b, 14 checks). `script.google.com` was blocked in the container.
+   - Found during the run (already Plan 8 scope): `voucher.html` loads master data straight from GAS (`_MASTER_GAS_URL`, `action=getMasterData`), not through `/api`. With GAS gone the employee list stays empty. The e2e answered that one browser call from the local server.
+   - Plan wording vs behaviour: after "Bỏ qua", the requester's first-step email is the page's `[PHIẾU CHI] Yêu cầu phê duyệt - <số phiếu>`, not `[PHÊ DUYỆT] …` (that subject is the server's next-step email). Decision 3 (keep the reminder) holds.
 3. **Plan 6: Payment requests.**
    - Schema, all 7 actions, approval through the approval-flow engine, importer for Payment_Request_History, Sheet copy, e2e.
 4. **Plan 7: Acceptance minutes, contracts and amendments.**
@@ -96,3 +101,17 @@ GAS also uses these Google services:
    - `redis-cli INFO server | grep redis_version` must be 7.0 or newer. Login throttling uses `EXPIRE … NX` and switches itself off on older Redis.
    - `lsof -nP -iTCP:3001 -sTCP:LISTEN` must show 127.0.0.1 only, and `tailscale serve status` must show nothing on 3001. The login throttle trusts CF-Connecting-IP, which is safe only behind the tunnel. Optionally set Express `trust proxy` to `'loopback'`.
 7. Known trade-off: a stranger making 50 wrong guesses in an hour can block one person's login for up to an hour. That follows from the "no hard per-account lock" decision.
+
+## Switch-day additions (Plan 5c)
+1. No schema change: the consent lives in `metadata.selfApproval`. Nothing to migrate.
+2. **Old requests are not auto-approved:** they have no consent. After the import, list the open requests waiting for their own requester, so each requester approves them by hand once (one password per voucher, or one for a bulk approve):
+   ```sql
+   SELECT voucher_number, requestor_email, status FROM vouchers
+    WHERE status NOT IN ('Đã duyệt','Đã từ chối','Received') AND LOWER(requestor_email) = ANY(pending_emails);
+   SELECT pr_no, requester_email, status FROM purchase_requests
+    WHERE LOWER(requester_email) = ANY(pending_emails) AND status <> 'Trả lại bổ sung';
+   ```
+   TL-PC20260828000001 (Nguyễn Thị Nhanh, 0/3 since 28/08) is expected in the first list. Send the list to the user.
+3. Requesters who are also approvers need a working registered sample. Without one, the prompt shows `NO_SAMPLE` and they can only "approve later". The Plan 5b sample check (Plan 5b Task 7 step 3) covers them; re-run it on production data.
+4. Tell staff: on the new system, a requester who is also an approver is asked for their login password once when they send the request. "Bỏ qua, tôi duyệt sau" sends it anyway, and they then approve their own step by hand.
+5. Wrong passwords at submit count toward the same 5-failure / 15-minute approval lock as approvals (Plan 5b decision 1). Support should know that a locked submitter can still submit with "Bỏ qua".
