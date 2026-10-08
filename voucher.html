@@ -7129,7 +7129,16 @@
         // Approve voucher from modal
         async function approveFromModal() {
             if (!currentModalVoucher) return;
-            if (window.__vouchersOnPostgres || VoucherSteps.onPostgres(currentModalVoucher)) return approveFromModalWithPassword();
+            // The server decides the password path: ask getApprovalContext (as before 5b, only where Postgres is possible)
+            // and send a password only when it answers approvalAuth 'password'. Anything else → the unchanged GAS path.
+            if (window.__vouchersOnPostgres || VoucherSteps.onPostgres(currentModalVoucher)) {
+                let ctx = null;
+                try { ctx = await pgApi('getApprovalContext', { voucherNumber: currentModalVoucher.voucherNumber }); } catch (e) { ctx = null; }
+                if (ctx && ctx.success && ctx.data && ctx.data.approvalAuth === 'password') {
+                    if (!ctx.data.canApprove) { alert('❌ ' + (ctx.data.reason || 'Không thể phê duyệt phiếu này.')); return; }
+                    return approveFromModalWithPassword();
+                }
+            }
             
             if (!approverSignatureData) {
                 showToast('Vui lòng tải lên chữ ký trước khi phê duyệt', 'error');
