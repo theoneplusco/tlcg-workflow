@@ -13,6 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <script src="i18n.js"></script>
+<script src="my-signature.js?v=20261008-1"></script>
     <script src="voucher-steps.js"></script>
     <script src="approval-password.js"></script>
     <style>
@@ -4955,7 +4956,8 @@
          */
         async function compareSignatures(uploadedBase64, sampleUrl) {
             // Get sample signature as base64 via backend proxy
-            const sampleBase64 = await fetchSampleSignature(sampleUrl);
+            // The person's own profile signature (My Profile) is their sample; else the registered Drive sample
+            const sampleBase64 = (window.MySignature && await MySignature.get()) || await fetchSampleSignature(sampleUrl);
             if (!sampleBase64) {
                 console.log('📋 No sample signature available - skipping verification');
                 return { verified: true, reason: 'no_sample', similarity: 0 };
@@ -11153,5 +11155,6 @@
             </button>
         </div>
     </nav>
+<script>MySignature.watch('#signature-upload, #ack-sig-input, input[onchange^="handleApproverSignatureUpload"]');</script>
 </body>
 </html>

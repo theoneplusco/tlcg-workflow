@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biên Bản Nghiệm Thu - TLCGroup</title>
     <script src="i18n.js"></script>
+<script src="my-signature.js?v=20261008-1"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1390,7 +1391,8 @@ async function _amGenerateImageHash(imageDataUrl, size = 16) {
 }
 
 async function _amCompareSignatures(uploadedBase64, sampleUrl) {
-    const sampleBase64 = await _amFetchSampleSignature(sampleUrl);
+    // The person's own profile signature (My Profile) is their sample; else the registered Drive sample
+            const sampleBase64 = (window.MySignature && await MySignature.get()) || await _amFetchSampleSignature(sampleUrl);
     if (!sampleBase64) return { verified: true, reason: 'no_sample', similarity: 0 };
     const [uploadedHash, sampleHash] = await Promise.all([
         _amGenerateImageHash(uploadedBase64),
@@ -1965,5 +1967,6 @@ window.addEventListener('DOMContentLoaded', () => {
     readURLParams();
 });
 </script>
+<script>MySignature.watch('#receiver-sig-input, #dh-sig-input');</script>
 </body>
 </html>

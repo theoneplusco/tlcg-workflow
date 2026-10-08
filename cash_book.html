@@ -12,6 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="i18n.js"></script>
+<script src="my-signature.js?v=20261008-1"></script>
     <style>
         :root {
             --primary:        #007AFF;
@@ -924,6 +925,8 @@
                     file.className = 'no-print';
                     file.addEventListener('change', function() { onSigFile(rep, file.files[0], img); });
                     sig.appendChild(file);
+                    // The signer's profile signature (My Profile), unless they already picked one for this count
+                    if (window.MySignature) MySignature.fillInput(file, { isEmpty: function() { return !rep.signatureData; } });
                 }
                 row.appendChild(role);
                 row.appendChild(select);
@@ -964,10 +967,15 @@
                     canvas.width = Math.max(1, Math.round(image.width * scale));
                     canvas.height = Math.max(1, Math.round(image.height * scale));
                     var ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    // A PNG keeps its transparency (profile signatures are transparent); otherwise JPEG on white
                     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-                    var data = canvas.toDataURL('image/jpeg', 0.7);
+                    var data = file.type === 'image/png' ? canvas.toDataURL('image/png') : '';
+                    if (!data || data.length > 500 * 1024) {
+                        ctx.globalCompositeOperation = 'destination-over';
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        data = canvas.toDataURL('image/jpeg', 0.7);
+                    }
                     if (data.length > 500 * 1024) {
                         setStatus('Chữ ký vẫn quá lớn sau khi nén (tối đa 500KB). Vui lòng chọn ảnh nhỏ hơn.', true);
                         return;

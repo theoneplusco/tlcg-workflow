@@ -15,6 +15,13 @@ The plan of record is `docs/superpowers/plans/2026-10-07-gas-exit-roadmap.md`. T
 
 Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
+## ⏰ Reminders for the user (open items — remove when done)
+
+- **Emails are OFF on wf.tl-c.us** (`RESEND_API_KEY` commented out in the Mini's `.env` on 2026-10-08 for testing). Effect: no approval emails, and **"Issue a new temporary password" + "Email it to the employee" does not send** — the admin page shows the password to hand over instead. Failed emails are dropped after 3 tries, never sent later.
+  - Turn back on (on the Mini): `cd /Users/theoneplus_server/tlcg-workflow && sed -i '' 's/^#RESEND_API_KEY=/RESEND_API_KEY=/' .env && pm2 delete tlcg-workflow && pm2 start ecosystem.config.cjs && pm2 save` — then every test voucher emails real approvers.
+  - Option offered, not built yet: let account emails (temporary passwords) go out even while workflow emails are off.
+- **Every approver uploads their signature** in My Profile (or an admin does it in admin.html › Account). Until then, approvals fall back to the Drive links (linh.le's is broken: 404).
+
 ## Entry template
 
 ```
@@ -24,6 +31,18 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 - Found: ...
 - Left / next: ...
 ```
+
+---
+
+### 2026-10-08 (night): cloud session — profile signature used in every workflow
+- **Checked:** vouchers and purchase requests on Postgres already stamp the profile signature (shared `sampleSignatureFor`). Pages that still take a signature *image* did not: voucher (requester signature, receipt confirmation, GAS-path approval), purchase request (requester, GAS-path approval), acceptance minutes (receiver, department head), `approve_voucher.html`, `approve_payment_request.html`, cash book (signer). `payment_request.html` and `contract.html` take no signature.
+- **Did:** new `my-signature.js` (`MySignature.get / fillInput / watch`), included on those 6 pages.
+  - The page's signature upload is filled with the signed-in person's profile signature as if they had picked the file, so each page's own handler runs unchanged; a note "✓ Đã dùng chữ ký mẫu trong Hồ sơ của bạn" shows; they can still pick another file. Cash book fills only while that signer has not chosen one.
+  - The pages' similarity checks (`compareSignatures`, `_prCompareSignatures`, `_amCompareSignatures`) now use the person's profile signature as their sample, else the Drive sample — so a profile signature passes even when the Drive sample is broken (linh.le).
+  - Cash book keeps PNG uploads as PNG (transparent) instead of JPEG on white.
+  - Without login (e.g. an approve page opened from an email without a session) or without a profile signature, nothing changes.
+  - Tests: full suite 394/394; browser checks 10/10 (pages) + 3/3 (cash book path).
+- **Left / next:** see Reminders at the top. Server-side stamping for payment requests, acceptance minutes and cash book comes with their move to Postgres (Plans 6–8).
 
 ---
 

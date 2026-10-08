@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phê duyệt Đề nghị mua hàng</title>
     <script src="i18n.js"></script>
+<script src="my-signature.js?v=20261008-1"></script>
     <style>
         * {
             margin: 0;
@@ -472,7 +473,8 @@
 
         async function compareSignatures(uploadedBase64, sampleUrl) {
             try {
-                const sampleBase64 = await fetchSampleSignature(sampleUrl);
+                // The person's own profile signature (My Profile) is their sample; else the registered Drive sample
+            const sampleBase64 = (window.MySignature && await MySignature.get()) || await fetchSampleSignature(sampleUrl);
                 if (!sampleBase64) return { verified: false, reason: 'fetch_failed', similarity: 0, threshold: 75 };
                 const uploadedHash = await generateImageHash(uploadedBase64);
                 const sampleHash = await generateImageHash(sampleBase64);
@@ -828,6 +830,7 @@
             error.style.display = 'none';
         }
     </script>
+<script>MySignature.watch('#signature-upload-input');</script>
 </body>
 </html>
 

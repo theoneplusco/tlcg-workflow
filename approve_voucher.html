@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phê duyệt Phiếu</title>
     <script src="i18n.js"></script>
+<script src="my-signature.js?v=20261008-1"></script>
     <script src="voucher-steps.js"></script>
     <script src="approval-password.js"></script>
     <style>
@@ -471,7 +472,8 @@
         // Compare uploaded signature with sample signature
         async function compareSignatures(uploadedBase64, sampleUrl) {
             try {
-                const sampleBase64 = await fetchSampleSignature(sampleUrl);
+                // The person's own profile signature (My Profile) is their sample; else the registered Drive sample
+            const sampleBase64 = (window.MySignature && await MySignature.get()) || await fetchSampleSignature(sampleUrl);
 
                 // CRITICAL FIX: Fail-closed instead of fail-open
                 if (!sampleBase64) {
@@ -956,6 +958,7 @@
             document.getElementById('loading').classList.remove('show');
         }
     </script>
+<script>MySignature.watch('#signature-upload-input');</script>
 </body>
 </html>
 
