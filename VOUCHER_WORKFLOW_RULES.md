@@ -125,6 +125,7 @@ Step 4: submitter acknowledges receipt → status = Received
 Rules:
 - Steps must be sequential — step N cannot approve before step N-1
 - Self-approval allowed — if the requestor is also a designated approver (accountant/legalRep/treasurer) for the company, they approve their own step like any other approver. The self-approval block was removed (previously rejected with "Người đề nghị không thể phê duyệt phiếu của chính họ.") because it left vouchers permanently stuck with no possible approver when the submitter was also the sole accountant/legalRep/treasurer for their company.
+- On Postgres (2026-10-08 decision): the requester confirms with their password once at submit, and each of their own steps is then auto-approved with their stamped signature when the voucher reaches it. The history note is "Tự động duyệt khi gửi phiếu". If they cancel the prompt, they approve by hand as before.
 - Each approver must upload a signature image
 - Signature is verified via perceptual hash (16×16 greyscale canvas, Hamming distance, ~75% similarity threshold)
 - Rejection at any step stops the workflow entirely

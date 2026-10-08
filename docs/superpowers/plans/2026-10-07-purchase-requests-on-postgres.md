@@ -3433,7 +3433,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## Decisions on the open items (controller, 2026-10-07, consistent with the voucher rules)
 - **#2:** remove the "step 3" option from the send-back modal. It is outside the locked section, and the server already refuses it.
-- **#3:** refuse self-approval. A requester may not be picked for any approver slot on their own PR. This matches the voucher rule that removed self-approval. Message: `Bạn không thể tự phê duyệt đề nghị của chính mình.`
+- **#3:** refuse self-approval. A requester may not be picked for any approver slot on their own PR. Message: `Bạn không thể tự phê duyệt đề nghị của chính mình.` (Correction 2026-10-08: the voucher rule actually ALLOWS self-approval. This decision is superseded by the cross-workflow self-approval rule; see Plan 5c.)
 - **#6:** the server computes the grand total from the items.
 - **#7:** resubmit keeps the existing attachments and adds the new ones.
 - **#13:** follow the voucher rule. The server refuses a PR approval unless the signature check reports `verified === true`, against the approver's registered sample.
