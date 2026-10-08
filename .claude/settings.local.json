@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(open:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix approval status tracking and update web app URL\n\n- Fix column indices in getVoucherFromHistory \\(Note=8, Timestamp=12, etc.\\)\n- Add meta.approvedBy for history scanning in approval flow\n- Add fallback logic for vouchers approved before fix\n- Update PHIEU_THU_CHI_BACKEND URL to new deployment\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd refreshApproverEmails function to update pending vouchers\n\n- Add handleRefreshApproverEmails\\(\\) to update approver emails in pending vouchers\n- Fix column indices: Company at index 2, Status at index 5\n- Parse Meta JSON correctly from note field \\(after \"Meta: \" prefix\\)\n- Preserve note prefix when saving updated meta\n- Add refreshApproverEmails\\(\\) manual function for Apps Script editor\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(find:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vercel --version)",
+      "Bash(npm run dev:*)",
+      "Bash(npx vercel login)",
+      "Bash(npx vercel:*)",
+      "Bash(npx skills add vercel-labs/agent-skills --all -a claude-code)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(claude:*)",
+      "Bash(claude doctor:*)",
+      "Bash(sed -i '' 's/de_nghi_mua_hang\\\\.html/purchase_request.html/g' '/Volumes/MI 02 \\(SSD\\)/CN Personal Projects/TLCG Workflow/index.html')",
+      "Bash(sed -i '' 's|Sidebar \\(shared with de_nghi_thanh_toan\\)|Sidebar \\(shared with payment_request\\)|g' '/Volumes/MI 02 \\(SSD\\)/CN Personal Projects/TLCG Workflow/purchase_request.html')",
+      "Bash(sed -i '' 's/phieu_thu_chi\\\\.html/voucher.html/g; *)",
+      "Bash(sed -i '' 's/phieu_thu_chi\\\\.html/voucher.html/g' '/Volumes/MI 02 \\(SSD\\)/CN Personal Projects/TLCG Workflow/PHIEU_THU_CHI_WORKFLOW.md')",
+      "Bash(sed -i '' 's/phieu_thu_chi\\\\.html/voucher.html/g' '/Volumes/MI 02 \\(SSD\\)/CN Personal Projects/TLCG Workflow/TLCG-MCP-GUIDE.md')",
+      "Bash(git rm *)",
+      "Bash(git commit *)",
+      "Bash(vercel --prod)",
+      "Bash(vercel logs *)"
+    ]
+  }
+}
