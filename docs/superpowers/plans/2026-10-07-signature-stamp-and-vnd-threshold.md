@@ -1888,3 +1888,4 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 4. **Imported PRs.** PRs imported from GAS keep their stored branch and are not recomputed in VND.
 5. **Exchange rates.** A rate is a whole number of VND per 1 unit of the currency (e.g. 26000). The admin UI and the API refuse decimals and non-positive values with 'Tỷ giá phải là số nguyên dương (VND cho 1 đơn vị).'
 6. **Currencies.** Admins can add a currency in the exchange-rate view: a 3-letter code, upper-cased and unique, plus a rate. A currency can be removed only if no PR uses it. Seed USD and EUR as before.
+7. **Lockout window.** The failure counter slides: each wrong password resets the 15-minute expiry. The 5th failure inside the window sets a separate lock key for 15 minutes. Accepted as the stricter, safer behaviour.
