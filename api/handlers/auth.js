@@ -5,7 +5,9 @@ import redis from '../../db/redis.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { sendEmailNow } from './email-queue.js';
-import { verifyPassword, BCRYPT_ROUNDS } from '../lib/auth/password.js';
+import { BCRYPT_ROUNDS } from '../lib/auth/password.js';
+import { countAttempt, attemptSucceeded, clientIp, throttleDeps } from '../lib/auth/login-throttle.js';
+import { callerFromRequest } from '../lib/auth-caller.js';
 
 const GENERIC_RESET_MSG = 'Nếu email tồn tại trong hệ thống, mã OTP đã được gửi.';
 const OTP_TTL_SEC = 600;          // 10 minutes
@@ -38,15 +40,21 @@ export async function handleLogin(req, res) {
   }
 
   try {
+    // Failures are throttled per IP + email and per email (api/lib/auth/login-throttle.js), counted before the check.
+    const who = { ip: clientIp(req), email: String(email), lang };
+    const gate = await countAttempt(redis, who);
+    if (!gate.ok) return res.status(429).json({ success: false, message: gate.message });
+
     const { rows } = await pool.query(
       `SELECT id, full_name, email, position, department, company, phone, role, is_admin,
               employee_id, password_hash, legacy_password_sha256, must_change_password, status
        FROM employees WHERE email = $1 AND status = 'active'`,
-      [email.toLowerCase().trim()]
+      [String(email).toLowerCase().trim()]
     );
 
     const user = rows[0];
-    const valid = user ? await verifyPassword(pool, user, password) : false;
+    const valid = user ? await throttleDeps.verifyPassword(pool, user, String(password)) : false;
+    if (valid) await attemptSucceeded(redis, who, gate.counted);
     if (!valid) {
       return res.status(401).json({
         success: false,
@@ -99,15 +107,27 @@ export async function handleLogin(req, res) {
   }
 }
 
+/**
+ * Change the signed-in user's password. The account comes from the login token (Authorization: Bearer),
+ * never from the body; no token → 401. The first-login forced change uses the token the login response returned.
+ * Wrong current passwords are throttled like login.
+ */
 export async function handleChangePassword(req, res) {
-  const { email, currentPassword, newPassword, lang } = req.body || {};
+  const { currentPassword, newPassword, lang } = req.body || {};
   const vi = lang !== 'en';
 
-  if (!email || !currentPassword || !newPassword) {
+  let caller;
+  try { caller = await callerFromRequest(req, pool); } catch (err) {
+    console.error('[Auth] Change password caller lookup error:', err.message);
+    return res.status(500).json({ success: false, message: vi ? 'Lỗi server' : 'Server error' });
+  }
+  if (!caller) return res.status(401).json({ success: false, message: vi ? 'Vui lòng đăng nhập' : 'Please sign in' });
+
+  if (!currentPassword || !newPassword) {
     return res.status(400).json({
       success: false,
-      message: vi ? 'Email, mật khẩu hiện tại và mật khẩu mới là bắt buộc'
-                  : 'Email, current password, and new password are required',
+      message: vi ? 'Mật khẩu hiện tại và mật khẩu mới là bắt buộc'
+                  : 'Current password and new password are required',
     });
   }
 
@@ -117,20 +137,25 @@ export async function handleChangePassword(req, res) {
       return res.json({ success: false, message: pwValidation.message });
     }
 
+    const who = { ip: clientIp(req), email: caller.email, lang };
+    const gate = await countAttempt(redis, who);
+    if (!gate.ok) return res.status(429).json({ success: false, message: gate.message });
+
     const { rows } = await pool.query(
       `SELECT id, password_hash, legacy_password_sha256 FROM employees
-       WHERE email = $1 AND status = 'active'`,
-      [email.toLowerCase().trim()]
+       WHERE id = $1 AND status = 'active'`,
+      [caller.id]
     );
 
     const user = rows[0];
-    const valid = user ? await verifyPassword(pool, user, currentPassword) : false;
+    const valid = user ? await throttleDeps.verifyPassword(pool, user, String(currentPassword)) : false;
     if (!valid) {
       return res.status(401).json({
         success: false,
         message: vi ? 'Mật khẩu hiện tại không đúng' : 'Current password is incorrect',
       });
     }
+    await attemptSucceeded(redis, who, gate.counted);
 
     const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.query(
