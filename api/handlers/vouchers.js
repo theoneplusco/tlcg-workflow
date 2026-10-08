@@ -8,6 +8,8 @@
 // - Approvals on Postgres: the approver re-enters their login password and the server stamps their
 //   registered sample signature (decision 2026-10-07, option D; api/lib/approval/step-up.js).
 // - Emails are queued only after the transaction commits.
+// - Plan 5c: a requester who is also an approver confirms with their password once at submit; their steps are then
+//   auto-approved in order, inside the transaction that reaches them (api/lib/approval/self-approval.js).
 import pool from '../../db/pool.js';
 import { publishEvent } from './sse.js';
 import { queueMail } from './email-queue.js';
@@ -24,6 +26,10 @@ import { enqueue } from '../lib/sheets/outbox.js';
 import redis from '../../db/redis.js';
 import { confirmPassword, verificationRecord, makeStamper, stampStillCurrent } from '../lib/approval/step-up.js';
 import { sampleSignatureFor, NO_SAMPLE } from '../lib/approval/signature-check.js';
+import {
+  requestConsent, askBody, planChangedBody, sameOwnSteps, planOwnSteps, planOwnOpen, planOwnLeft, consentFor, recordAuto,
+  withoutStamps, autoAdvance, doneText, selfEmailHtml, publicAuto,
+} from '../lib/approval/self-approval.js';
 import {
   historyRecord, currentRecord, voucherSpreadsheetId, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
 } from '../lib/sheets/voucher-records.js';
@@ -157,6 +163,16 @@ const nameList = (approvers) => approvers.map((a) => a.name || a.email).join(', 
 
 // ── sendApprovalEmail (submit) ───────────────────────────────
 
+/** The company, its active voucher flow and the plan it resolves to; { error } in the GAS wording otherwise. */
+async function resolvePlan(db, v, lang) {
+  const company = await findCompany(db, v.company, v.companyKey);
+  if (!company) return { error: msg(lang, 'companyNotFound') + (v.company || '') };
+  const flow = await getActiveFlow(db, 'voucher', company.id);
+  const built = buildPlan({ flow, company, employeesByEmail: await employeesByEmail(db), workflow: 'voucher' });
+  if (built.problems.length) return { error: msg(lang, 'flowProblems', built.problems.join(' ')) };
+  return { company, flow, plan: built.plan };
+}
+
 export async function handleVoucherSubmit(req, res) {
   const b = req.body || {};
   const lang = b.lang;
@@ -168,26 +184,49 @@ export async function handleVoucherSubmit(req, res) {
   if (!actor) return;
   const voucherNo = String(v.voucherNumber || 'AUTO-' + Date.now()).trim();
 
+  // Plan 5c: only the signed-in submitter (token email, never a body email) can consent, for the steps THEY hold —
+  // also when filing for another employee (controller decision 1). No token (only while VOUCHER_REQUIRE_LOGIN is
+  // off) → no prompt, submitted as today. Asked and checked BEFORE the transaction: the password check and the
+  // sample load never run under a lock.
+  const me = actor.caller ? actor.caller.email : '';
+  let consent = null;
+  if (me) {
+    const seen = await pool.query(`SELECT 1 FROM vouchers WHERE voucher_number = $1`, [voucherNo]);
+    if (seen.rows.length) return fail(res, msg(lang, 'voucherAlreadySubmitted', voucherNo));
+    const pre = await resolvePlan(pool, v, lang);
+    if (pre.error) return fail(res, pre.error);
+    const sa = await requestConsent({ db: pool, redis, email: me, password: b.selfApprovalPassword, declined: b.selfApprovalDeclined,
+      own: planOwnSteps(pre.plan, me), companyId: pre.company.id, round: 0, ref: voucherNo, lang, at: now() });
+    if (sa.ask) return res.json(askBody(sa));
+    consent = sa.consent;
+  }
+
   const client = await pool.connect();
-  let plan, company, view;
+  let plan, view;
+  let auto = [];
   try {
     await client.query('BEGIN');
     const dup = await client.query(`SELECT 1 FROM vouchers WHERE voucher_number = $1`, [voucherNo]);
     if (dup.rows.length) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'voucherAlreadySubmitted', voucherNo)); }
-
-    company = await findCompany(client, v.company, v.companyKey);
-    if (!company) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'companyNotFound') + (v.company || '')); }
-    const flow = await getActiveFlow(client, 'voucher', company.id);
-    const built = buildPlan({ flow, company, employeesByEmail: await employeesByEmail(client), workflow: 'voucher' });
-    if (built.problems.length) { await client.query('ROLLBACK'); return fail(res, msg(lang, 'flowProblems', built.problems.join(' '))); }
-    plan = built.plan;
+    const resolved = await resolvePlan(client, v, lang);
+    if (resolved.error) { await client.query('ROLLBACK'); return fail(res, resolved.error); }
+    const { company, flow } = resolved;
+    plan = resolved.plan;
+    if (consent) {
+      // The flow or Master Data changed since the prompt: never approve steps the requester did not see
+      const fresh = planOwnSteps(plan, me);
+      if (!fresh.length) consent = null;
+      else if (!sameOwnSteps(fresh, consent.steps)) { await client.query('ROLLBACK'); return res.json(planChangedBody(fresh, lang)); }
+    }
 
     const submittedAt = now();
     const meta = {
       requesterSignature: v.requesterSignature || '', reason: v.reason || '', voucherDate: v.voucherDate || '',
       department: v.department || '', payeeName: v.payeeName || '', amountInWords: v.amountInWords || '',
       expenseItems: v.expenseItems || [], submittedAt, approvalFlow: { id: flow.id, version: flow.version, source: flow.source },
+      // The token email whenever signed in; consentFor checks the consent against it (consent implies a token)
       submittedByEmail: actor.email || lower(v.requestorEmail),
+      ...(consent ? { selfApproval: consent } : {}),
     };
     const attachments = attachmentLines(v.files);
     const description = v.reason || v.description || '';
@@ -205,12 +244,18 @@ export async function handleVoucherSubmit(req, res) {
     view = voucherView(row);
     const hist = {
       ...view, status: STATUS.submitted, action: 'Đã nộp phiếu', attachments, note: 'Gửi phê duyệt',
-      approverEmail: plan.steps[0].approvers.map((a) => a.email).join(','), meta,
+      approverEmail: plan.steps[0].approvers.map((a) => a.email).join(','), meta: withoutStamps(meta),
     };
     await appendHistory(client, hist);
     await mirrorVoucher(client, hist, { at: submittedAt, submittedAt, progressDone: idx.done });
     await audit(client, { docNo: voucherNo, company: company.company_name, action: 'Submit', role: 'requester',
       actorEmail: lower(v.requestorEmail), actorName: v.employee, newStatus: STATUS.submitted, note: description });
+    if (consent) {
+      // The requester's own step(s) from step 1 on, in order, in this same commit
+      const adv = await autoAdvanceVoucher(client, { ...row, metadata: meta, status: STATUS.submitted });
+      auto = adv.auto;
+      plan = planOf(adv.row);
+    }
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -221,11 +266,13 @@ export async function handleVoucherSubmit(req, res) {
     client.release();
   }
 
-  // Emails after commit: step 1 approvers (all of them), then the requester
-  const first = plan.steps[0].approvers;
+  // Emails after commit, from the plan AFTER any self-approval: the requester is never asked to approve a step that
+  // was just approved for them. Without self-approval this is exactly the old behaviour (waiting = step 1).
+  const waiting = stepWaiting(plan);
   const pageTo = String(email.to).split(',').map(lower).filter(Boolean);
-  for (const a of first) {
-    if (first.length === 1 && pageTo.includes(a.email) && email.subject && email.body) {
+  if (plan.status === 'approved') for (const m of finalApproved(view, plan)) await queueMail(m);
+  for (const a of waiting) {
+    if (!auto.length && waiting.length === 1 && pageTo.includes(a.email) && email.subject && email.body) {
       await queueMail({ to: a.email, cc: email.cc, replyTo: email.replyTo, subject: email.subject, html: email.body });
     } else {
       await queueMail({ ...approvalRequest(view, plan, a), replyTo: email.replyTo });
@@ -233,13 +280,15 @@ export async function handleVoucherSubmit(req, res) {
   }
   if (reqMail && reqMail.to) {
     const link = `${baseUrl()}/voucher.html?viewStatus=${encodeURIComponent(voucherNo)}`;
-    const html = String(reqMail.body || '').replace(/đã được gửi phê duyệt/g,
-      `đã được gửi phê duyệt. Đã gửi email đến ${nameList(first)} để bắt đầu phê duyệt.`) +
+    const sentTo = waiting.length ? ` Đã gửi email đến ${nameList(waiting)} để ${auto.length ? 'tiếp tục' : 'bắt đầu'} phê duyệt.` : '';
+    const html = String(reqMail.body || '').replace(/đã được gửi phê duyệt/g, `đã được gửi phê duyệt.${sentTo}`) + selfEmailHtml(auto) +
       `<p style="margin-top: 15px;"><a href="${link}" style="background: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">🔍 Xem trạng thái phê duyệt</a></p>`;
     await queueMail({ to: reqMail.to, replyTo: email.replyTo, subject: reqMail.subject || '[THÔNG BÁO] Phiếu đã được gửi phê duyệt', html });
   }
-  await publishEvent('voucher:submitted', { voucherNumber: voucherNo, status: STATUS.submitted });
-  return res.json({ success: true, message: 'Đã gửi yêu cầu phê duyệt thành công' });
+  await publishEvent('voucher:submitted', { voucherNumber: voucherNo, status: statusText(plan) });
+  return res.json(auto.length
+    ? { success: true, message: `Đã gửi yêu cầu phê duyệt thành công. ${doneText(auto)}`, autoApproved: publicAuto(auto) }
+    : { success: true, message: 'Đã gửi yêu cầu phê duyệt thành công' });
 }
 
 // ── Approve (shared by approveVoucher and bulkApprove) ───────
@@ -269,7 +318,64 @@ async function approveOne({ voucherNumber, approverEmail, approverName, lang, st
   return { ok: false, error: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
 }
 
-/** approveOne's transaction: row lock, GAS rules, the pre-loaded stamp, write. { retry: true } = sample changed. */
+/**
+ * Approve the open step for `email` on the locked row and write everything an approval writes: print fields,
+ * verification record, state, history, Sheet copy, audit. Shared by approveLocked and the Plan 5c auto-advance
+ * (`auto` = { consent, mine, note }). Engine errors (NOT_YOUR_TURN, ALREADY_APPROVED, CLOSED) are thrown before
+ * anything is written. Returns { row (as written), plan, stepDone, finished }.
+ */
+async function writeApproval(client, row, { email, name = '', signature, from, at, auto = null }) {
+  const plan = planOf(row);
+  const result = applyApproval(plan, email, { at, signature });
+  const mine = plan.steps[pendingStep(plan)].approvers.filter((a) => a.email === email);
+  const next = result.plan;
+  const meta = { ...(row.metadata || {}) };
+  const before = legacyCompanyApprovers(plan).approvers;
+  const ca = legacyCompanyApprovers(next);
+  // The legacy key of the entry approved just now (the same person may sit in two steps; two writes can share a time)
+  const key = Object.keys(ca.approvers).find((k) => ca.approvers[k].email === email && ca.approvers[k].status === 'approved'
+    && (!before[k] || before[k].status !== 'approved')) || '';
+  const who = name || mine[0].name || email;
+  // Role-specific fields read by the print templates (GAS names)
+  if (key === 'accountant') { meta.accountantSignature = signature; meta.accountantName = who; }
+  if (key === 'legalRep') { meta.legalRepSignature = signature; meta.legalRepName = who; }
+  if (key === 'treasurer') { meta.treasurerSignature = signature; meta.treasurerName = who; meta.approverSignature = signature; }
+  meta.signatureVerification = { ...(meta.signatureVerification || {}), [key || email]: verificationRecord(from, at) };
+  meta.approvedBy = email;
+  if (auto) meta.selfApproval = recordAuto(auto.consent, auto.mine, at, planOwnLeft(next, email));
+
+  const status = statusText(next);
+  const lastAction = 'Duyệt bởi ' + who;
+  const idx = await saveState(client, row, { plan: next, meta, status, lastAction });
+  const label = mine[0].label || 'Người duyệt';
+  const note = auto ? auto.note
+    : result.finished ? `Tất cả ${next.steps.length} bước phê duyệt đã duyệt` : `Đã duyệt bởi ${label} (${ca.approvalProgress})`;
+  const hist = { ...voucherView(row), status, action: lastAction, approverEmail: email, approvedAt: at, meta: withoutStamps(meta), note };
+  await appendHistory(client, hist);
+  await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: idx.done });
+  await audit(client, { docNo: row.voucher_number, company: row.company_name, action: 'Approve', role: key, actorEmail: email,
+    actorName: who, prevStatus: row.status, newStatus: status, note: auto ? auto.note : '',
+    extra: { auth: 'password', signatureStamped: !!signature, sampleFrom: from, ...(auto ? { auto: true, consentedAt: auto.consent.consentedAt } : {}) } });
+  return { row: { ...row, metadata: meta, status, last_action: lastAction }, plan: next, stepDone: result.stepDone, finished: result.finished };
+}
+
+/**
+ * Plan 5c: inside the open transaction, approve the submitter's own steps they consented to at submit. { row, auto }
+ * The consent applies only to the signed-in submitter recorded at submit (metadata.submittedByEmail, the token
+ * email), to this voucher number, and to round 0 (vouchers have no send-back). Only DB lookups here.
+ */
+async function autoAdvanceVoucher(client, row) {
+  const { state, auto } = await autoAdvance(client, {
+    state: row, companyId: row.company_id,
+    consentOf: (r) => consentFor(r.metadata, { submitterEmail: r.metadata && r.metadata.submittedByEmail, round: 0, ref: r.voucher_number }),
+    pendingOwn: (r, me) => planOwnOpen(planOf(r), me),
+    approve: async (r, { consent, mine, stamp, at, note }) => (await writeApproval(client, r,
+      { email: consent.by, signature: stamp.signature, from: stamp.from, at, auto: { consent, mine, note } })).row,
+  });
+  return { row: state, auto };
+}
+
+/** approveOne's transaction: row lock, GAS rules, the pre-loaded stamp, write, then the requester's own next steps. */
 async function approveLocked({ voucherNumber, email, approverName, lang, pre }) {
   const client = await pool.connect();
   try {
@@ -300,12 +406,10 @@ async function approveLocked({ voucherNumber, email, approverName, lang, pre }) 
       if (!pre.ok) { await client.query('ROLLBACK'); return { ok: false, error: pre.message }; }
       stamp = pre;
     }
-    const signature = stamp.signature;
 
-    let result;
-    const at = now();
+    let done;
     try {
-      result = applyApproval(plan, email, { at, signature });
+      done = await writeApproval(client, row, { email, name: approverName, signature: stamp.signature, from: stamp.from, at: now() });
     } catch (e) {
       await client.query('ROLLBACK');
       if (e.code === 'ALREADY_APPROVED') return { ok: false, error: msg(lang, 'alreadyApprovedByYouCash') };
@@ -315,37 +419,13 @@ async function approveLocked({ voucherNumber, email, approverName, lang, pre }) 
       }
       throw e;
     }
-
-    const next = result.plan;
-    const meta = row.metadata || {};
-    const ca = legacyCompanyApprovers(next);
-    // The legacy key of the entry approved just now (same person may sit in two steps)
-    const key = Object.keys(ca.approvers).find((k) => ca.approvers[k].email === email && ca.approvers[k].approvedAt === at) || '';
-    const name = approverName || mine[0].name || email;
-    // Role-specific fields read by the print templates (GAS names)
-    if (key === 'accountant') { meta.accountantSignature = signature; meta.accountantName = name; }
-    if (key === 'legalRep') { meta.legalRepSignature = signature; meta.legalRepName = name; }
-    if (key === 'treasurer') { meta.treasurerSignature = signature; meta.treasurerName = name; meta.approverSignature = signature; }
-    meta.signatureVerification = meta.signatureVerification || {};
-    meta.signatureVerification[key || email] = verificationRecord(stamp.from, at);
-    meta.approvedBy = email;
-
-    const status = statusText(next);
-    const view = voucherView(row);
-    const lastAction = 'Duyệt bởi ' + name;
-    const idx = await saveState(client, row, { plan: next, meta, status, lastAction });
-    const label = mine[0].label || 'Người duyệt';
-    const hist = {
-      ...view, status, action: lastAction, approverEmail: email, approvedAt: at, meta,
-      note: result.finished ? `Tất cả ${next.steps.length} bước phê duyệt đã duyệt` : `Đã duyệt bởi ${label} (${ca.approvalProgress})`,
-    };
-    await appendHistory(client, hist);
-    await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: idx.done });
-    await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Approve', role: key, actorEmail: email,
-      actorName: name, prevStatus: row.status, newStatus: status, extra: { auth: 'password', signatureStamped: !!signature, sampleFrom: stamp.from } });
+    // Plan 5c: the requester's own next step(s), when they consented at submit — same commit, real time
+    const adv = await autoAdvanceVoucher(client, done.row);
+    const finalPlan = planOf(adv.row);
     await client.query('COMMIT');
-    await publishEvent('voucher:approved', { voucherNumber, status, isFinal: result.finished });
-    return { ok: true, view, plan: next, stepDone: result.stepDone, finished: result.finished };
+    const finished = finalPlan.status === 'approved';
+    await publishEvent('voucher:approved', { voucherNumber, status: adv.row.status, isFinal: finished });
+    return { ok: true, view: voucherView(row), plan: finalPlan, stepDone: done.stepDone || adv.auto.length > 0, finished, auto: adv.auto };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -711,7 +791,7 @@ export async function handleVoucherApprovalContext(req, res) {
       success: true,
       message: 'Thành công',
       data: {
-        voucher: { ...voucherView(row), status: row.status, attachments: row.attachments, meta: { ...(row.metadata || {}), approvalPlan: undefined } },
+        voucher: { ...voucherView(row), status: row.status, attachments: row.attachments, meta: { ...withoutStamps(row.metadata || {}), approvalPlan: undefined } },
         approvalPlan: plan,
         me: { email: caller.email, name: caller.name, isAdmin: caller.isAdmin },
         myEntries,
