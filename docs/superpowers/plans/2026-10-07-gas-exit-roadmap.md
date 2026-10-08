@@ -91,4 +91,4 @@ GAS also uses these Google services:
 2. Before turning `p2p` on, an admin enters the USD and EUR rates in Master Data › Exchange rates. They are seeded empty, and a PR in a currency without a rate is refused.
 3. Run the sample-size check (Plan 5b Task 7 step 3) against production data and fix every sample that fails or is over 750 KB. Known now: one Drive sample returns 404 (`1_7jJRd7…`, linh.le's sample as INS legal rep and RIOT chief accountant).
 4. Tell approvers that on the new system they approve with their login password and no longer upload a signature.
-5. `VOUCHER_REQUIRE_LOGIN=true` also stops anyone who is not signed in from triggering another person's password lockout.
+5. The approval password check always requires a signed-in user, and its lockout counter belongs to that user, so nobody can lock out a colleague's approvals. Login and change-password are throttled per device+account (10 per 15 minutes) and per account (50 per hour), with no hard per-account lock. Ship index.html together with the server, because change-password now requires the login token.
