@@ -14,9 +14,16 @@
 
   function valid(pw) { return typeof pw === 'string' && pw.length > 0 && pw.length <= MAX; }
 
-  /** Resolves the typed password, or null when cancelled. opts.count > 1 shows the number of documents (bulk). */
+  var open = false; // one dialog at a time
+
+  /**
+   * Resolves the typed password, or null when cancelled. opts.count > 1 shows the number of documents (bulk).
+   * A call while a dialog is already open is ignored: no second dialog, resolves null (the caller does nothing).
+   */
   function ask(opts) {
     opts = opts || {};
+    if (open) return Promise.resolve(null);
+    open = true;
     return new Promise(function (resolve) {
       var doc = document;
       var overlay = doc.createElement('div');
@@ -44,6 +51,7 @@
       var input = overlay.querySelector('#apw-input');
       function onKey(e) { if (e.key === 'Escape') done(null); }
       function done(value) {
+        open = false;
         doc.removeEventListener('keydown', onKey);
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(value);
@@ -56,7 +64,7 @@
       doc.addEventListener('keydown', onKey);
       doc.body.appendChild(overlay);
       input.focus();
-    });
+    }).catch(function (e) { open = false; throw e; }); // a dialog that failed to open never blocks the next one
   }
 
   return { ask: ask, valid: valid, MAX: MAX };
