@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STATUS, computeBranch, approvalState, pendingEmails, approverEmails, applyApprove, applyReject,
-  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, branchOf, MISSING_REQUESTER_ERROR, prOwnSteps, prOwnOpen, prOwnLeft, picksAsRow, consentRound, ROLE_LABEL,
+  sendBackInputError, applySendBack, approverPickError, directPaymentProblem, branchOf, MISSING_REQUESTER_ERROR, prOwnSteps, prOwnOpen, prOwnLeft, picksAsRow, sentBackRound, ROLE_LABEL,
 } from '../../api/lib/purchase-requests/state.js';
 
 const AT = '2026-10-07T03:00:00.000Z';
@@ -161,10 +161,9 @@ test('own PR slots: steps 2 / 5 in order, open stage only, contract never, round
   assert.equal(prOwnOpen(pr({ status: STATUS.REJECTED }), meta(), 'linh@x.vn'), null);
   assert.equal(prOwnLeft(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' }), 'linh@x.vn'), false);
   assert.equal(prOwnLeft(pr(), meta({ budgetStatus: 'Approved', supplierStatus: 'Approved' }), 'tlc.ap@x.vn'), true);
-  // Only send-backs to step 1 (the requester edits and resubmits) start a new consent round; step-2 ones keep it (decision 2)
-  assert.equal(consentRound({}), 0);
-  assert.equal(consentRound({ sentBackHistory: [{ targetStep: 2 }, { targetStep: 2 }] }), 0);
-  assert.equal(consentRound({ sentBackHistory: [{ targetStep: 2 }, { targetStep: 1 }, { targetStep: '1' }] }), 2);
+  // Every send-back starts a new consent round (decision 2 reversed)
+  assert.equal(sentBackRound({}), 0);
+  assert.equal(sentBackRound({ sentBackHistory: [{ targetStep: 2 }, { targetStep: 1 }] }), 2);
 });
 
 test('approve: budget+purchasing person in the parallel stage fills only parallel slots', () => {

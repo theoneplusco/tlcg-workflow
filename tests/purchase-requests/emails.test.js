@@ -86,9 +86,3 @@ test('submitConfirmation: names the auto-approved steps', () => {
   const c = m.submitConfirmation(pr, [{ step: 2, labels: ['Người duyệt Ngân sách', 'Người duyệt NCC'] }]);
   assert.match(c.html, /Các bước bạn là người duyệt đã được tự động duyệt khi gửi phiếu \(đã xác nhận bằng mật khẩu\): bước 2 \(Người duyệt Ngân sách, Người duyệt NCC\)\./);
 });
-test('sendBackNotices: step 2 asks only the given approvers (the requester\'s auto-approved slots are not asked)', () => {
-  const two = { ...pr, supplier_approver_email: 'ncc@x.vn' };
-  assert.deepEqual(m.sendBackNotices(two, { targetStep: 2, byRole: 'purchasing', note: 'x' }).map((x) => x.to), ['linh@x.vn', 'ncc@x.vn']);
-  assert.deepEqual(m.sendBackNotices(two, { targetStep: 2, byRole: 'purchasing', note: 'x' }, ['ncc@x.vn']).map((x) => x.to), ['ncc@x.vn']);
-  assert.deepEqual(m.sendBackNotices(two, { targetStep: 2, byRole: 'purchasing', note: 'x' }, []), []);
-});

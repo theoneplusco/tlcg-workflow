@@ -69,11 +69,10 @@ export function prOwnOpen(pr, meta, email) {
 export const prOwnLeft = (pr, meta, email) => ['budget', 'supplier', 'purchasing'].some((r) => emailOf(pr, r) === lower(email) && meta[`${r}Status`] !== 'Approved');
 
 /**
- * The consent round: send-backs to step 1 only (the requester edits and resubmits, and is asked again).
- * A step-2 send-back keeps the consent (controller decision 2, 2026-10-08): content is unchanged.
+ * How many times the PR was sent back (any step): a consent given in an earlier round no longer applies.
+ * Decision 2 (reversed 2026-10-08): after a step-2 send-back the requester re-approves their reset slots by hand.
  */
-export const consentRound = (meta) => (Array.isArray((meta || {}).sentBackHistory)
-  ? meta.sentBackHistory.filter((h) => h && Number(h.targetStep) === 1).length : 0);
+export const sentBackRound = (meta) => (Array.isArray((meta || {}).sentBackHistory) ? meta.sentBackHistory.length : 0);
 
 /** The full-branch limit is in VND (decision 2026-10-07): other currencies are converted with the admin rate first. */
 export const FULL_BRANCH_MIN_VND = 2000000;

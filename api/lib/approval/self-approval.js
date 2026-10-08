@@ -114,8 +114,8 @@ export async function requestConsent({ db, redis, email, password, declined, own
  * The consent stored on a request, if it still applies (same submitter, same request, same send-back round, a stamp left).
  * - `submitterEmail`: the token email recorded as the submitter at submit (vouchers.submitted_by / PR submitter),
  *   never requestor_email or metadata.selfApproval.by (controller decision 1: filing for someone else).
- * - `round` (required): the send-back count that voids a consent. Controller decision 2 (a PR sent back to step 2
- *   keeps consent) means the caller counts only the send-backs that should void it, not step-2 ones.
+ * - `round` (required): the send-back count; any send-back voids a consent (decision 2 reversed, 2026-10-08:
+ *   after a PR step-2 send-back the requester re-approves by hand). Vouchers: always 0.
  *   undefined / null → no consent.
  * - `ref` (required): the request identity (voucher number / PR number); must equal the stored `consent.ref`.
  */
@@ -129,8 +129,7 @@ export function consentFor(meta, { submitterEmail, round, ref } = {}) {
 
 /**
  * The consent after one auto-approval: logged in `auto`. The stored stamp is dropped unless `keepStamp`:
- * pass true while the request can still come back to the submitter's consented slots (own entries still pending,
- * or a PR step-2 send-back is still possible, controller decision 2), so a reset slot is auto-approved again from it.
+ * pass true while the submitter still has an unapproved consented entry (a later step), so it can be auto-approved from it.
  */
 export function recordAuto(consent, mine, at, keepStamp = false) {
   return { ...consent, auto: [...(consent.auto || []), { step: mine.step, labels: mine.labels, at }], stamps: keepStamp ? consent.stamps : [] };

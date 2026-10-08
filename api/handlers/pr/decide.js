@@ -50,7 +50,7 @@ export async function handlePRApprove(req, res, d) {
       if (!pre.ok) return { error: pre.message };
       const r = applyApprove(row, row.metadata || {}, { email: caller.email, role: b.approverRole, note: b.note || '', at,
         signature: pre.signature, verification: verificationRecord(pre.from, at) }); // one stamp on every slot this approval covers
-      const meta = settleStamps(r.meta, r.status); // completed by hand: the self-approval stamp copy is no longer needed
+      const meta = settleStamps(row, r.meta, r.status); // final, or no own slot left: the stamp copy is no longer needed
       const saved = await updatePR(client, row.id, { metadata: meta, status: r.status, pending_emails: pendingEmails(row, meta, r.status) });
       const extra = { auth: 'password', signatureStamped: true, sampleFrom: pre.from };
       await recordChange(client, saved, r.roles.map((role) => ({ action: 'Approve', role, actorEmail: caller.email, actorName: caller.name,
@@ -100,21 +100,12 @@ export async function handlePRSendBack(req, res, d) {
     const at = now().toISOString();
     const r = applySendBack(row, row.metadata || {}, { email: caller.email, role, targetStep, note, at });
     if (r.error) return r;
-    // Step 1: the requester edits and resubmits with a fresh consent, so the old one (and its stamp copy) is void
-    const meta = targetStep === 1 ? withoutConsentStamps(r.meta) : r.meta;
+    // Any send-back voids the consent (decision 2 reversed): the requester re-approves by hand or consents again at resubmit
+    const meta = withoutConsentStamps(r.meta);
     const saved = await updatePR(client, row.id, { metadata: meta, status: r.status, pending_emails: pendingEmails(row, meta, r.status) });
     await recordChange(client, saved, { action: 'Return', role, actorEmail: caller.email, actorName: caller.name,
       prevStatus: row.status, newStatus: r.status, note, extra: { targetStep }, at });
-    if (targetStep === 1) {
-      return { saved, mails: sendBackNotices(saved, { targetStep, byRole: role, note }),
-        message: 'Đã trả lại thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
-    }
-    // Step 2 keeps the consent (controller decision 2): the requester's reset slots are auto-approved again, and only
-    // the approvers still to act are asked; if nobody is left at step 2, whoever the PR now waits for is asked.
-    const { state: final, auto } = await autoAdvancePR(client, saved, now);
-    const stage = approvalState(final, final.metadata || {}).stage;
-    const mails = stage === 'parallel' ? sendBackNotices(final, { targetStep, byRole: role, note }, final.pending_emails || [])
-      : !auto.length ? [] : stage === 'purchasing' ? [purchasingRequest(final)] : stage === 'complete' ? [completed(final)] : [];
-    return { saved: final, mails, message: 'Đã trả lại thành công.', fields: { prNo: final.pr_no, status: final.status } };
+    return { saved, mails: sendBackNotices(saved, { targetStep, byRole: role, note }),
+      message: 'Đã trả lại thành công.', fields: { prNo: saved.pr_no, status: saved.status } };
   });
 }

@@ -3,7 +3,7 @@
 import { findCompany } from '../../lib/vouchers/repo.js';
 import { queueMail } from '../email-queue.js';
 import { publishEvent } from '../sse.js';
-import { STATUS, approverEmails, pendingEmails, approverPickError, isReturned, prOwnSteps, picksAsRow, consentRound } from '../../lib/purchase-requests/state.js';
+import { STATUS, approverEmails, pendingEmails, approverPickError, isReturned, prOwnSteps, picksAsRow, sentBackRound } from '../../lib/purchase-requests/state.js';
 import { checkSubmission, buildMetadata, normalizePriority } from '../../lib/purchase-requests/validate.js';
 import { parseAttachmentList, storeAttachments } from '../../lib/purchase-requests/attachments.js';
 import { allocatePRNo, prefixFor } from '../../lib/purchase-requests/numbering.js';
@@ -65,9 +65,11 @@ export function submissionColumns(b, { company, sub, caller, metadata, attachmen
  * lock (password check, stamp loaded and kept in the consent). `ref` = the PR number when known (resubmit); on a
  * submit the number is allocated in the transaction and set on the consent there.
  */
-function prConsent({ db, redis, now }, b, caller, { company, sub }, { round = 0, ref = null } = {}) {
-  return requestConsent({ db, redis, email: caller.email, password: b.selfApprovalPassword, declined: b.selfApprovalDeclined,
+async function prConsent({ db, redis, now }, b, caller, { company, sub }, { round = 0, ref = null } = {}) {
+  const sa = await requestConsent({ db, redis, email: caller.email, password: b.selfApprovalPassword, declined: b.selfApprovalDeclined,
     own: prOwnSteps(picksAsRow(sub.picks), caller.email), companyId: company.id, lang: 'vi', at: now().toISOString(), round, ref });
+  // The submitter's name from the login token: the audit actor of the auto-approvals (never the body's requesterName)
+  return sa.consent ? { ...sa, consent: { ...sa.consent, byName: caller.name || caller.email } } : sa;
 }
 const withAuto = (message, auto) => (auto.length ? `${message} ${doneText(auto)}` : message);
 const autoFields = (auto) => (auto.length ? { autoApproved: publicAuto(auto) } : {});
@@ -145,7 +147,7 @@ export async function handlePRResubmit(req, res, d) {
     const early = resubmitProblem(current, caller); // before any upload: refused callers never write to R2
     if (early) return fail(res, early);
     // A resubmit is a new version: consent is asked again (the old one is gone with the old metadata)
-    const sa = await prConsent({ db, redis, now }, b, caller, prep, { round: consentRound(current.metadata), ref: current.pr_no });
+    const sa = await prConsent({ db, redis, now }, b, caller, prep, { round: sentBackRound(current.metadata), ref: current.pr_no });
     if (sa.ask) return res.json(askBody(sa));
     const uploaded = await storeAttachments(s3, parseAttachmentList(b.attachments)); // S3 never runs under the row lock
     return await withLockedPR(db, prNo, res, async (client, row) => {

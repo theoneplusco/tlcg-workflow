@@ -74,8 +74,7 @@ export function rejectedNotice(pr, { by, note } = {}) {
      ${table(pr, { requester: false })}${note ? box('Lý do từ chối:', note) : ''}${button(pr.pr_no)}`);
 }
 
-/** Step 2: `to` defaults to budget + supplier (GAS); after a self-approval only the slots still open are asked. */
-export function sendBackNotices(pr, { targetStep, byRole, note } = {}, to = [pr.budget_approver_email, pr.supplier_approver_email]) {
+export function sendBackNotices(pr, { targetStep, byRole, note } = {}) {
   const who = ROLE_LABEL[byRole] || byRole;
   const reason = box('Lý do trả lại:', note);
   if (Number(targetStep) === 1) {
@@ -84,7 +83,7 @@ export function sendBackNotices(pr, { targetStep, byRole, note } = {}, to = [pr.
       `<p>Kính gửi ${esc(pr.requester_name)},</p><p>${esc(who)} đã trả lại đề nghị mua hàng của bạn để bổ sung thông tin.</p>
        ${table(pr, { requiredDate: false })}${reason}<p>Vui lòng mở đề nghị và chọn <strong>"Chỉnh sửa &amp; Gửi lại"</strong>.</p>${button(pr.pr_no)}`)] : [];
   }
-  return distinct(...to).map((t) => mail(t,
+  return distinct(pr.budget_approver_email, pr.supplier_approver_email).map((to) => mail(to,
     `${P} Yêu cầu xem lại - Bước Ngân sách & NCC - ${pr.pr_no}`,
     `<p>Kính gửi,</p><p>${esc(who)} đã trả lại đề nghị mua hàng về bước <strong>Duyệt ngân sách &amp; NCC</strong>. Vui lòng xem lại và phê duyệt lại.</p>
      ${table(pr, { requiredDate: false })}${reason}${button(pr.pr_no)}`));
