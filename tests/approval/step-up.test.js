@@ -5,6 +5,7 @@ import pg from 'pg';
 import Redis from 'ioredis';
 import {
   confirmPassword, stampSignature, stampDeps, clearStampCache, failKey, lockKey, verificationRecord, STEP_UP_MSG, MAX_STAMP_BYTES, LOCK_SECONDS,
+  stepUpDeps, MAX_PASSWORD_FAILS,
 } from '../../api/lib/approval/step-up.js';
 import { sha256Hex } from '../../api/lib/auth/password.js';
 import { NO_SAMPLE } from '../../api/lib/approval/signature-check.js';
@@ -59,11 +60,11 @@ test('confirmPassword: the 5th wrong password locks for 15 minutes from that fai
   const failTtl = await redis.ttl(failKey(ME));
   assert.ok(failTtl > 0 && failTtl <= LOCK_SECONDS, `fail ttl ${failTtl}`);
   assert.deepEqual(await check('nope'), { ok: false, locked: true, message: M.locked });
-  assert.equal(await redis.exists(failKey(ME)), 0, 'the counter is replaced by the lock');
+  assert.equal(await redis.get(failKey(ME)), '5', 'the count is kept (an attempt already past the lock check still sees it)');
   const ttl = await redis.ttl(lockKey(ME));
   assert.ok(ttl > 0 && ttl <= LOCK_SECONDS, `lock ttl ${ttl}`);
   assert.deepEqual(await check(PW), { ok: false, locked: true, message: M.locked });
-  await redis.del(lockKey(ME)); // the lock expired
+  await redis.del(lockKey(ME), failKey(ME)); // the lock and the counter expired
   assert.deepEqual(await check(PW), { ok: true });
   assert.equal(await redis.exists(failKey(ME)) + await redis.exists(lockKey(ME)), 0, 'a correct password clears both keys');
 });
@@ -72,7 +73,8 @@ test('confirmPassword: a counter left without TTL cannot lock forever (the next 
   await redis.set(failKey(ME), '4'); // e.g. left by a crash between calls, no TTL
   assert.equal(await redis.ttl(failKey(ME)), -1);
   assert.deepEqual(await check('nope'), { ok: false, locked: true, message: M.locked });
-  assert.equal(await redis.exists(failKey(ME)), 0);
+  const kept = await redis.ttl(failKey(ME));
+  assert.ok(kept > 0 && kept <= LOCK_SECONDS, `the counter got a TTL (${kept})`);
   const ttl = await redis.ttl(lockKey(ME));
   assert.ok(ttl > 0 && ttl <= LOCK_SECONDS, `lock ttl ${ttl}`);
   await redis.set(failKey(ME), '2');
@@ -83,6 +85,24 @@ test('confirmPassword: a counter left without TTL cannot lock forever (the next 
   const failTtl = await redis.ttl(failKey(ME));
   assert.ok(failTtl > 0 && failTtl <= LOCK_SECONDS, `a wrong password refreshes the counter TTL (${failTtl})`);
   await redis.del(failKey(ME));
+});
+
+test('confirmPassword: a parallel burst of 20 wrong passwords verifies at most 5 (counted before verifying)', { skip }, async () => {
+  await redis.del(failKey(ME), lockKey(ME));
+  const real = stepUpDeps.verifyPassword;
+  let verified = 0;
+  stepUpDeps.verifyPassword = async (...args) => { verified += 1; await new Promise((r) => setTimeout(r, 20)); return real(...args); };
+  try {
+    const results = await Promise.all(Array.from({ length: 20 }, () => check('nope')));
+    assert.ok(verified <= MAX_PASSWORD_FAILS, `verified ${verified} passwords`);
+    assert.ok(results.every((r) => !r.ok));
+    assert.ok(results.filter((r) => r.locked).length >= 15, 'the rest are refused as locked');
+    assert.equal(await redis.exists(lockKey(ME)), 1);
+    assert.deepEqual(await check(PW), { ok: false, locked: true, message: M.locked }, 'even the right password while locked');
+  } finally {
+    stepUpDeps.verifyPassword = real;
+    await redis.del(failKey(ME), lockKey(ME));
+  }
 });
 
 test('confirmPassword: GAS SHA-256 password accepted and upgraded to bcrypt (the login path)', { skip }, async () => {

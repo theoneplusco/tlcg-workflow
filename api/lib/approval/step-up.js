@@ -2,7 +2,7 @@
 // The approver re-enters their login password (checked like login, failures counted in Redis), and the
 // server stamps their registered sample signature on the approval. No upload, no image comparison.
 // Shared by vouchers and purchase requests; acceptance minutes adopt it in Plan 7. Takes db/redis as arguments.
-// The lockout (stepup:fail:<email> counter, stepup:lock:<email> lock) is separate from login: it locks approvals only.
+// The lockout (stepup:fail:<email> counter, counted before the check; stepup:lock:<email> lock) is separate from login: it locks approvals only.
 // Callers must pass the signed-in caller's email from the token (no token → 401 'Vui lòng đăng nhập').
 import { verifyPassword } from '../auth/password.js';
 import { fetchImageDataUrl } from '../files/fetch-image.js';
@@ -33,6 +33,8 @@ export const STEP_UP_MSG = {
     sampleTooBig: 'Your sample signature is too large (max 750 KB). Ask an administrator to replace it with a smaller image.',
   },
 };
+/** Test seam: the password check (a test counts how many passwords a burst gets verified). */
+export const stepUpDeps = { verifyPassword };
 const msgs = (lang) => STEP_UP_MSG[lang === 'en' ? 'en' : 'vi'];
 const lower = (s) => String(s || '').trim().toLowerCase();
 export const failKey = (email) => `stepup:fail:${lower(email)}`;
@@ -50,22 +52,30 @@ export async function confirmPassword({ db, redis, email, password, lang }) {
   const me = lower(email);
   const pw = typeof password === 'string' ? password : '';
   if (!me || !pw) return { ok: false, message: m.needPassword };
-  let locked;
-  try { locked = await redis.get(lockKey(me)); } catch (e) {
+  // Count the attempt BEFORE checking the password (INCR + EXPIRE in one transaction, so the counter always has
+  // a TTL): a parallel burst gets at most MAX_PASSWORD_FAILS passwords checked per window, never one per request.
+  let n;
+  try {
+    if (await redis.get(lockKey(me))) return { ok: false, locked: true, message: m.locked };
+    [n] = execResults(await redis.multi().incr(failKey(me)).expire(failKey(me), LOCK_SECONDS).exec());
+    n = Number(n);
+    if (n > MAX_PASSWORD_FAILS) {
+      await redis.set(lockKey(me), '1', 'EX', LOCK_SECONDS);
+      return { ok: false, locked: true, message: m.locked };
+    }
+  } catch (e) {
     console.error('[StepUp] lockout counter unavailable:', e.message);
     return { ok: false, message: m.unavailable };
   }
-  if (locked) return { ok: false, locked: true, message: m.locked };
   const user = pw.length > MAX_PASSWORD_LENGTH ? null : (await db.query(
     `SELECT id, password_hash, legacy_password_sha256 FROM employees WHERE LOWER(email) = $1 AND status = 'active'`, [me])).rows[0];
-  const valid = user ? await verifyPassword(db, user, pw) : false;
+  const valid = user ? await stepUpDeps.verifyPassword(db, user, pw) : false;
   try {
     if (valid) { await redis.del(failKey(me), lockKey(me)); return { ok: true }; }
-    // INCR + EXPIRE in one transaction: the counter always has a TTL (sliding window), even if it had none.
-    const [n] = execResults(await redis.multi().incr(failKey(me)).expire(failKey(me), LOCK_SECONDS).exec());
-    if (Number(n) < MAX_PASSWORD_FAILS) return { ok: false, message: m.wrongPassword };
-    // The 5th failure: a lock of LOCK_SECONDS from now (what the message says) replaces the counter.
-    execResults(await redis.multi().set(lockKey(me), '1', 'EX', LOCK_SECONDS).del(failKey(me)).exec());
+    if (n < MAX_PASSWORD_FAILS) return { ok: false, message: m.wrongPassword };
+    // The 5th failure: a lock of LOCK_SECONDS from now (what the message says). The count is kept, so an
+    // attempt that passed the lock check before this line still finds the counter over the limit.
+    await redis.set(lockKey(me), '1', 'EX', LOCK_SECONDS);
     return { ok: false, locked: true, message: m.locked };
   } catch (e) {
     console.error('[StepUp] lockout counter unavailable:', e.message);
