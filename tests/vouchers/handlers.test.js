@@ -4,6 +4,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { PW, FAKE_STAMP, useStepUp } from '../approval/step-up-helpers.js';
+import { stampDeps, clearStampCache } from '../../api/lib/approval/step-up.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const skip = !url && 'set TEST_DATABASE_URL to run';
@@ -362,7 +363,7 @@ test('server refuses an approval when the approver has no sample signature (no "
     [people.accountant, people.legal, people.treasurer])).rows[0];
   if (!person) return;
   await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
-  await useStepUp(pool, redis, [person.e]);
+  await useStepUp(pool, redis, [person.e]); // cleanup not needed: person is an existing employee, so nothing is created
   const no = newNo();
   await call(h.handleVoucherSubmit, submitBody(no));
   const r = await approve(no, person.e);
@@ -415,4 +416,66 @@ test('approval context tells the page to ask for the password', { skip }, async 
   await call(h.handleVoucherSubmit, submitBody(no));
   const ctx = await callAs(h.handleVoucherApprovalContext, { voucherNumber: no }, await jwtFor(people.accountant));
   assert.equal(ctx.data.approvalAuth, 'password');
+});
+
+// A named person in the flow whose sample is a URL (not a role sample of the company)
+const otherPerson = async () => (await pool.query(`SELECT LOWER(email) e FROM employees WHERE status='active' AND LOWER(email) NOT IN ($1,$2,$3) ORDER BY id LIMIT 1`,
+  [people.accountant, people.legal, people.treasurer])).rows[0];
+
+test('bulk approve: a broken sample is fetched once for the batch, never under the row lock; every voucher refused', { skip }, async () => {
+  const person = await otherPerson();
+  if (!person) return;
+  await useStepUp(pool, redis, [person.e]); // cleanup not needed: existing employee
+  await pool.query(`UPDATE employees SET extra = extra || '{"Signature":"https://drive/broken-sample"}' WHERE LOWER(email) = $1`, [person.e]);
+  await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
+  const nos = [newNo(), newNo(), newNo()];
+  for (const no of nos) await call(h.handleVoucherSubmit, submitBody(no));
+  let fetches = 0;
+  const lockedDuringFetch = [];
+  const lockFree = async () => {
+    try { await pool.query(`SELECT 1 FROM vouchers WHERE voucher_number = ANY($1) FOR UPDATE NOWAIT`, [nos]); } catch (e) { lockedDuringFetch.push(e.code); }
+  };
+  try {
+    stampDeps.fetchImage = async () => { fetches += 1; await lockFree(); throw new Error('unreachable'); };
+    clearStampCache();
+    const r = await callAs(h.handleVoucherBulkApprove, { voucherNumbers: nos, approverPassword: PW }, await jwtFor(person.e));
+    assert.equal(r.success, true, r.message);
+    assert.deepEqual(r.data.approved, []);
+    assert.deepEqual(r.data.failed.map((f) => [f.voucherNumber, /Chưa có chữ ký mẫu/.test(f.error)]), nos.map((no) => [no, true]));
+    assert.equal(fetches, 1, 'one load of the broken sample for the whole batch');
+    for (const no of nos) assert.equal((await voucher(no)).status, 'Đang treo');
+    // A working sample: loaded before the lock too, then stamped
+    stampDeps.fetchImage = async (u) => { fetches += 1; await lockFree(); return FAKE_STAMP(u); };
+    const ok1 = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: nos[0], approverPassword: PW } }, await jwtFor(person.e));
+    assert.equal(ok1.success, true, ok1.message);
+    assert.equal(fetches, 2);
+    assert.deepEqual(lockedDuringFetch, [], 'no voucher row lock held while the sample loads');
+  } finally {
+    stampDeps.fetchImage = async (u) => FAKE_STAMP(u);
+    clearStampCache();
+    await pool.query(`UPDATE employees SET extra = extra - 'Signature' WHERE LOWER(email) = $1`, [person.e]);
+    await pool.query(`TRUNCATE approval_flows`);
+  }
+});
+
+test('bulk approve: a voucher whose sample is missing fails alone; identity from the token', { skip }, async () => {
+  const withSample = newNo();
+  await call(h.handleVoucherSubmit, submitBody(withSample)); // default flow: the company's accountant role sample
+  const savedExtra = (await pool.query(`SELECT extra FROM employees WHERE LOWER(email) = $1`, [people.accountant])).rows[0].extra;
+  await pool.query(`UPDATE employees SET extra = extra - 'Signature' - 'Chữ ký' - 'Chu_ky' - 'employee_signature' - 'Signature_URL' WHERE LOWER(email) = $1`, [people.accountant]);
+  await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: people.accountant }] }] });
+  try {
+    const noSample = newNo();
+    await call(h.handleVoucherSubmit, submitBody(noSample)); // named person: needs their own Signature, which they lack
+    const acc = await jwtFor(people.accountant);
+    const spoof = await callAs(h.handleVoucherBulkApprove, { voucherNumbers: [withSample], approverEmail: people.legal, approverPassword: PW }, acc);
+    assert.match(spoof.message, /không thể thao tác thay/);
+    const r = await callAs(h.handleVoucherBulkApprove, { voucherNumbers: [withSample, noSample], approverPassword: PW }, acc);
+    assert.deepEqual(r.data.approved, [withSample]);
+    assert.deepEqual(r.data.failed.map((f) => [f.voucherNumber, /Chưa có chữ ký mẫu/.test(f.error)]), [[noSample, true]]);
+    assert.equal((await voucher(noSample)).status, 'Đang treo');
+  } finally {
+    await pool.query(`UPDATE employees SET extra = $2 WHERE LOWER(email) = $1`, [people.accountant, savedExtra]);
+    await pool.query(`TRUNCATE approval_flows`);
+  }
 });

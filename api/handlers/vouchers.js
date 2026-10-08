@@ -244,18 +244,55 @@ export async function handleVoucherSubmit(req, res) {
 
 // ── Approve (shared by approveVoucher and bulkApprove) ───────
 
+/** My not-yet-approved entries on the open step. */
+const pendingOf = (plan, email) => {
+  const open = pendingStep(plan);
+  return open >= 0 ? plan.steps[open].approvers.filter((a) => a.email === email && a.status !== 'approved') : [];
+};
+
 /**
- * Approve one voucher inside its own transaction. Returns
- * { ok, error?, view, plan, stepDone, finished } — emails are the caller's job.
+ * stampSignature memoised for one request by (company, sample URL), failures included: a bulk approve
+ * with a slow or broken sample loads it once, not once per voucher. Always reports the sample's url/from.
  */
-async function approveOne({ voucherNumber, approverEmail, approverName, lang }) {
+function makeStamper(lang) {
+  const memo = new Map();
+  return async (db, companyId, entries, email) => {
+    const s = await sampleSignatureFor(db, companyId, entries, email);
+    const base = { companyId: companyId || null, url: s.url, from: s.from };
+    if (!s.url) return { ...base, ok: false, message: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
+    const k = `${companyId || ''}|${s.url}`;
+    if (!memo.has(k)) memo.set(k, stampSignature(db, companyId, entries, email, lang));
+    return { ...(await memo.get(k)), ...base };
+  };
+}
+
+/**
+ * Approve one voucher. The sample is resolved and loaded BEFORE the row lock (a slow or unreachable sample
+ * never holds the lock); inside the lock the GAS rules are re-checked and the pre-loaded stamp is used only if
+ * the approver's sample (company, URL, source) is still the same. If it changed in between, the whole attempt
+ * is redone once outside the lock; a second change refuses with NO_SAMPLE.
+ * Returns { ok, error?, view, plan, stepDone, finished } — emails are the caller's job.
+ */
+async function approveOne({ voucherNumber, approverEmail, approverName, lang, stamper = makeStamper(lang) }) {
+  const email = lower(approverEmail);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const peek = (await pool.query(`SELECT * FROM vouchers WHERE voucher_number = $1`, [voucherNumber])).rows[0];
+    const peekMine = peek ? pendingOf(planOf(peek), email) : [];
+    const pre = peekMine.length ? await stamper(pool, peek.company_id, peekMine, email) : null;
+    const r = await approveLocked({ voucherNumber, email, approverName, lang, pre });
+    if (!r.retry) return r;
+  }
+  return { ok: false, error: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
+}
+
+/** approveOne's transaction: row lock, GAS rules, the pre-loaded stamp, write. { retry: true } = sample changed. */
+async function approveLocked({ voucherNumber, email, approverName, lang, pre }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const row = await lockVoucher(client, voucherNumber);
     if (!row) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'voucherNotFound') + voucherNumber }; }
     const plan = planOf(row);
-    const email = lower(approverEmail);
     const mine = plan.steps.flatMap((s) => s.approvers).filter((a) => a.email === email);
     if (!mine.length) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'approverInfoNotFound') }; }
     if (plan.status === 'rejected') { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'voucherRejectedCannotApprove') }; }
@@ -267,13 +304,18 @@ async function approveOne({ voucherNumber, approverEmail, approverName, lang }) 
     // Approved every entry they have and the plan moved on → GAS "already approved"
     if (mine.every((a) => a.status === 'approved')) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'alreadyApprovedByYouCash') }; }
 
-    // The registered sample is stamped (no upload, no comparison); none registered → refused
-    const open = pendingStep(plan);
-    const pendingMine = open >= 0 ? plan.steps[open].approvers.filter((a) => a.email === email && a.status !== 'approved') : [];
+    // The registered sample is stamped (no upload, no comparison); none registered → refused.
+    // Uses the stamp loaded before the lock; only a DB lookup here, never a fetch.
+    const pendingMine = pendingOf(plan, email);
     let stamp = { signature: '', from: '' };
     if (pendingMine.length) {
-      stamp = await stampSignature(client, row.company_id, pendingMine, email, lang);
-      if (!stamp.ok) { await client.query('ROLLBACK'); return { ok: false, error: stamp.message }; }
+      const cur = await sampleSignatureFor(client, row.company_id, pendingMine, email);
+      if (!pre || pre.companyId !== (row.company_id || null) || pre.url !== cur.url || pre.from !== cur.from) {
+        await client.query('ROLLBACK');
+        return { retry: true };
+      }
+      if (!pre.ok) { await client.query('ROLLBACK'); return { ok: false, error: pre.message }; }
+      stamp = pre;
     }
     const signature = stamp.signature;
 
@@ -366,8 +408,7 @@ export async function handleVoucherBulkApprove(req, res) {
   const lang = b.lang;
   const numbers = Array.isArray(b.voucherNumbers) ? b.voucherNumbers : [];
   if (!numbers.length) return fail(res, msg(lang, 'noVoucherSelected'));
-  if (!b.approverEmail) return fail(res, msg(lang, 'missingApproverInfo'));
-  const actor = await resolveApprover(req, res, b.approverEmail, lang);
+  const actor = await resolveApprover(req, res, b.approverEmail, lang); // identity from the token; a body email must match it
   if (!actor) return;
   const pw = await confirmPassword({ db: pool, redis, email: actor.email, password: b.approverPassword, lang }); // once for the batch
   if (!pw.ok) return fail(res, pw.message);
@@ -375,9 +416,10 @@ export async function handleVoucherBulkApprove(req, res) {
   const approved = [];
   const failed = [];
   const nextByApprover = new Map(); // email → { approver, items[] }
+  const stamper = makeStamper(lang); // one load per sample for the whole batch
   for (const no of numbers) {
     try {
-      const r = await approveOne({ voucherNumber: no, approverEmail: actor.email, approverName: b.approverName, lang });
+      const r = await approveOne({ voucherNumber: no, approverEmail: actor.email, approverName: b.approverName, lang, stamper });
       if (!r.ok) { failed.push({ voucherNumber: no, error: r.error }); continue; }
       approved.push(no);
       if (r.finished) {
