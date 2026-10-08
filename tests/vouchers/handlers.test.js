@@ -3,16 +3,17 @@
 // local Redis (REDIS_URL, db 15 recommended).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { PW, FAKE_STAMP, useStepUp } from '../approval/step-up-helpers.js';
 
 const url = process.env.TEST_DATABASE_URL;
 const skip = !url && 'set TEST_DATABASE_URL to run';
 let h, pool, saveVersion, company, people;
+let redis, cleanupStepUp;
 
 const call = (fn, body) => new Promise((resolve, reject) => {
   const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { resolve({ code: this.statusCode, ...b }); } };
   Promise.resolve(fn({ body, query: {}, headers: {} }, res)).catch(reject);
 });
-const ok = { verified: true, similarity: 92, reason: 'ok' };
 let seq = 0;
 const newNo = () => `MI-PC20261007${String(900000 + ++seq).padStart(6, '0')}`;
 const submitBody = (no, extra = {}) => ({
@@ -28,7 +29,8 @@ const history = async (no) => (await pool.query(`SELECT status, action, note, ap
 // Sheet copy queued for one voucher: History rows key voucher_number, Current rows voucherNumber
 const outbox = async (no) => (await pool.query(
   `SELECT tab, mode, key_column, record FROM sheet_outbox WHERE record->>'voucher_number' = $1 OR record->>'voucherNumber' = $1 ORDER BY id`, [no])).rows;
-const approve = (no, email, extra = {}) => call(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: email, approverSignature: 'data:sig', signatureVerification: ok, ...extra } });
+// Approvals need the approver's login token (decision 2: the password step-up is keyed on the token's email)
+const approve = async (no, email, extra = {}) => callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: email, approverPassword: PW, ...extra } }, await jwtFor(email));
 
 before(async () => {
   if (!url) return;
@@ -42,9 +44,12 @@ before(async () => {
                     TRUNCATE email_queue; TRUNCATE approval_flows; TRUNCATE sheet_outbox`);
   company = (await pool.query(`SELECT * FROM companies WHERE company_key = 'M.I'`)).rows[0];
   people = { accountant: company.accountant_email.toLowerCase(), legal: company.legal_rep_email.toLowerCase(), treasurer: company.treasurer_email.toLowerCase() };
+  redis = (await import('../../db/redis.js')).default;
+  cleanupStepUp = await useStepUp(pool, redis, [people.accountant, people.legal, people.treasurer, 'stranger@x.vn']);
 });
 after(async () => {
   if (!pool) return;
+  if (cleanupStepUp) await cleanupStepUp();
   await pool.end();
   (await import('../../db/redis.js')).default.quit?.();
 });
@@ -75,11 +80,12 @@ test('submit twice → GAS duplicate message', { skip }, async () => {
   assert.match(r.message, /đã được gửi trước đó/);
 });
 
-test('approve: signature rules, order, already-approved, then progress + next-step email', { skip }, async () => {
+test('approve: password, order, already-approved, then progress + next-step email', { skip }, async () => {
   const no = newNo();
   await call(h.handleVoucherSubmit, submitBody(no));
-  assert.match((await approve(no, people.accountant, { signatureVerification: undefined })).message, /Thiếu dữ liệu xác thực chữ ký/);
-  assert.match((await approve(no, people.accountant, { signatureVerification: { verified: false, reason: 'mismatch', similarity: 40 } })).message, /Chữ ký không hợp lệ/);
+  assert.equal((await approve(no, people.accountant, { approverPassword: '' })).message, 'Vui lòng nhập mật khẩu đăng nhập để xác nhận phê duyệt.');
+  assert.equal((await approve(no, people.accountant, { approverPassword: 'wrong' })).message, 'Mật khẩu không đúng.');
+  await redis.del(`stepup:fail:${people.accountant}`);
   assert.match((await approve(no, 'stranger@x.vn')).message, /Không tìm thấy thông tin người phê duyệt/);
   if (people.legal !== people.accountant) assert.match((await approve(no, people.legal)).message, /Vui lòng đợi/);
   const r = await approve(no, people.accountant);
@@ -88,7 +94,8 @@ test('approve: signature rules, order, already-approved, then progress + next-st
   assert.match((await approve(no, people.accountant)).message, /đã phê duyệt phiếu này rồi/);
   const v = await voucher(no);
   assert.equal(v.status, 'Đang duyệt (1/3)');
-  assert.equal(v.metadata.accountantSignature, 'data:sig');
+  assert.equal(v.metadata.accountantSignature, FAKE_STAMP(company.accountant_sig_url), 'the registered sample is stamped');
+  assert.deepEqual(Object.values(v.metadata.signatureVerification).map((x) => [x.verified, x.method]), [[true, 'password']]);
   assert.deepEqual(v.pending_emails, [people.legal]);
   const m = await emails(no);
   assert.ok(m.some((x) => x.to_email === people.legal && x.subject.startsWith('[PHÊ DUYỆT]')), 'next approver asked');
@@ -102,8 +109,8 @@ test('full approval → final emails; acknowledge once; history like the sheet',
   for (const e of [people.accountant, people.legal, people.treasurer]) assert.equal((await approve(no, e)).success, true);
   const v = await voucher(no);
   assert.equal(v.status, 'Đã duyệt');
-  assert.equal(v.metadata.treasurerSignature, 'data:sig');
-  assert.equal(v.metadata.approverSignature, 'data:sig', 'print-template alias');
+  assert.equal(v.metadata.treasurerSignature, FAKE_STAMP(company.treasurer_sig_url));
+  assert.equal(v.metadata.approverSignature, FAKE_STAMP(company.treasurer_sig_url), 'print-template alias');
   let ob = await outbox(no);
   assert.deepEqual(ob.map((r) => r.tab), Array(4).fill(['Voucher_History', 'Voucher_Current']).flat(), 'History then Current, per change');
   const cur = ob.filter((r) => r.tab === 'Voucher_Current');
@@ -195,8 +202,8 @@ test('custom company flow with a group step: all must approve before the next st
 test('bulk approve: per-voucher results and one batch email per next approver', { skip }, async () => {
   const nos = [newNo(), newNo()];
   for (const no of nos) await call(h.handleVoucherSubmit, submitBody(no));
-  const r = await call(h.handleVoucherBulkApprove, { voucherNumbers: [...nos, 'MI-PC20261007999999'], approverEmail: people.accountant,
-    approverSignature: 'data:sig', signatureVerification: ok });
+  const r = await callAs(h.handleVoucherBulkApprove, { voucherNumbers: [...nos, 'MI-PC20261007999999'], approverEmail: people.accountant,
+    approverPassword: PW }, await jwtFor(people.accountant));
   assert.equal(r.success, true);
   assert.deepEqual(r.data.approved, nos);
   assert.equal(r.data.failed.length, 1);
@@ -275,9 +282,9 @@ test('token identity: cannot act for someone else; body email optional; page adm
   const no = newNo();
   await call(h.handleVoucherSubmit, submitBody(no));
   const acc = await jwtFor(people.accountant);
-  const other = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: people.legal, approverSignature: 's', signatureVerification: ok } }, acc);
+  const other = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: people.legal, approverPassword: PW } }, acc);
   assert.match(other.message, /không thể thao tác thay/);
-  const mine = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverSignature: 's', signatureVerification: ok } }, acc);
+  const mine = await callAs(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverPassword: PW } }, acc);
   assert.equal(mine.success, true, mine.message);
   const nonAdmin = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE NOT is_admin AND status='active' LIMIT 1`)).rows[0].e;
   const admin = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE is_admin AND status='active' LIMIT 1`)).rows[0].e;
@@ -288,7 +295,7 @@ test('token identity: cannot act for someone else; body email optional; page adm
 test('VOUCHER_REQUIRE_LOGIN: no token → 401 for writes and lists', { skip }, async () => {
   process.env.VOUCHER_REQUIRE_LOGIN = 'true';
   try {
-    const r = await call(h.handleVoucherApprove, { voucher: { voucherNumber: 'X', approverEmail: people.accountant, approverSignature: 's', signatureVerification: ok } });
+    const r = await call(h.handleVoucherApprove, { voucher: { voucherNumber: 'X', approverEmail: people.accountant, approverPassword: PW } });
     assert.equal(r.code, 401);
     assert.equal((await call(h.handleVoucherSummary, { callerEmail: people.accountant })).code, 401);
   } finally {
@@ -355,10 +362,57 @@ test('server refuses an approval when the approver has no sample signature (no "
     [people.accountant, people.legal, people.treasurer])).rows[0];
   if (!person) return;
   await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
+  await useStepUp(pool, redis, [person.e]);
   const no = newNo();
   await call(h.handleVoucherSubmit, submitBody(no));
-  const r = await approve(no, person.e, { signatureVerification: { verified: true, reason: 'no_sample', similarity: '0' } });
+  const r = await approve(no, person.e);
   assert.equal(r.success, false);
   assert.match(r.message, /Chưa có chữ ký mẫu/);
   await pool.query(`TRUNCATE approval_flows`);
+});
+
+test('approve: a wrong password approves nothing; the 5th locks the approver for 15 minutes', { skip }, async () => {
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  for (let i = 0; i < 4; i += 1) assert.equal((await approve(no, people.accountant, { approverPassword: 'wrong' })).message, 'Mật khẩu không đúng.');
+  assert.equal((await approve(no, people.accountant, { approverPassword: 'wrong' })).message, 'Bạn đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút.');
+  assert.equal((await approve(no, people.accountant)).message, 'Bạn đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút.');
+  assert.equal((await voucher(no)).status, 'Đang treo', 'nothing approved');
+  await redis.del(`stepup:fail:${people.accountant}`, `stepup:lock:${people.accountant}`);
+  assert.equal((await approve(no, people.accountant)).success, true);
+  const a = (await pool.query(`SELECT extra FROM voucher_audit_log WHERE doc_no = $1 AND action = 'Approve' ORDER BY id DESC LIMIT 1`, [no])).rows[0];
+  assert.deepEqual([a.extra.auth, a.extra.signatureStamped], ['password', true]);
+});
+
+test('bulk approve: one password for the batch; a wrong one refuses every voucher', { skip }, async () => {
+  const nos = [newNo(), newNo()];
+  for (const no of nos) await call(h.handleVoucherSubmit, submitBody(no));
+  const acc = await jwtFor(people.accountant);
+  const bad = await callAs(h.handleVoucherBulkApprove, { voucherNumbers: nos, approverEmail: people.accountant, approverPassword: 'wrong' }, acc);
+  assert.deepEqual([bad.success, bad.message], [false, 'Mật khẩu không đúng.']);
+  for (const no of nos) assert.equal((await voucher(no)).status, 'Đang treo');
+  assert.equal(await redis.get(`stepup:fail:${people.accountant}`), '1', 'one failure for the whole batch');
+  await redis.del(`stepup:fail:${people.accountant}`);
+  const good = await callAs(h.handleVoucherBulkApprove, { voucherNumbers: nos, approverEmail: people.accountant, approverPassword: PW }, acc);
+  assert.deepEqual(good.data.approved, nos);
+  for (const no of nos) assert.equal((await voucher(no)).metadata.accountantSignature, FAKE_STAMP(company.accountant_sig_url));
+});
+
+test('approve without a login token → 401 even when VOUCHER_REQUIRE_LOGIN is off; no password is checked', { skip }, async () => {
+  delete process.env.VOUCHER_REQUIRE_LOGIN;
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  const one = await call(h.handleVoucherApprove, { voucher: { voucherNumber: no, approverEmail: people.accountant, approverPassword: 'wrong' } });
+  assert.deepEqual([one.code, one.success, one.message], [401, false, 'Vui lòng đăng nhập']);
+  const bulk = await call(h.handleVoucherBulkApprove, { voucherNumbers: [no], approverEmail: people.accountant, approverPassword: PW });
+  assert.deepEqual([bulk.code, bulk.success, bulk.message], [401, false, 'Vui lòng đăng nhập']);
+  assert.equal(await redis.get(`stepup:fail:${people.accountant}`), null, 'a body email never feeds the lockout counter');
+  assert.equal((await voucher(no)).status, 'Đang treo');
+});
+
+test('approval context tells the page to ask for the password', { skip }, async () => {
+  const no = newNo();
+  await call(h.handleVoucherSubmit, submitBody(no));
+  const ctx = await callAs(h.handleVoucherApprovalContext, { voucherNumber: no }, await jwtFor(people.accountant));
+  assert.equal(ctx.data.approvalAuth, 'password');
 });

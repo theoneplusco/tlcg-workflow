@@ -5,8 +5,8 @@
 // Contract notes (see docs/superpowers/plans/2026-10-07-vouchers-on-postgres.md):
 // - The page builds the voucher number and the first approver email; we keep
 //   its wording when the first step has a single approver.
-// - Signatures are checked in the browser (perceptual hash); approve requires
-//   signatureVerification.verified === true, as in GAS.
+// - Approvals on Postgres: the approver re-enters their login password and the server stamps their
+//   registered sample signature (decision 2026-10-07, option D; api/lib/approval/step-up.js).
 // - Emails are queued only after the transaction commits.
 import pool from '../../db/pool.js';
 import { publishEvent } from './sse.js';
@@ -21,7 +21,9 @@ import {
   toAmount, findCompany, employeesByEmail, lockVoucher, planOf, voucherView, saveState, appendHistory, audit,
 } from '../lib/vouchers/repo.js';
 import { enqueue } from '../lib/sheets/outbox.js';
-import { signatureProblem, sampleSignatureFor, NO_SAMPLE } from '../lib/approval/signature-check.js';
+import redis from '../../db/redis.js';
+import { confirmPassword, stampSignature, verificationRecord } from '../lib/approval/step-up.js';
+import { sampleSignatureFor, NO_SAMPLE } from '../lib/approval/signature-check.js';
 import {
   historyRecord, currentRecord, voucherSpreadsheetId, HISTORY_TAB, CURRENT_TAB, CURRENT_KEY,
 } from '../lib/sheets/voucher-records.js';
@@ -132,6 +134,21 @@ async function resolveActor(req, res, claimed, lang) {
   return { email: want, caller: null };
 }
 
+/**
+ * The approver for the password step-up: always the signed-in caller (controller decision 2), whatever
+ * VOUCHER_REQUIRE_LOGIN says — the lockout counter is keyed on the token's email, never a body field.
+ * Returns the actor or sends the error (no token → 401).
+ */
+async function resolveApprover(req, res, claimed, lang) {
+  const actor = await resolveActor(req, res, claimed, lang);
+  if (!actor) return null;
+  if (!actor.caller) {
+    res.status(401).json({ success: false, message: lang === 'en' ? 'Please sign in.' : 'Vui lòng đăng nhập' });
+    return null;
+  }
+  return actor;
+}
+
 const stepWaiting = (plan) => {
   const i = pendingStep(plan);
   return i < 0 ? [] : plan.steps[i].approvers.filter((a) => a.status !== 'approved');
@@ -231,7 +248,7 @@ export async function handleVoucherSubmit(req, res) {
  * Approve one voucher inside its own transaction. Returns
  * { ok, error?, view, plan, stepDone, finished } — emails are the caller's job.
  */
-async function approveOne({ voucherNumber, approverEmail, approverName, signature, verification, lang }) {
+async function approveOne({ voucherNumber, approverEmail, approverName, lang }) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -250,13 +267,15 @@ async function approveOne({ voucherNumber, approverEmail, approverName, signatur
     // Approved every entry they have and the plan moved on → GAS "already approved"
     if (mine.every((a) => a.status === 'approved')) { await client.query('ROLLBACK'); return { ok: false, error: msg(lang, 'alreadyApprovedByYouCash') }; }
 
-    // No registered sample = nothing to verify against: refuse (GAS let these through as "no_sample")
+    // The registered sample is stamped (no upload, no comparison); none registered → refused
     const open = pendingStep(plan);
     const pendingMine = open >= 0 ? plan.steps[open].approvers.filter((a) => a.email === email && a.status !== 'approved') : [];
-    if (pendingMine.length && !(await sampleSignatureFor(client, row.company_id, pendingMine, email)).url) {
-      await client.query('ROLLBACK');
-      return { ok: false, error: NO_SAMPLE[lang === 'en' ? 'en' : 'vi'] };
+    let stamp = { signature: '', from: '' };
+    if (pendingMine.length) {
+      stamp = await stampSignature(client, row.company_id, pendingMine, email, lang);
+      if (!stamp.ok) { await client.query('ROLLBACK'); return { ok: false, error: stamp.message }; }
     }
+    const signature = stamp.signature;
 
     let result;
     const at = now();
@@ -283,7 +302,7 @@ async function approveOne({ voucherNumber, approverEmail, approverName, signatur
     if (key === 'legalRep') { meta.legalRepSignature = signature; meta.legalRepName = name; }
     if (key === 'treasurer') { meta.treasurerSignature = signature; meta.treasurerName = name; meta.approverSignature = signature; }
     meta.signatureVerification = meta.signatureVerification || {};
-    meta.signatureVerification[key || email] = { verified: verification.verified, similarity: verification.similarity, reason: verification.reason, verifiedAt: now() };
+    meta.signatureVerification[key || email] = verificationRecord(stamp.from, at);
     meta.approvedBy = email;
 
     const status = statusText(next);
@@ -298,7 +317,7 @@ async function approveOne({ voucherNumber, approverEmail, approverName, signatur
     await appendHistory(client, hist);
     await mirrorVoucher(client, hist, { at, submittedAt: submittedAtOf(row), progressDone: idx.done });
     await audit(client, { docNo: voucherNumber, company: row.company_name, action: 'Approve', role: key, actorEmail: email,
-      actorName: name, prevStatus: row.status, newStatus: status, extra: { signatureUploaded: !!signature } });
+      actorName: name, prevStatus: row.status, newStatus: status, extra: { auth: 'password', signatureStamped: !!signature, sampleFrom: stamp.from } });
     await client.query('COMMIT');
     await publishEvent('voucher:approved', { voucherNumber, status, isFinal: result.finished });
     return { ok: true, view, plan: next, stepDone: result.stepDone, finished: result.finished };
@@ -315,13 +334,13 @@ export async function handleVoucherApprove(req, res) {
   const lang = b.lang;
   const v = b.voucher || {};
   if (!v.voucherNumber) return fail(res, msg(lang, 'missingVoucherNo'));
-  const sigErr = signatureProblem(lang, v.approverSignature, v.signatureVerification);
-  if (sigErr) return fail(res, sigErr);
-  const actor = await resolveActor(req, res, v.approverEmail, lang);
+  const actor = await resolveApprover(req, res, v.approverEmail, lang);
   if (!actor) return;
+  if (!actor.email) return fail(res, msg(lang, 'missingApproverInfo'));
+  const pw = await confirmPassword({ db: pool, redis, email: actor.email, password: v.approverPassword, lang });
+  if (!pw.ok) return fail(res, pw.message);
   try {
-    const r = await approveOne({ voucherNumber: v.voucherNumber, approverEmail: actor.email, approverName: v.approverName,
-      signature: v.approverSignature, verification: v.signatureVerification, lang });
+    const r = await approveOne({ voucherNumber: v.voucherNumber, approverEmail: actor.email, approverName: v.approverName, lang });
     if (!r.ok) return fail(res, r.error);
     if (r.finished) {
       for (const m of finalApproved(r.view, r.plan)) await queueMail(m);
@@ -348,18 +367,17 @@ export async function handleVoucherBulkApprove(req, res) {
   const numbers = Array.isArray(b.voucherNumbers) ? b.voucherNumbers : [];
   if (!numbers.length) return fail(res, msg(lang, 'noVoucherSelected'));
   if (!b.approverEmail) return fail(res, msg(lang, 'missingApproverInfo'));
-  const sigErr = signatureProblem(lang, b.approverSignature, b.signatureVerification, true);
-  if (sigErr) return fail(res, sigErr);
-  const actor = await resolveActor(req, res, b.approverEmail, lang);
+  const actor = await resolveApprover(req, res, b.approverEmail, lang);
   if (!actor) return;
+  const pw = await confirmPassword({ db: pool, redis, email: actor.email, password: b.approverPassword, lang }); // once for the batch
+  if (!pw.ok) return fail(res, pw.message);
 
   const approved = [];
   const failed = [];
   const nextByApprover = new Map(); // email → { approver, items[] }
   for (const no of numbers) {
     try {
-      const r = await approveOne({ voucherNumber: no, approverEmail: actor.email, approverName: b.approverName,
-        signature: b.approverSignature, verification: b.signatureVerification, lang });
+      const r = await approveOne({ voucherNumber: no, approverEmail: actor.email, approverName: b.approverName, lang });
       if (!r.ok) { failed.push({ voucherNumber: no, error: r.error }); continue; }
       approved.push(no);
       if (r.finished) {
@@ -628,7 +646,7 @@ export async function handleVoucherApprovalStatus(req, res) {
 /**
  * getApprovalContext { voucherNumber } — for the signed-in user: the voucher,
  * its plan, my entries on the current step, whether I can approve / reject,
- * and the sample signature to verify against (role sample from Master
+ * and the sample that will be stamped (role sample from Master
  * Company, else a "Signature" column on my Master Employee row).
  */
 export async function handleVoucherApprovalContext(req, res) {
@@ -677,6 +695,7 @@ export async function handleVoucherApprovalContext(req, res) {
         reason,
         sampleSignatureUrl,
         sampleFrom,
+        approvalAuth: 'password',
       },
     });
   } catch (err) {
