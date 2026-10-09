@@ -34,6 +34,33 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
 ---
 
+### 2026-10-10 (later): cloud session — sidebar labels, official titles, speed
+- **Did:**
+  - **Sidebar labels:** hovering (or tabbing to) a rail icon shows its name next to it, in the chosen language (Trang chủ / Home, Trao đổi / Communications, Thu chi – Sổ quỹ / Cash & Vouchers, …). It replaces the slow native tooltip.
+  - **Official titles in capitals on every page:** PHIẾU THU/CHI (the one-page layout had lower-cased it), SỔ QUỸ, HỢP ĐỒNG MUA SẮM, next to ĐỀ NGHỊ MUA HÀNG / ĐỀ NGHỊ THANH TOÁN / BIÊN BẢN NGHIỆM THU. They stay Vietnamese in English mode, as on the paper forms.
+  - **Mislabelled page fixed:** `approve_payment_request.html` said "PHÊ DUYỆT ĐỀ NGHỊ MUA HÀNG" but approves payment requests. It now says PHÊ DUYỆT ĐỀ NGHỊ THANH TOÁN.
+  - **Speed: Tailwind is prebuilt.** `tailwind.css` (23 KB) replaces the cdn.tailwindcss.com compiler (366 KB, recompiling in every browser).
+    - It uses the same Tailwind v3 and is linked last in `<head>`. Screenshots of all 14 page views match the CDN version pixel for pixel; only clocks differ.
+    - Measured with a phone-speed CPU, first paint: Phiếu Thu Chi 804 → 508 ms, Đề nghị mua hàng 468 → 216 ms. Main-thread work is about halved.
+    - `npm run build:css` rebuilds it. `tests/static/tailwind.test.js` fails if a page gains classes and the file is not rebuilt.
+  - **Speed: the server compresses** pages, scripts and JSON (voucher.html 563 KB → 104 KB). Files with `?v=` are cached for a year.
+  - **Speed: no Google call when opening forms.** Phiếu Thu Chi and Đề nghị thanh toán loaded the employee list from Google Apps Script in the browser (2–4 s). They now use the server's `getMasterData` (Postgres).
+  - **Speed: approvals.** On the server an approval takes about 30 ms. The slow part was downloading a Drive sample signature at the click. Opening the approval page now starts that download, and a loaded sample is kept 6 h instead of 10 min. Approvers who uploaded their signature in My Profile never wait on Drive.
+- **Commits:** 551920e (labels, titles), 974f578 (speed).
+- **Tests:**
+  - Full suite 401/401.
+  - Browser checks: labels and titles 19/19, sidebar 90/90, Tổng quan 17/17, Sổ Quỹ 16/16, one-page voucher 14/14, submit + delete 7/7, self-approval 41/41.
+- **Found:**
+  - **Voucher numbers can collide between people.** The number comes from a counter kept in each browser (`vc_<company>_<PT|PC>_<date>` in localStorage), so two people creating a Phiếu chi for the same company on the same day both get …000001. The second is refused with "Phiếu này đã được gửi trước đó". The GAS site has the same logic. Fix proposed, not built: the server hands out the next free number.
+  - Sổ Quỹ still reads the cash book from GAS (the `cash` workflow is not on Postgres on the Mini), so that page still waits on Google.
+- **Deploy on the Mini (one command at a time):**
+  1. `git pull`
+  2. `npm install --omit=dev` (new package: `compression`)
+  3. `pm2 delete tlcg-workflow && pm2 start ecosystem.config.cjs && pm2 save` (also loads the new Resend key)
+- **Left / next:** the test email after the restart; the Mini clean-up; the voucher-number fix (if wanted); the opening-balance decision.
+
+---
+
 ### 2026-10-10: cloud session — Cash & Vouchers content redesign implemented
 - **Did:** the three pages from the approved samples (`docs/design/cash-vouchers/`). New shared `ui-kit.css` (cards, buttons, tabs, chips, grid tables). It uses container queries, so layouts adapt to the sidebar being open as well as to the window.
   - **Tổng quan** (index.html › Thu chi – Sổ quỹ): new `cash-overview.js` draws `#cash-overview`; the old section and its functions were removed.
