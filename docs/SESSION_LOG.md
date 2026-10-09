@@ -34,6 +34,39 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
 ---
 
+### 2026-10-10: cloud session — Cash & Vouchers content redesign implemented
+- **Did:** the three pages from the approved samples (`docs/design/cash-vouchers/`). New shared `ui-kit.css` (cards, buttons, tabs, chips, grid tables). It uses container queries, so layouts adapt to the sidebar being open as well as to the window.
+  - **Tổng quan** (index.html › Thu chi – Sổ quỹ): new `cash-overview.js` draws `#cash-overview`; the old section and its functions were removed.
+    - "Cần bạn xử lý" first: vouchers waiting for me, oldest first, with Xem / Duyệt (`voucher.html?approveVoucher=`).
+    - Four numbers; the first two filter the table.
+    - Recent vouchers table: status tabs, search, "Hiện thêm".
+    - One company picker for the whole page (remembered in `tlc_cash_company`).
+    - Kiểm kê quỹ row.
+    - Server: `getVoucherSummary` rows now include `reason` (description) and `stepName` (the open step of the approval plan).
+  - **Sổ Quỹ** (cash_book.html): same data, cash count, signers, save and print.
+    - Header with company, dates and quick ranges.
+    - Numbers: Tổng thu, Tổng chi, Số dư theo sổ quỹ, Phiếu chưa vào quỹ.
+    - Tabs Sổ quỹ / Chưa vào sổ / Kiểm kê quỹ; the tab is in the URL (`#pending`, `#count`).
+    - The cash book table shows Thu / Chi / Lũy kế, oldest first, with a totals row, a Thu/Chi filter and search.
+  - **Phiếu Thu Chi** (voucher.html): new `voucher-onepage.js` re-arranges the existing form; fields, ids, checks and the submit flow are unchanged.
+    - Steps 1–4 are cards on one page; a Thu/Chi choice drives the "Loại phiếu" select.
+    - Summary panel: total and amount in words, approvers mirrored from step 4, and a checklist built from the page's own `validateStep` / `getSignatureData`.
+    - The page's own buttons moved into the panel: Gửi phê duyệt, plus the rest under "Thao tác khác".
+    - The stepper, back/next buttons and the review step are hidden.
+- **Tests:**
+  - Full suite 397/397.
+  - Browser checks: Tổng quan 17/17, Sổ Quỹ 16/16 (sample cash-book lines, because GAS is not reachable from the container), one-page voucher 14/14, submit + delete 7/7, self-approval 41/41.
+  - Test fix: two "approver has no sample" tests picked an unordered `LIMIT 1` employee and could get TLC AP (who has a sample), and a leftover approval flow then broke three more tests. They now pick a person without a sample, ordered by id, and always clear the flow.
+- **Found / decisions for the user:**
+  - **Sổ Quỹ balance:** "Số dư theo sổ quỹ" (and the cash count's line I) is Thu − Chi *from the chosen start date*, not since the beginning. This is the existing logic. A true opening balance (Tồn đầu kỳ) needs a decision: should the count compare cash with the balance since the beginning?
+  - **"Chưa vào sổ"** means vouchers still in approval; they enter the book automatically once approved. There is no "confirm paid" step, so the design's "Xác nhận đã thu/chi" button was not built.
+  - Cash-book lines carry no payer/payee name (GAS `cashBookLine_`), so the table shows the description only.
+  - **Test data:** browser runs leave vouchers / sheet_outbox rows dated today in the scratch DB; a fresh browser then re-uses voucher numbers (the known collision). Clear them before re-running.
+- **Deploy on the Mini:** `git pull` then `pm2 reload tlcg-workflow` (no migration).
+- **Left / next:** Purchase to Pay pages the same way; the opening-balance decision.
+
+---
+
 ### 2026-10-09 (later): cloud session — email key, redesign of the Cash & Vouchers content (design only)
 - **Email on wf.tl-c.us:** the Mini's `RESEND_API_KEY` was rejected by Resend ("API key is invalid", so emails to chinh.nguyen failed and were dropped). The user created a new key; the Mini's `.env` has it, and Resend accepts it (HTTP 200; domains tl-c.us, mediainsider.us and theoneplus.co are verified).
   - **Still to do:** restart (`pm2 delete tlcg-workflow && pm2 start ecosystem.config.cjs && pm2 save`), send one test email, then remove the "Emails are OFF" reminder above.
