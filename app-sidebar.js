@@ -102,9 +102,8 @@
   function initials(name) {
     var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
     if (!parts.length) return '?';
-    var first = parts.length > 1 ? parts[parts.length - 2] : parts[0];
-    var last = parts[parts.length - 1];
-    return (parts.length > 1 ? first.charAt(0) + last.charAt(0) : first.slice(0, 2)).toUpperCase();
+    // First word + last word, like the rest of the app: "Nguyễn Văn Chinh" → NC
+    return (parts.length > 1 ? parts[0].charAt(0) + parts[parts.length - 1].charAt(0) : parts[0].slice(0, 2)).toUpperCase();
   }
   function groupOf(key) {
     for (var i = 0; i < GROUPS.length; i += 1) {

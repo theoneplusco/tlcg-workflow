@@ -63,7 +63,7 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
   - index.html has no Communications page: `showPage('comm')` shows the home page (it did before too). The "Trao đổi" item is kept as before; it needs a page.
   - The voucher-number collision (fresh browser counter) showed up again in the scratch DB; not related.
   - payment_request.html has one stray `</div>` (before this change too).
-- **Deploy on the Mini:** `git pull` then `pm2 reload tlcg-workflow` (no migration). Script tags carry `?v=20261009-1`; bump it when `app-sidebar.*` changes.
+- **Deploy on the Mini:** `git pull` then `pm2 reload tlcg-workflow` (no migration). Script tags carry `?v=20261009-2` (initials fixed: first + last word, "Nguyễn Văn Chinh" → NC); bump it when `app-sidebar.*` changes.
 - **Left / next:**
   - A Communications page, or drop the item.
   - Badges for payment requests, acceptance minutes and cash book come with their move to Postgres (Plans 6–8).
