@@ -34,6 +34,19 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 
 ---
 
+### 2026-10-09 (later): cloud session — email key, redesign of the Cash & Vouchers content (design only)
+- **Email on wf.tl-c.us:** the Mini's `RESEND_API_KEY` was rejected by Resend ("API key is invalid", so emails to chinh.nguyen failed and were dropped). The user created a new key; the Mini's `.env` has it, and Resend accepts it (HTTP 200; domains tl-c.us, mediainsider.us and theoneplus.co are verified).
+  - **Still to do:** restart (`pm2 delete tlcg-workflow && pm2 start ecosystem.config.cjs && pm2 save`), send one test email, then remove the "Emails are OFF" reminder above.
+  - The first new key was pasted into the chat, so it should be deleted in Resend. The key now in use is full-access; a sending-only key would be safer.
+- **Sidebar initials fix** (0abb966): first + last word ("Nguyễn Văn Chinh" → NC).
+- **Redesign of the content (not the sidebar) of Tổng quan, Phiếu Thu Chi and Sổ Quỹ:** design canvas https://claude.ai/artifact/QHJk8yzmjzjUjRHA3mQuDT; sample images in `docs/design/cash-vouchers/` (example data).
+  - Tổng quan: "Cần bạn xử lý" first, 4 numbers, full-width recent table with status filters, and Kiểm kê quỹ as one row.
+  - Phiếu Thu Chi: one page instead of the 5-step wizard, a big Thu/Chi choice, attachments per line, the profile signature, and a summary panel (total, approvers, checklist, Gửi duyệt).
+  - Sổ Quỹ: a Thu/Chi/Tồn ledger with a running balance, plus the Chưa vào sổ and Kiểm kê quỹ tabs (counts each note value; shows Khớp/Thừa/Thiếu).
+- **Left / next:** the user reviews the samples, then implement these three pages; afterwards the P2P pages the same way.
+
+---
+
 ### 2026-10-09: cloud session — one shared sidebar on every page
 - **Why:** each page had its own sidebar. voucher.html listed the documents, cash_book.html listed the three workflows, and contract, admin and approval flows had none. The user approved a design ("TLCG sidebar redesign" canvas): an icon rail plus a panel, workflow groups that open, EN/VI following the switch, applied to every page.
 - **Did:**
