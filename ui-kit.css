@@ -221,8 +221,8 @@ a.uk-row:hover .uk-chev { color: var(--uk-blue); }
 .vp1 #step-2 > h2:not(.vp1-h2), .vp1 #step-3 > h2:not(.vp1-h2) { display: none !important; }
 .vp1-head { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 20px; }
 .vp1-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
-.vp1 .vp1-title { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; text-align: left; text-transform: lowercase; color: var(--uk-ink); line-height: 1.15; }
-.vp1 .vp1-title::first-letter { text-transform: uppercase; }
+/* Official form names stay in capitals (PHIẾU THU/CHI), like ĐỀ NGHỊ MUA HÀNG and the paper forms */
+.vp1 .vp1-title { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.01em; text-align: left; text-transform: none; color: var(--uk-ink); line-height: 1.15; }
 .vp1-no { font-size: 13px; font-weight: 700; color: var(--uk-muted); background: #F1EFEB; border-radius: 8px; padding: 5px 10px; }
 .vp1-draft { font-size: 12px; font-weight: 700; color: var(--uk-faint); border: 1px dashed #CFCAC2; border-radius: 999px; padding: 4px 10px; }
 .vp1-list { font-size: 14px; font-weight: 700; }

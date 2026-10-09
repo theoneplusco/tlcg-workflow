@@ -179,6 +179,15 @@ html.asb-phone:not(.asb-peek) #app-sidebar .asb { display: none; }
 #app-sidebar .asb-icon-btn.asb-close { display: none; }
 html.asb-peek #app-sidebar .asb-icon-btn.asb-close { display: flex; }
 
+/* Label next to a rail icon (app-sidebar.js showTip) */
+#app-sidebar .asb-tip {
+    position: fixed; z-index: 1003; pointer-events: none; white-space: nowrap;
+    background: #1E2230; color: #FFFFFF; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 8px; box-shadow: 0 6px 18px rgba(20,30,60,.22);
+}
+#app-sidebar .asb-tip::before { content: ''; position: absolute; left: -5px; top: 50%; margin-top: -5px; border: 5px solid transparent; border-left: 0; border-right-color: #1E2230; }
+#app-sidebar .asb-tip[hidden] { display: none; }
+
 /* Rail pop-out (tablet rail and folded panel) */
 #app-sidebar .asb-fly {
     position: fixed; left: 72px; z-index: 1002; width: 248px; background: #FFFFFF; border: 1px solid #E3E1DC;

@@ -162,30 +162,30 @@
     var activeGroup = groupOf(state.active);
     var n = total();
     var h = '<nav class="asb-rail" aria-label="' + esc(tx.quick) + '">';
-    h += '<button type="button" class="asb-rail-btn" data-asb-toggle aria-label="' + esc(folded ? tx.unfold : tx.fold) + '" title="' + esc(folded ? tx.unfold : tx.fold) + '">' + toggleIcon(folded) + '</button>';
+    h += '<button type="button" class="asb-rail-btn" data-asb-toggle aria-label="' + esc(folded ? tx.unfold : tx.fold) + '" data-asb-tip="' + esc(folded ? tx.unfold : tx.fold) + '">' + toggleIcon(folded) + '</button>';
     h += '<span class="asb-rail-sep" aria-hidden="true"></span>';
-    h += link('home', 'asb-rail-btn' + (state.active === 'home' ? ' is-on' : ''), svg('home', 22), ' aria-label="' + esc(tx.home) + '" title="' + esc(tx.home) + '"', true);
+    h += link('home', 'asb-rail-btn' + (state.active === 'home' ? ' is-on' : ''), svg('home', 22), ' aria-label="' + esc(tx.home) + '" data-asb-tip="' + esc(tx.home) + '"', true);
     var tasksLabel = n > 0 ? tx.tasksWaiting.replace('{n}', n) : tx.tasks;
-    h += '<button type="button" class="asb-rail-btn" data-asb-tasks aria-label="' + esc(tasksLabel) + '" title="' + esc(tasksLabel) + '">' + svg('tasks', 22) + (n > 0 ? '<span class="asb-dot"></span>' : '') + '</button>';
-    h += link('comm', 'asb-rail-btn' + (state.active === 'comm' ? ' is-on' : ''), svg('comm', 22), ' aria-label="' + esc(tx.comm) + '" title="' + esc(tx.comm) + '"', true);
+    h += '<button type="button" class="asb-rail-btn" data-asb-tasks aria-label="' + esc(tasksLabel) + '" data-asb-tip="' + esc(tasksLabel) + '">' + svg('tasks', 22) + (n > 0 ? '<span class="asb-dot"></span>' : '') + '</button>';
+    h += link('comm', 'asb-rail-btn' + (state.active === 'comm' ? ' is-on' : ''), svg('comm', 22), ' aria-label="' + esc(tx.comm) + '" data-asb-tip="' + esc(tx.comm) + '"', true);
     h += '<span class="asb-rail-sep" aria-hidden="true"></span>';
     GROUPS.forEach(function (g) {
       var on = activeGroup === g.key ? ' is-on' : '';
       var tile = '<span class="asb-tile asb-tile-' + g.tile + '">' + svg(g.tile, 18, 2) + '</span>';
       if (g.link) {
-        h += link(g.link, 'asb-rail-btn' + on, tile, ' aria-label="' + esc(tx[g.key]) + '" title="' + esc(tx[g.key]) + '"', true);
+        h += link(g.link, 'asb-rail-btn' + on, tile, ' aria-label="' + esc(tx[g.key]) + '" data-asb-tip="' + esc(tx[g.key]) + '"', true);
       } else {
         var gc = groupCount(g);
         h += '<button type="button" class="asb-rail-btn' + on + '" data-asb-rail-group="' + g.key + '" aria-haspopup="true" aria-expanded="' +
-          (state.fly === g.key) + '" aria-label="' + esc(tx[g.key]) + '" title="' + esc(tx[g.key]) + '">' + tile + (gc > 0 ? '<span class="asb-dot"></span>' : '') + '</button>';
+          (state.fly === g.key) + '" aria-label="' + esc(tx[g.key]) + '" data-asb-tip="' + esc(tx[g.key]) + '">' + tile + (gc > 0 ? '<span class="asb-dot"></span>' : '') + '</button>';
       }
     });
     if (u && u.isAdmin) {
       h += '<span class="asb-rail-sep" aria-hidden="true"></span>';
-      h += link('admin', 'asb-rail-btn' + (state.active === 'admin' ? ' is-on' : ''), svg('admin', 22), ' aria-label="' + esc(tx.admin) + '" title="' + esc(tx.admin) + '"', true);
+      h += link('admin', 'asb-rail-btn' + (state.active === 'admin' ? ' is-on' : ''), svg('admin', 22), ' aria-label="' + esc(tx.admin) + '" data-asb-tip="' + esc(tx.admin) + '"', true);
     }
     h += '<span class="asb-grow"></span>';
-    h += link('profile', 'asb-avatar' + (u && u.isAdmin ? ' is-admin' : ''), esc(initials(u && (u.name || u.email))), ' aria-label="' + esc(tx.profile) + '" title="' + esc(tx.profile) + '"', true);
+    h += link('profile', 'asb-avatar' + (u && u.isAdmin ? ' is-admin' : ''), esc(initials(u && (u.name || u.email))), ' aria-label="' + esc(tx.profile) + '" data-asb-tip="' + esc(tx.profile) + '"', true);
     return h + '</nav>';
   }
 
@@ -270,7 +270,8 @@
     html.classList.toggle('asb-on', !!u);
     if (!u) { host.innerHTML = ''; return; }
     var focusFind = doc.activeElement && doc.activeElement.id === 'asb-find';
-    host.innerHTML = '<div class="asb">' + railHtml(u) + panelHtml(u) + '</div><div class="asb-scrim" data-asb-close></div>' + flyHtml();
+    host.innerHTML = '<div class="asb">' + railHtml(u) + panelHtml(u) + '</div><div class="asb-scrim" data-asb-close></div>' + flyHtml() +
+      '<div class="asb-tip" role="tooltip" id="asb-tip" hidden></div>';
     placeFly();
     if (focusFind) {
       var input = doc.getElementById('asb-find');
@@ -286,6 +287,23 @@
     if (!btn || !fly) return;
     var r = btn.getBoundingClientRect();
     fly.style.top = Math.max(8, Math.min(r.top, root.innerHeight - fly.offsetHeight - 8)) + 'px';
+  }
+
+  // Labels next to the rail icons on hover / keyboard focus (the native title tooltip is slow and plain)
+  function showTip(btn) {
+    var tip = doc.getElementById('asb-tip');
+    if (!tip || !btn) return;
+    if (btn.getAttribute('aria-expanded') === 'true') { tip.hidden = true; return; } // its pop-out is open
+    tip.textContent = btn.getAttribute('data-asb-tip');
+    tip.hidden = false;
+    var r = btn.getBoundingClientRect();
+    tip.style.left = Math.round(r.right + 10) + 'px';
+    tip.style.top = Math.round(r.top + r.height / 2 - tip.offsetHeight / 2) + 'px';
+    btn.setAttribute('aria-describedby', 'asb-tip');
+  }
+  function hideTip() {
+    var tip = doc.getElementById('asb-tip');
+    if (tip) tip.hidden = true;
   }
 
   // ── layout mode ──────────────────────────────────────────
@@ -399,6 +417,7 @@
   }
 
   function onClick(ev) {
+    hideTip();
     var el = ev.target.closest('[data-asb-go],[data-asb-toggle],[data-asb-tasks],[data-asb-group],[data-asb-rail-group],[data-asb-close],[data-asb-signout],[data-lang]');
     if (!el || !host.contains(el)) return;
     if (el.hasAttribute('data-asb-go')) {
@@ -580,6 +599,11 @@
     hookIndex();
     loadCounts(false);
     host.addEventListener('click', onClick);
+    host.addEventListener('mouseover', function (ev) { var b = ev.target.closest && ev.target.closest('[data-asb-tip]'); if (b) showTip(b); });
+    host.addEventListener('mouseout', function (ev) { var b = ev.target.closest && ev.target.closest('[data-asb-tip]'); if (b && !b.contains(ev.relatedTarget)) hideTip(); });
+    host.addEventListener('focusin', function (ev) { var b = ev.target.closest && ev.target.closest('[data-asb-tip]'); if (b && b.matches(':focus-visible')) showTip(b); else hideTip(); });
+    host.addEventListener('focusout', hideTip);
+    root.addEventListener('scroll', hideTip, true);
     host.addEventListener('keydown', onFindKey);
     host.addEventListener('input', onInput);
     doc.addEventListener('keydown', onKey);
