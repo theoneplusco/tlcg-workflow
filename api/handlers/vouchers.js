@@ -758,7 +758,8 @@ export async function handleVoucherSummary(req, res) {
     ]);
     const callerApproverRole = roles.accountant ? 'accountant' : roles.legal ? 'legalRep' : roles.treasurer ? 'treasurer' : 'submitter';
     const cols = `voucher_number, voucher_type, company_name, employee_name, requestor_email, amount, status, last_action,
-                  updated_at, progress_done, progress_total, approver_emails, pending_emails, current_approver`;
+                  updated_at, progress_done, progress_total, approver_emails, pending_emails, current_approver, description,
+                  metadata->'approvalPlan'->'steps'->progress_done->>'name' AS step_name`;
     const { rows } = admin
       ? await pool.query(`SELECT ${cols} FROM vouchers WHERE status <> $1`, [STATUS.deleted])
       : await pool.query(`SELECT ${cols} FROM vouchers WHERE (LOWER(requestor_email) = $1 OR $1 = ANY(approver_emails)) AND status <> $2`, [email, STATUS.deleted]);

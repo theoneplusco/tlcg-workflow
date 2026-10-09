@@ -17,7 +17,7 @@ export function formatTimestamp(ts) {
 /**
  * rows: vouchers rows (voucher_number, voucher_type, company_name, employee_name,
  *   requestor_email, amount, status, last_action, updated_at, progress_done,
- *   progress_total, approver_emails, current_approver)
+ *   progress_total, approver_emails, current_approver; optional description = the reason, step_name = the open step)
  * caller: { email, isAdmin }  callerApproverRole: precomputed legacy role
  */
 export function summarize(rows, caller, callerApproverRole = 'submitter') {
@@ -36,6 +36,8 @@ export function summarize(rows, caller, callerApproverRole = 'submitter') {
     approverEmails: r.approver_emails || [],
     pendingEmails: r.pending_emails || [],
     currentApprover: r.current_approver || null,
+    reason: r.description || '',
+    stepName: r.step_name || '',
   })).sort((a, b) => b.timestamp - a.timestamp);
   const me = String((caller && caller.email) || '').toLowerCase();
 
@@ -62,6 +64,9 @@ export function summarize(rows, caller, callerApproverRole = 'submitter') {
     // Step-aware pages: is the caller one of the approvers the voucher waits for now?
     myTurn: !!me && !isRejected(v) && v.pendingEmails.includes(me),
     approvalTotal: v.total,
+    // Overview page (index.html › Thu chi – Sổ quỹ): the reason is the row's main line; stepName names the open step
+    reason: v.reason,
+    stepName: v.done < v.total && !isRejected(v) ? v.stepName : '',
   }));
 
   let globalStats = null;

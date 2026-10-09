@@ -44,6 +44,16 @@ test('submitter sees only their own, with GAS counters', () => {
   assert.equal(s.rejected, 1);
 });
 
+test('rows carry the reason and the name of the open step (overview page)', () => {
+  const s = summarize([row('R1', { description: 'Mua văn phòng phẩm', step_name: 'Kế toán trưởng duyệt' }),
+    row('R2', { status: 'Đã duyệt', progress_done: 3, step_name: 'x' }), row('R3')], { email: 'a@x.vn' });
+  const by = (no) => s.recent.find((r) => r.voucherNumber === no);
+  assert.equal(by('R1').reason, 'Mua văn phòng phẩm');
+  assert.equal(by('R1').stepName, 'Kế toán trưởng duyệt');
+  assert.equal(by('R2').stepName, '', 'finished: no open step');
+  assert.equal(by('R3').reason, '');
+});
+
 test('rejected vouchers have no current approver', () => {
   const s = summarize(rows, { email: 'a@x.vn' });
   assert.equal(s.recent.find((r) => r.voucherNumber === 'V5').meta.companyApprovers.currentApprover, null);
