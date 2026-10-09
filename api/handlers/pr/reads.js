@@ -6,6 +6,7 @@ import { cardFromRow, fullFromRow, historyEntry, goodsRecord, supplierExtra, lik
 import { ok, fail, signedInCaller, NO_ACCESS_MSG, SYSTEM_ERROR } from '../../lib/purchase-requests/respond.js';
 import { MASTER_TABLES } from '../../lib/master-registry.js';
 import { sampleSignatureFor } from '../../lib/approval/signature-check.js';
+import { warmSample } from '../../lib/approval/step-up.js';
 import { prDeps } from './tx.js';
 
 const src = (req) => ({ ...(req.query || {}), ...(req.body || {}) });
@@ -43,6 +44,7 @@ export async function handlePRDetail(req, res, d) {
   // The sample the server will stamp when this caller approves ('' = none registered → approval refused, null = not their turn)
   const pending = (row.pending_emails || []).map((e) => String(e).toLowerCase()).includes(caller.email.toLowerCase());
   const mySampleSignatureUrl = pending ? (await sampleSignatureFor(db, row.company_id, null, caller.email)).url : null;
+  warmSample(mySampleSignatureUrl); // the approve click then stamps from memory
   return ok(res, 'Thành công', { request: { ...fullFromRow(row), mySampleSignatureUrl, approvalAuth: 'password' } });
 }
 

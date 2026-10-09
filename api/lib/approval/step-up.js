@@ -13,7 +13,9 @@ export const MAX_PASSWORD_FAILS = 5;
 export const LOCK_SECONDS = 900;
 export const MAX_PASSWORD_LENGTH = 200;
 export { MAX_STAMP_BYTES } from './stamp-limits.js';
-const CACHE_MS = 10 * 60 * 1000;
+// A sample is a stored data URL or a Drive/R2 link that changes by a new URL, so a loaded link is kept for hours:
+// only an approver's first approval of the day waits on Drive (and approval pages warm it, warmSample).
+const CACHE_MS = 6 * 60 * 60 * 1000;
 const CACHE_MAX = 200;
 
 export const STEP_UP_MSG = {
@@ -87,7 +89,8 @@ export async function confirmPassword({ db, redis, email, password, lang }) {
 /** Test seam: how a non-data sample URL becomes a data URL (an oversized one throws before it is read). */
 export const stampDeps = { fetchImage: (url) => fetchImageDataUrl(url, { maxBytes: MAX_STAMP_BYTES }) };
 const cache = new Map(); // url → { dataUrl, at }
-export function clearStampCache() { cache.clear(); }
+const loading = new Map(); // url → the fetch in flight (a warm-up and the approval share one download)
+export function clearStampCache() { cache.clear(); loading.clear(); }
 
 const STAMPABLE = /^data:image\/(png|jpe?g|gif|webp)(;[^,]*)?,/i;
 const decodedBytes = (dataUrl) => {
@@ -110,12 +113,28 @@ async function sampleImage(url) {
   }
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.dataUrl;
-  const dataUrl = await stampDeps.fetchImage(url);
-  const why = unstampable(dataUrl);
-  if (why) throw new Error(why);
-  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
-  cache.set(url, { dataUrl, at: Date.now() });
-  return dataUrl;
+  if (!loading.has(url)) {
+    loading.set(url, (async () => {
+      try {
+        const dataUrl = await stampDeps.fetchImage(url);
+        const why = unstampable(dataUrl);
+        if (why) throw new Error(why);
+        if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+        cache.set(url, { dataUrl, at: Date.now() });
+        return dataUrl;
+      } finally { loading.delete(url); }
+    })());
+  }
+  return loading.get(url);
+}
+
+/**
+ * Start loading a sample link in the background (an approval page was opened by the approver it belongs to),
+ * so the approve click does not wait on Drive. Never throws; a failure is reported by the approval itself.
+ */
+export function warmSample(url) {
+  if (!url || /^data:/i.test(url)) return;
+  sampleImage(url).catch(() => {});
 }
 
 /**

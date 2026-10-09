@@ -24,7 +24,7 @@ import {
 } from '../lib/vouchers/repo.js';
 import { enqueue } from '../lib/sheets/outbox.js';
 import redis from '../../db/redis.js';
-import { confirmPassword, verificationRecord, makeStamper, stampStillCurrent } from '../lib/approval/step-up.js';
+import { confirmPassword, verificationRecord, makeStamper, stampStillCurrent, warmSample } from '../lib/approval/step-up.js';
 import { sampleSignatureFor, NO_SAMPLE } from '../lib/approval/signature-check.js';
 import {
   requestConsent, askBody, planChangedBody, sameOwnSteps, planOwnSteps, planOwnOpen, planOwnLeft, consentFor, recordAuto,
@@ -890,6 +890,7 @@ export async function handleVoucherApprovalContext(req, res) {
     if (myEntries.length) {
       ({ url: sampleSignatureUrl, from: sampleFrom } = await sampleSignatureFor(pool, row.company_id, myEntries, caller.email));
       if (!sampleSignatureUrl) reason = NO_SAMPLE[lang === 'en' ? 'en' : 'vi'];
+      else warmSample(sampleSignatureUrl); // the approve click then stamps from memory
     }
 
     return res.json({

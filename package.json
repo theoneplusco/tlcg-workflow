@@ -5,6 +5,7 @@
   "scripts": {
     "start": "vercel dev",
     "build": "echo 'No build step required for static files'",
+    "build:css": "node node_modules/tailwindcss3/lib/cli.js -c tailwind.config.cjs -i tailwind.src.css -o tailwind.css --minify",
     "serve": "node server.js",
     "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\""
   },
@@ -14,6 +15,7 @@
     "@tailwindcss/cli": "^4.2.2",
     "bcryptjs": "^3.0.3",
     "busboy": "^1.6.0",
+    "compression": "^1.8.1",
     "dotenv": "^18.0.5",
     "express": "^4.22.2",
     "googleapis": "^144.0.0",
@@ -28,6 +30,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "tailwindcss3": "npm:tailwindcss@3.4.17",
     "vercel": "^50.11.0"
   },
   "type": "module"

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phiếu Thu/Chi - TLCGroup Intranet</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2219,6 +2218,7 @@
     <link rel="stylesheet" href="ui-kit.css?v=20261010-1">
     <script src="voucher-onepage.js?v=20261009-1" defer></script>
     <script src="app-sidebar.js?v=20261010-1" data-active="cash-voucher" defer></script>
+    <link rel="stylesheet" href="tailwind.css?v=20261010-1"><!-- prebuilt Tailwind (npm run build:css); last in <head> like the CDN style it replaces -->
 </head>
 <body class="min-h-screen" style="background: #F2F2F7;">
     <!-- Main Content Area -->
@@ -3235,7 +3235,7 @@
          * Fetch employees from backend and build employee_departments map from column C (Phòng ban)
          */
         /* ── Master data: stale-while-revalidate, 30min TTL ──────── */
-        const _MASTER_GAS_URL = 'https://script.google.com/macros/s/AKfycbwoHjoTtE4rPATdp1LO1Of25mSRPm8HVWwbOEgrDpZ07VEz7o38_8Icb1rl235N9VEXnQ/exec';
+        const _MASTER_GAS_URL = '/api/voucher'; // the server answers getMasterData from Postgres (was a direct GAS call, 2–4 s)
         const _MASTER_KEY     = 'tlc_master_data';
         const _MASTER_TS_KEY  = 'tlc_master_data_timestamp';
         const _MASTER_TTL     = 30 * 60 * 1000;

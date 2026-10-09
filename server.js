@@ -11,6 +11,7 @@
 
 import 'dotenv/config'; // .env on the Mini (PM2 also loads it via ecosystem.config.cjs)
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -44,6 +45,12 @@ const app = express();
 
 app.set('trust proxy', true);
 app.disable('x-powered-by');
+
+// gzip pages, scripts and JSON answers (voucher.html is ~560 KB raw, ~110 KB gzipped). The live-update
+// stream is left alone: compressing it would hold events back in the buffer.
+app.use(compression({
+  filter: (req, res) => !String(res.getHeader('Content-Type') || '').startsWith('text/event-stream') && compression.filter(req, res),
+}));
 
 /* ─────────────────────────────────────────────────────────────
    1. Multipart upload — MUST be before body parser.
@@ -135,6 +142,9 @@ app.use(
     setHeaders(res, filePath) {
       if (filePath.endsWith('.html')) {
         res.setHeader('Cache-Control', 'no-cache');
+      } else if (res.req && res.req.query && res.req.query.v) {
+        // Versioned asset (app-sidebar.js?v=20261010-1): a change ships with a new ?v=, so browsers keep it.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       } else {
         res.setHeader('Cache-Control', 'public, max-age=3600');
       }

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import pg from 'pg';
 import Redis from 'ioredis';
 import {
-  confirmPassword, stampSignature, stampDeps, clearStampCache, failKey, lockKey, verificationRecord, STEP_UP_MSG, MAX_STAMP_BYTES, LOCK_SECONDS,
+  confirmPassword, stampSignature, stampDeps, clearStampCache, warmSample, failKey, lockKey, verificationRecord, STEP_UP_MSG, MAX_STAMP_BYTES, LOCK_SECONDS,
   stepUpDeps, MAX_PASSWORD_FAILS,
 } from '../../api/lib/approval/step-up.js';
 import { sha256Hex } from '../../api/lib/auth/password.js';
@@ -163,6 +163,26 @@ test('stampSignature: a failed fetch is not cached (the next approval tries agai
   assert.deepEqual(await stampSignature(db, company.id, null, company.treasurer_email, 'vi'), { ok: false, message: NO_SAMPLE.vi });
   assert.equal((await stampSignature(db, company.id, null, company.treasurer_email, 'vi')).ok, true);
   assert.equal(calls, 2);
+});
+
+test('warmSample: an approval page starts the download; the approval in flight shares it, then stamps from memory', { skip }, async () => {
+  clearStampCache();
+  let calls = 0;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  stampDeps.fetchImage = async (u) => { calls += 1; await gate; return FAKE_STAMP(u); };
+  const url = 'https://drive.google.com/file/d/stamp-test/view';
+  warmSample(url); // page opened
+  const approving = stampSignature(db, company.id, null, company.treasurer_email, 'vi'); // clicked before it finished
+  release();
+  assert.equal((await approving).ok, true);
+  assert.equal((await stampSignature(db, company.id, null, company.treasurer_email, 'vi')).signature, FAKE_STAMP(url));
+  assert.equal(calls, 1);
+  warmSample(''); warmSample('data:image/png;base64,AAAA'); // nothing to load: no fetch, no throw
+  stampDeps.fetchImage = async () => { throw new Error('HTTP 500'); };
+  warmSample('https://drive.google.com/file/d/broken/view'); // a failure stays quiet (the approval reports it)
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls, 1);
 });
 
 test('verificationRecord: what the metadata keeps for a password approval', () => {
