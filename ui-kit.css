@@ -14,6 +14,7 @@
     background: var(--uk-bg); min-height: 100%;
 }
 .uk *, .uk *::before, .uk *::after { box-sizing: border-box; }
+.uk [hidden] { display: none !important; }
 .uk a { color: var(--uk-blue); text-decoration: none; }
 .uk a:hover { color: var(--uk-blue-dark); }
 .uk h1, .uk h2, .uk h3, .uk p { margin: 0; }
@@ -37,11 +38,11 @@
 
 /* Fields */
 .uk-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--uk-faint); }
-.uk-input, .uk-select {
+.uk .uk-input, .uk .uk-select {
     min-height: 44px; border: 1px solid var(--uk-field); border-radius: 12px; background: #FFFFFF; padding: 0 14px;
     font: inherit; font-size: 14px; font-weight: 600; color: #23211D; width: 100%;
 }
-.uk-select {
+.uk .uk-select {
     appearance: none; -webkit-appearance: none; padding-right: 38px; cursor: pointer;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235E5A53' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 12px center;
@@ -181,6 +182,35 @@ a.uk-row:hover .uk-chev { color: var(--uk-blue); }
     .uk-search input { width: 100%; }
     .uk-search { width: 100%; }
 }
+/* ── Sổ Quỹ (cash_book.html) ── */
+.cbx-filters .uk-field { min-width: 150px; }
+.cbx-company { min-width: 240px !important; }
+.cbx-presets { display: flex; gap: 8px; flex-wrap: wrap; }
+.cbx-presets button { min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--uk-field); background: #FFFFFF; font-size: 12px; font-weight: 700; color: var(--uk-ink-2); cursor: pointer; }
+.cbx-presets button:hover { background: #F4F2EE; }
+.cbx-presets button.is-on { background: #23211D; border-color: #23211D; color: #FFFFFF; }
+.cbx-ledger { grid-template-columns: 74px 212px minmax(0, 1fr) 130px 130px 140px; min-height: 52px; }
+.cbx-pend { grid-template-columns: 74px 212px minmax(0, 1fr) 140px 150px 16px; min-height: 52px; }
+.cbx-total { background: var(--uk-blue-wash); font-weight: 800; }
+.cbx-count-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, 1fr); gap: 24px; align-items: start; }
+@container (max-width: 860px) {
+    .cbx-ledger { grid-template-columns: 64px 190px minmax(0, 1fr) 120px 120px; }
+    .cbx-ledger > :nth-child(6) { display: none !important; }
+    .cbx-pend { grid-template-columns: 64px 190px minmax(0, 1fr) 120px 16px; }
+    .cbx-pend > :nth-child(5) { display: none !important; }
+    .cbx-count-grid { grid-template-columns: 1fr; }
+}
+@container (max-width: 560px) {
+    .uk-row-head.cbx-ledger, .uk-row-head.cbx-pend { display: none; }
+    .cbx-ledger, .cbx-pend { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "no amt" "ds dt"; row-gap: 2px; padding: 10px 14px; }
+    .cbx-ledger > :nth-child(1), .cbx-pend > :nth-child(1) { grid-area: dt; justify-self: end; }
+    .cbx-ledger > :nth-child(2), .cbx-pend > :nth-child(2) { grid-area: no; }
+    .cbx-ledger > :nth-child(3), .cbx-pend > :nth-child(3) { grid-area: ds; }
+    .cbx-ledger > :nth-child(4):not(:empty), .cbx-ledger > :nth-child(5):not(:empty), .cbx-pend > :nth-child(4) { grid-area: amt; }
+    .cbx-ledger > :nth-child(4):empty, .cbx-ledger > :nth-child(5):empty, .cbx-pend > :nth-child(6) { display: none !important; }
+    .cbx-total > :nth-child(1), .cbx-total > :nth-child(2) { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .uk-skel { animation: none; }
     button.uk-kpi { transition: none; }

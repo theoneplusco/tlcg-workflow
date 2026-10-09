@@ -359,7 +359,29 @@
     </style>
 <link rel="stylesheet" href="flow-chrome.css">
     <link rel="stylesheet" href="app-sidebar.css?v=20261009-1">
+    <link rel="stylesheet" href="ui-kit.css?v=20261009-1">
     <script src="app-sidebar.js?v=20261009-2" data-active="cash-book" defer></script>
+    <style>
+        /* Redesign 2026-10-09 (ui-kit.css): overrides of the older page styles above */
+        [data-panel][hidden] { display: none !important; }
+        body { padding-bottom: 0; background: #FBFAF8; }
+        body.cbx-has-bar { padding-bottom: 88px; }
+        main.uk { max-width: none; margin: 0; padding: 0; display: block; gap: 0; }
+        @media (min-width: 768px) { .appbar { display: none; } }
+        .cbx .uk-kpi-value, .cbx #book-balance { font-size: 24px; font-weight: 800; letter-spacing: normal; white-space: nowrap; }
+        .cbx #book-balance { color: #163C8C; }
+        .cbx .status-msg:empty { display: none; }
+        .cbx-body > .card { border: 1px solid #ECE9E4; border-radius: 16px; box-shadow: none; padding: 20px 22px; }
+        .cbx-body > .card h2 { font-family: inherit; font-size: 17px; font-weight: 800; letter-spacing: normal; }
+        .cbx .form-head { text-align: left; text-transform: none; }
+        .cbx table.denom th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #6B6862; font-weight: 700; background: #FAF9F7; padding: 10px 8px; }
+        .cbx table.denom td { padding: 8px; vertical-align: middle; border-bottom: 1px solid #F0EEEA; font-size: 14px; }
+        .cbx table.denom input { max-width: 110px; text-align: right; background: #FFFFFF; border: 1px solid #E1DED8; border-radius: 10px; min-height: 40px; }
+        .cbx table.denom tfoot td { font-weight: 800; background: #FCFBF9; }
+        .bar { background: rgba(255,255,255,0.94); border-top: 1px solid #ECE9E4; }
+        .cbx .search-input { min-height: 44px; border: 1px solid #E1DED8; border-radius: 12px; background: #FFFFFF; font-weight: 600; }
+        @media (max-width: 767px) { .cbx-company { min-width: 0 !important; } .appbar-brand span { display: none; } }
+    </style>
 </head>
 <body>
     <div class="shell">
@@ -380,78 +402,83 @@
             <img class="avatar" id="nav-avatar" alt="">
         </div>
     </header>
-    <main>
-        <nav class="crumb no-print" aria-label="Breadcrumb">
-            <a href="index.html"><i class="fas fa-house"></i> <span data-i18n="navHome">Trang chủ</span></a>
-            <i class="fas fa-chevron-right" style="font-size:10px;color:#C7C7CC;"></i>
-            <a href="index.html?page=process-cash" data-i18n="cbNavCash">Cash &amp; Vouchers</a>
-            <i class="fas fa-chevron-right" style="font-size:10px;color:#C7C7CC;"></i>
-            <span data-i18n="cbTitle">Sổ quỹ</span>
-        </nav>
-        <h1 class="page-title doc-title no-print">SỔ QUỸ</h1>
-        <div class="card filters no-print">
-            <div>
-                <label class="field-label" for="company" data-i18n="labelCompany">Công ty</label>
-                <select id="company"><option value="" data-i18n="optChooseCompany">Chọn công ty</option></select>
+    <main class="uk cbx">
+        <header class="uk-head no-print">
+            <nav class="uk-crumb" aria-label="Breadcrumb">
+                <a href="index.html" data-i18n="navHome">Trang chủ</a><span aria-hidden="true">/</span>
+                <a href="index.html?page=process-cash" data-i18n="cbxCrumb">Thu chi – Sổ quỹ</a><span aria-hidden="true">/</span>
+                <span aria-current="page" data-i18n="cbTitle">Sổ quỹ</span>
+            </nav>
+            <div class="uk-head-row">
+                <div class="cbx-title">
+                    <h1 class="uk-title" data-i18n="cbxTitle">Sổ Quỹ tiền mặt</h1>
+                    <p class="uk-sub" id="cbx-sub"></p>
+                </div>
+                <div class="uk-actions cbx-filters">
+                    <label class="uk-field cbx-company"><span data-i18n="labelCompany">Công ty</span>
+                        <select id="company" class="uk-select"><option value="" data-i18n="optChooseCompany">Chọn công ty</option></select></label>
+                    <label class="uk-field"><span data-i18n="cbStartDate">Từ ngày</span><input id="start-date" class="uk-input uk-num" type="date"></label>
+                    <label class="uk-field"><span data-i18n="cbEndDate">Đến ngày</span><input id="end-date" class="uk-input uk-num" type="date"></label>
+                </div>
             </div>
-            <div>
-                <label class="field-label" for="start-date" data-i18n="cbStartDate">Từ ngày</label>
-                <input id="start-date" type="date">
+            <div class="cbx-presets" role="group" aria-label="Khoảng thời gian" data-i18n-aria="cbxPeriod">
+                <button type="button" data-range="today" data-i18n="cbxToday">Hôm nay</button>
+                <button type="button" data-range="month" data-i18n="cbxMonth">Tháng này</button>
+                <button type="button" data-range="quarter" data-i18n="cbxQuarter">Quý này</button>
+                <button type="button" data-range="year" data-i18n="cbxYear">Năm nay</button>
             </div>
-            <div>
-                <label class="field-label" for="end-date" data-i18n="cbEndDate">Đến ngày</label>
-                <input id="end-date" type="date">
+            <div class="uk-tabs" role="tablist" aria-label="Sổ quỹ">
+                <button type="button" role="tab" class="uk-tab" data-tab="book" aria-selected="true"><span data-i18n="cbxTabBook">Sổ quỹ</span><span class="uk-tab-n uk-num" id="cbx-n-book">0</span></button>
+                <button type="button" role="tab" class="uk-tab" data-tab="pending" aria-selected="false"><span data-i18n="cbxTabPending">Chưa vào sổ</span><span class="uk-tab-n uk-num" id="cbx-n-pending">0</span></button>
+                <button type="button" role="tab" class="uk-tab" data-tab="count" aria-selected="false"><span data-i18n="cbxTabCount">Kiểm kê quỹ</span></button>
             </div>
-        </div>
+        </header>
+
+        <div class="uk-body cbx-body">
         <p id="status" class="status-msg no-print"></p>
 
-        <section class="card" id="balance-section">
-            <div class="balance-card">
-                <div>
-                    <div class="balance-label" data-i18n="cbBookBalance">Số dư theo sổ quỹ</div>
-                    <div id="book-balance">—</div>
-                    <div class="book-meta" id="book-meta"></div>
+        <div class="uk-kpis no-print" id="balance-section">
+            <div class="uk-kpi"><span class="uk-kpi-label" data-i18n="cbxThu">Tổng thu</span><span class="uk-kpi-value" id="cbx-thu" style="color:#166534">—</span><span class="uk-kpi-note" id="cbx-thu-n"></span></div>
+            <div class="uk-kpi"><span class="uk-kpi-label" data-i18n="cbxChi">Tổng chi</span><span class="uk-kpi-value" id="cbx-chi" style="color:#9A4A07">—</span><span class="uk-kpi-note" id="cbx-chi-n"></span></div>
+            <div class="uk-kpi uk-kpi-blue"><span class="uk-kpi-label" data-i18n="cbBookBalance">Số dư theo sổ quỹ</span><span class="uk-kpi-value" id="book-balance">—</span><span class="uk-kpi-note" id="book-meta"></span></div>
+            <div class="uk-kpi"><span class="uk-kpi-label" data-i18n="cbPending">Phiếu chưa vào quỹ</span><span class="uk-kpi-value" id="cbx-pending-n">—</span><span class="uk-kpi-note" id="pending-meta">—</span></div>
+        </div>
+
+        <section class="uk-card" id="book-section" data-panel="book" aria-label="Sổ quỹ">
+            <div class="uk-card-head">
+                <div class="uk-seg" role="group" aria-label="Loại phiếu" id="cbx-kind">
+                    <button type="button" class="is-on" data-kind="" data-i18n="cbxAll">Tất cả</button>
+                    <button type="button" data-kind="Thu" data-i18n="cbThu">Thu</button>
+                    <button type="button" data-kind="Chi" data-i18n="cbChi">Chi</button>
                 </div>
-                <div class="pending-note">
-                    <div class="field-label" data-i18n="cbPending">Phiếu chưa vào quỹ</div>
-                    <div id="pending-meta">—</div>
-                </div>
+                <span class="uk-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                    <input type="search" id="cbx-q" placeholder="Số phiếu, diễn giải…" data-i18n-placeholder="cbxSearch" aria-label="Tìm trong sổ" data-i18n-aria="cbxSearch"></span>
             </div>
+            <div class="uk-row uk-row-head cbx-ledger">
+                <span data-i18n="cbColDate">Ngày</span><span data-i18n="cbColNo">Số phiếu</span><span data-i18n="cbColDesc">Diễn giải</span>
+                <span class="uk-right" data-i18n="cbThu">Thu</span><span class="uk-right" data-i18n="cbChi">Chi</span><span class="uk-right" data-i18n="cbxRun">Lũy kế</span>
+            </div>
+            <div id="book-rows"></div>
+            <div class="uk-card-foot"><span id="book-page" class="uk-muted" style="font-size:13px"></span><button type="button" class="uk-btn uk-btn-ghost uk-btn-sm" id="book-more" hidden data-i18n="cbxMore">Hiện thêm</button></div>
         </section>
 
-        <section class="card" id="book-section">
-            <h2 data-i18n="cbInBook">Phiếu đã vào quỹ</h2>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr>
-                        <th data-i18n="cbColNo">Số phiếu</th><th data-i18n="cbColDate">Ngày</th><th data-i18n="cbColType">Loại</th>
-                        <th data-i18n="cbColDesc">Diễn giải</th><th class="num" data-i18n="cbColAmount">Số tiền</th><th data-i18n="cbColStatus">Trạng thái</th>
-                    </tr></thead>
-                    <tbody id="book-rows"></tbody>
-                </table>
+        <section class="uk-card" id="pending-section" data-panel="pending" hidden aria-label="Phiếu chưa vào quỹ">
+            <div class="uk-card-head"><p class="uk-muted" style="font-size:13px" data-i18n="cbxPendingNote">Phiếu đang chờ duyệt. Khi đủ chữ ký, phiếu tự vào sổ quỹ ở ngày lập phiếu.</p></div>
+            <div class="uk-row uk-row-head cbx-pend">
+                <span data-i18n="cbColDate">Ngày</span><span data-i18n="cbColNo">Số phiếu</span><span data-i18n="cbColDesc">Diễn giải</span>
+                <span class="uk-right" data-i18n="cbColAmount">Số tiền</span><span data-i18n="cbColStatus">Trạng thái</span><span></span>
             </div>
-            <div class="pager no-print"><button type="button" class="btn" id="book-prev" data-i18n="cbPrev">Trước</button><span id="book-page"></span><button type="button" class="btn" id="book-next" data-i18n="cbNext">Sau</button></div>
+            <div id="pending-rows"></div>
+            <div class="uk-card-foot"><span id="pending-page" class="uk-muted" style="font-size:13px"></span><button type="button" class="uk-btn uk-btn-ghost uk-btn-sm" id="pending-more" hidden data-i18n="cbxMore">Hiện thêm</button></div>
         </section>
 
-        <section class="card" id="pending-section">
-            <h2 data-i18n="cbPending">Phiếu chưa vào quỹ</h2>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr>
-                        <th data-i18n="cbColNo">Số phiếu</th><th data-i18n="cbColDate">Ngày</th><th data-i18n="cbColType">Loại</th>
-                        <th data-i18n="cbColDesc">Diễn giải</th><th class="num" data-i18n="cbColAmount">Số tiền</th><th data-i18n="cbColStatus">Trạng thái</th>
-                    </tr></thead>
-                    <tbody id="pending-rows"></tbody>
-                </table>
-            </div>
-            <div class="pager no-print"><button type="button" class="btn" id="pending-prev" data-i18n="cbPrev">Trước</button><span id="pending-page"></span><button type="button" class="btn" id="pending-next" data-i18n="cbNext">Sau</button></div>
-        </section>
-
-        <section class="card" id="count-form">
+        <section class="card" id="count-form" data-panel="count" hidden>
             <h2 class="form-head">Bảng kiểm kê quỹ</h2>
             <p id="sign-status" class="sign-status" hidden></p>
             <p id="saved-banner" class="banner" hidden data-i18n="cbSavedBanner">Đã có bảng kiểm kê ngày này.</p>
             <p id="form-date">Hôm nay, vào … giờ … phút, ngày … tháng … năm …</p>
+            <div class="cbx-count-grid">
+            <div class="cbx-count-left">
             <div class="no-print" style="margin: 12px 0;">
                 <label class="field-label" for="count-time" data-i18n="cbTime">Giờ kiểm kê</label>
                 <input id="count-time" type="time" step="60" value="08:00">
@@ -467,6 +494,8 @@
                     </tfoot>
                 </table>
             </div>
+            </div>
+            <div class="cbx-count-right">
             <div class="reasons">
                 <div>
                     <label class="field-label" for="reason-thua" data-i18n="cbReasonOver">Lý do — Thừa</label>
@@ -483,10 +512,12 @@
             </div>
             <h2 style="margin-top: 20px;" data-i18n="cbWeInclude">Chúng tôi gồm</h2>
             <div id="reps"></div>
+            </div>
+            </div>
             <div id="print-sigs"></div>
         </section>
 
-        <section class="card no-print" id="recent-counts">
+        <section class="card no-print" id="recent-counts" data-panel="count" hidden>
             <div class="cb-recent-head flow-recent-head">
                 <div style="display:flex;align-items:center;gap:0.75rem;">
                     <h2 data-i18n="cbRecent">Phiếu kiểm kê gần đây</h2>
@@ -555,8 +586,9 @@
                 </aside>
             </div>
         </section>
+        </div>
     </main>
-    <div class="bar no-print">
+    <div class="bar no-print" data-panel="count" hidden>
         <span id="save-hint"></span>
         <div class="bar-actions">
             <button type="button" class="btn" id="review-btn"><i class="fas fa-eye"></i> <span data-i18n="cbReview">Xem lại</span></button>
@@ -592,7 +624,6 @@
         var recentError = '';
         var recentMyTask = false;
         var recentSelected = '';
-        var pages = { book: 0, pending: 0 };
         var reps = [
             { key: 'nguoiChiuTrachNhiem', labelKey: 'cbRoleOwner', name: '', email: '', signatureUrl: '', signatureData: '', masterSignature: '', signed: false },
             { key: 'keToanTruong', labelKey: 'cbRoleAccountant', name: '', email: '', signatureUrl: '', signatureData: '', masterSignature: '', signed: false },
@@ -739,43 +770,123 @@
             document.getElementById('reason-thua').classList.toggle('field-hot', iii < 0);
             return { qty: qty, ii: ii };
         }
-        function renderList(lines, bodyId, pageKey, labelId) {
-            var body = document.getElementById(bodyId);
-            body.innerHTML = '';
-            var start = pages[pageKey] * PAGE;
-            lines.forEach(function(line, index) {
-                var tr = document.createElement('tr');
-                if (index < start || index >= start + PAGE) tr.className = 'row-off';
-                [line.voucherNumber, line.createdDate, line.type, line.description, vnd(line.amount), line.status].forEach(function(value, col) {
-                    var td = document.createElement('td');
-                    td.textContent = value || '';
-                    if (col === 4) td.className = 'num';
-                    tr.appendChild(td);
-                });
-                body.appendChild(tr);
-            });
-            var pagesCount = Math.max(1, Math.ceil(lines.length / PAGE));
-            if (pages[pageKey] > pagesCount - 1) pages[pageKey] = pagesCount - 1;
-            document.getElementById(labelId).textContent = (pages[pageKey] + 1) + ' / ' + pagesCount;
+        // ── Sổ quỹ table (design 2026-10-09): Thu / Chi / Lũy kế from the start date, oldest first; pending newest first
+        var view = { tab: 'book', kind: '', q: '', shown: { book: PAGE, pending: PAGE } };
+        function ymdShort(ymd) {
+            var p = String(ymd || '').split('-');
+            return p.length === 3 ? p[2] + '/' + p[1] + (p[0] === todayVN().slice(0, 4) ? '' : '/' + p[0]) : (ymd || '');
         }
-        function renderBook() {
-            if (!book) {
-                document.getElementById('book-balance').textContent = '—';
-                document.getElementById('book-meta').textContent = '';
-                document.getElementById('pending-meta').textContent = '—';
-                renderList([], 'book-rows', 'book', 'book-page');
-                renderList([], 'pending-rows', 'pending', 'pending-page');
-                lineTotals();
-                renderSaveBar();
-                return;
+        function lineHit(line) {
+            if (view.kind && line.type !== view.kind) return false;
+            var q = view.q.trim().toLowerCase();
+            return !q || (String(line.voucherNumber || '') + ' ' + String(line.description || '')).toLowerCase().indexOf(q) !== -1;
+        }
+        function typeMark(line) {
+            var thu = line.type === 'Thu';
+            var label = thu ? tr('cbThu', 'Thu') : tr('cbChi', 'Chi');
+            return '<span class="uk-type ' + (thu ? 'uk-thu' : 'uk-chi') + '" title="' + esc(label) + '" aria-label="' + esc(label) + '">' + (thu ? '↓' : '↑') + '</span>';
+        }
+        function voucherLink(no) {
+            return '<a class="uk-num" style="font-weight:700;white-space:nowrap" href="voucher.html?viewStatus=' + encodeURIComponent(no || '') + '">' + esc(no || '') + '</a>';
+        }
+        function renderLedger() {
+            var body = document.getElementById('book-rows');
+            var all = book ? book.bookLines.slice().sort(function(a, b) { return a.createdDate < b.createdDate ? -1 : a.createdDate > b.createdDate ? 1 : 0; }) : [];
+            var run = 0;
+            var rows = [];
+            all.forEach(function(line) {
+                var amt = Number(line.amount) || 0;
+                run += line.type === 'Thu' ? amt : -amt;
+                if (lineHit(line)) rows.push({ line: line, run: run });
+            });
+            if (!book) { body.innerHTML = '<div class="uk-empty">' + esc(tr('cbxPick', 'Chọn công ty và khoảng ngày để xem sổ quỹ.')) + '</div>'; }
+            else if (!rows.length) { body.innerHTML = '<div class="uk-empty">' + esc(tr('cbxNoLines', 'Không có phiếu nào trong khoảng này.')) + '</div>'; }
+            else {
+                var shown = rows.slice(0, view.shown.book);
+                body.innerHTML = shown.map(function(r) {
+                    var l = r.line, thu = l.type === 'Thu';
+                    return '<div class="uk-row cbx-ledger">' +
+                        '<span class="uk-num uk-muted">' + esc(ymdShort(l.createdDate)) + '</span>' +
+                        '<span class="cx-no">' + typeMark(l) + voucherLink(l.voucherNumber) + '</span>' +
+                        '<span class="uk-ellipsis" title="' + esc(l.description) + '">' + esc(l.description || '—') + '</span>' +
+                        '<span class="uk-num uk-right" style="font-weight:700;color:#166534">' + (thu ? esc(vnd(l.amount)) : '') + '</span>' +
+                        '<span class="uk-num uk-right" style="font-weight:700;color:#9A4A07">' + (thu ? '' : esc(vnd(l.amount))) + '</span>' +
+                        '<span class="uk-num uk-right" style="font-weight:700">' + esc(vnd(r.run)) + '</span></div>';
+                }).join('') + (!view.kind && !view.q.trim() && rows.length <= view.shown.book ?
+                    '<div class="uk-row cbx-ledger cbx-total"><span></span><span></span><span data-i18n="cbxTotalRow">' + esc(tr('cbxTotalRow', 'Cộng phát sinh · số dư cuối kỳ')) + '</span>' +
+                    '<span class="uk-num uk-right" style="color:#166534">' + esc(vnd(book.bookThu)) + '</span><span class="uk-num uk-right" style="color:#9A4A07">' + esc(vnd(book.bookChi)) + '</span>' +
+                    '<span class="uk-num uk-right" style="color:#163C8C">' + esc(vnd(book.bookBalance)) + '</span></div>' : '');
             }
-            document.getElementById('book-balance').textContent = vnd(book.bookBalance);
-            document.getElementById('book-meta').textContent = document.getElementById('start-date').value + ' → ' + document.getElementById('end-date').value + ' · ' + tr('cbThu', 'Thu') + ' ' + vnd(book.bookThu) + ' · ' + tr('cbChi', 'Chi') + ' ' + vnd(book.bookChi) + ' · ' + book.bookCount;
-            document.getElementById('pending-meta').textContent = tr('cbThu', 'Thu') + ' ' + vnd(book.pendingThu) + ' · ' + tr('cbChi', 'Chi') + ' ' + vnd(book.pendingChi) + ' · ' + vnd(book.pendingNet);
-            renderList(book.bookLines, 'book-rows', 'book', 'book-page');
-            renderList(book.pendingLines, 'pending-rows', 'pending', 'pending-page');
+            document.getElementById('book-page').textContent = book ? Math.min(rows.length, view.shown.book) + ' / ' + rows.length + ' ' + tr('cbxVouchers', 'phiếu') + ' · ' + tr('cbxOldest', 'cũ nhất trước') : '';
+            document.getElementById('book-more').hidden = !book || rows.length <= view.shown.book;
+        }
+        function renderPending() {
+            var body = document.getElementById('pending-rows');
+            var lines = book ? book.pendingLines.filter(lineHit) : [];
+            if (!book) body.innerHTML = '<div class="uk-empty">' + esc(tr('cbxPick', 'Chọn công ty và khoảng ngày để xem sổ quỹ.')) + '</div>';
+            else if (!lines.length) body.innerHTML = '<div class="uk-empty">' + esc(tr('cbxNoPending', 'Không có phiếu nào đang chờ duyệt.')) + '</div>';
+            else body.innerHTML = lines.slice(0, view.shown.pending).map(function(l) {
+                var thu = l.type === 'Thu';
+                return '<a class="uk-row cbx-pend" href="voucher.html?viewStatus=' + encodeURIComponent(l.voucherNumber || '') + '">' +
+                    '<span class="uk-num uk-muted">' + esc(ymdShort(l.createdDate)) + '</span>' +
+                    '<span class="cx-no">' + typeMark(l) + '<span class="uk-num" style="font-weight:700;white-space:nowrap">' + esc(l.voucherNumber || '') + '</span></span>' +
+                    '<span class="uk-ellipsis">' + esc(l.description || '—') + '</span>' +
+                    '<span class="uk-num uk-right" style="font-weight:700;color:' + (thu ? '#166534' : '#9A4A07') + '">' + (thu ? '+ ' : '− ') + esc(vnd(l.amount)) + '</span>' +
+                    '<span><span class="uk-chip uk-chip-pending">' + esc(TLCI18n.tStatus ? TLCI18n.tStatus(l.status || '') : (l.status || '')) + '</span></span>' +
+                    '<span class="uk-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>';
+            }).join('');
+            document.getElementById('pending-page').textContent = book ? Math.min(lines.length, view.shown.pending) + ' / ' + lines.length + ' ' + tr('cbxVouchers', 'phiếu') : '';
+            document.getElementById('pending-more').hidden = !book || lines.length <= view.shown.pending;
+        }
+        function setText(id, value) { var el = document.getElementById(id); if (el) el.textContent = value; }
+        function renderBook() {
+            var company = selectedCompany();
+            var start = document.getElementById('start-date').value, end = document.getElementById('end-date').value;
+            setText('cbx-sub', company ? company.name + ' · VND · ' + ymdShort(start) + ' → ' + ymdShort(end) : tr('cbxPick', 'Chọn công ty và khoảng ngày để xem sổ quỹ.'));
+            var thuN = book ? book.bookLines.filter(function(l) { return l.type === 'Thu'; }).length : 0;
+            setText('cbx-thu', book ? '+ ' + vnd(book.bookThu) : '—');
+            setText('cbx-chi', book ? '− ' + vnd(book.bookChi) : '—');
+            setText('cbx-thu-n', book ? thuN + ' ' + tr('cbxVouchers', 'phiếu') : '');
+            setText('cbx-chi-n', book ? (book.bookCount - thuN) + ' ' + tr('cbxVouchers', 'phiếu') : '');
+            setText('book-balance', book ? vnd(book.bookBalance) : '—');
+            setText('book-meta', book ? tr('cbxFromStart', 'Thu − Chi từ') + ' ' + ymdShort(start) : '');
+            setText('cbx-pending-n', book ? String(book.pendingLines.length) : '—');
+            setText('pending-meta', book ? tr('cbThu', 'Thu') + ' ' + vnd(book.pendingThu) + ' · ' + tr('cbChi', 'Chi') + ' ' + vnd(book.pendingChi) : '');
+            setText('cbx-n-book', book ? String(book.bookCount) : '0');
+            setText('cbx-n-pending', book ? String(book.pendingLines.length) : '0');
+            renderLedger();
+            renderPending();
             lineTotals();
             renderSaveBar();
+        }
+        function showTab(tab) {
+            view.tab = ['book', 'pending', 'count'].indexOf(tab) === -1 ? 'book' : tab;
+            document.querySelectorAll('[data-panel]').forEach(function(el) { el.hidden = el.getAttribute('data-panel') !== view.tab; });
+            document.querySelectorAll('.uk-tab[data-tab]').forEach(function(b) {
+                var on = b.getAttribute('data-tab') === view.tab;
+                b.classList.toggle('is-on', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.body.classList.toggle('cbx-has-bar', view.tab === 'count');
+            try { history.replaceState(null, '', location.pathname + location.search + (view.tab === 'book' ? '' : '#' + view.tab)); } catch (e) { /* file:// */ }
+        }
+        function presetRange(kind) {
+            var today = todayVN();
+            var y = today.slice(0, 4), m = Number(today.slice(5, 7));
+            if (kind === 'today') return [today, today];
+            if (kind === 'month') return [today.slice(0, 8) + '01', today];
+            if (kind === 'quarter') return [y + '-' + pad2(Math.floor((m - 1) / 3) * 3 + 1) + '-01', today];
+            return [y + '-01-01', today];
+        }
+        function markPreset() {
+            var start = document.getElementById('start-date').value, end = document.getElementById('end-date').value;
+            var marked = false; // the first matching button only (on the 1st of a quarter, month and quarter are the same)
+            document.querySelectorAll('.cbx-presets [data-range]').forEach(function(b) {
+                var r = presetRange(b.getAttribute('data-range'));
+                var on = !marked && r[0] === start && r[1] === end;
+                if (on) marked = true;
+                b.classList.toggle('is-on', on);
+            });
         }
         function sigSrc(rep) {
             if (rep.signatureData) return rep.signatureData;
@@ -1099,8 +1210,8 @@
             book = null;
             savedCount = null;
             document.getElementById('saved-banner').hidden = true;
-            pages.book = 0;
-            pages.pending = 0;
+            view.shown.book = PAGE;
+            view.shown.pending = PAGE;
             if (!company || !startDate || !endDate) {
                 renderBook();
                 loadRecentCounts();
@@ -1599,10 +1710,35 @@
             start.addEventListener('change', function() { renderDateLine(); loadBook(); });
             end.addEventListener('change', function() { renderDateLine(); loadBook(); });
             document.getElementById('count-time').addEventListener('input', function() { renderDateLine(); renderSaveBar(); });
-            document.getElementById('book-prev').addEventListener('click', function() { if (pages.book > 0) { pages.book--; renderBook(); } });
-            document.getElementById('book-next').addEventListener('click', function() { pages.book++; renderBook(); });
-            document.getElementById('pending-prev').addEventListener('click', function() { if (pages.pending > 0) { pages.pending--; renderBook(); } });
-            document.getElementById('pending-next').addEventListener('click', function() { pages.pending++; renderBook(); });
+            document.querySelectorAll('.uk-tab[data-tab]').forEach(function(b) {
+                b.addEventListener('click', function() { showTab(b.getAttribute('data-tab')); });
+            });
+            showTab(location.hash.slice(1));
+            document.querySelectorAll('.cbx-presets [data-range]').forEach(function(b) {
+                b.addEventListener('click', function() {
+                    var r = presetRange(b.getAttribute('data-range'));
+                    start.value = r[0]; end.value = r[1];
+                    markPreset(); renderDateLine(); loadBook();
+                });
+            });
+            start.addEventListener('change', markPreset);
+            end.addEventListener('change', markPreset);
+            markPreset();
+            document.getElementById('cbx-kind').addEventListener('click', function(e) {
+                var b = e.target.closest('[data-kind]');
+                if (!b) return;
+                view.kind = b.getAttribute('data-kind');
+                document.querySelectorAll('#cbx-kind [data-kind]').forEach(function(x) { x.classList.toggle('is-on', x === b); });
+                view.shown.book = PAGE; view.shown.pending = PAGE;
+                renderLedger(); renderPending();
+            });
+            document.getElementById('cbx-q').addEventListener('input', function(e) {
+                view.q = e.target.value; view.shown.book = PAGE; view.shown.pending = PAGE;
+                renderLedger(); renderPending();
+            });
+            document.getElementById('book-more').addEventListener('click', function() { view.shown.book += 50; renderLedger(); });
+            document.getElementById('pending-more').addEventListener('click', function() { view.shown.pending += 50; renderPending(); });
+            if (window.TLCI18n && TLCI18n.onChange) TLCI18n.onChange(function() { renderBook(); });
             document.getElementById('save-btn').addEventListener('click', save);
             document.getElementById('print-btn').addEventListener('click', printOfficialForm);
             document.getElementById('review-btn').addEventListener('click', openReview);
@@ -1648,6 +1784,13 @@
                 cbMenu: 'Menu',
                 cbWorkflows: 'Quy trình',
                 cbComm: 'Trao đổi',
+                cbxCrumb: 'Thu chi – Sổ quỹ', cbxTitle: 'Sổ Quỹ tiền mặt', cbxPeriod: 'Khoảng thời gian', cbxToday: 'Hôm nay', cbxMonth: 'Tháng này',
+                cbxQuarter: 'Quý này', cbxYear: 'Năm nay', cbxTabBook: 'Sổ quỹ', cbxTabPending: 'Chưa vào sổ', cbxTabCount: 'Kiểm kê quỹ',
+                cbxThu: 'Tổng thu', cbxChi: 'Tổng chi', cbxAll: 'Tất cả', cbxSearch: 'Số phiếu, diễn giải…', cbxRun: 'Lũy kế', cbxMore: 'Hiện thêm',
+                cbxPendingNote: 'Phiếu đang chờ duyệt. Khi đủ chữ ký, phiếu tự vào sổ quỹ ở ngày lập phiếu.',
+                cbxPick: 'Chọn công ty và khoảng ngày để xem sổ quỹ.', cbxNoLines: 'Không có phiếu nào trong khoảng này.',
+                cbxNoPending: 'Không có phiếu nào đang chờ duyệt.', cbxTotalRow: 'Cộng phát sinh · số dư cuối kỳ', cbxVouchers: 'phiếu',
+                cbxOldest: 'cũ nhất trước', cbxFromStart: 'Thu − Chi từ',
                 cbTitle: 'Sổ quỹ',
                 cbNavCash: 'Tiền mặt & Phiếu',
                 labelCompany: 'Công ty',
@@ -1731,6 +1874,13 @@
                 cbMenu: 'Menu',
                 cbWorkflows: 'Workflows',
                 cbComm: 'Communications',
+                cbxCrumb: 'Cash & Vouchers', cbxTitle: 'Cash book', cbxPeriod: 'Period', cbxToday: 'Today', cbxMonth: 'This month',
+                cbxQuarter: 'This quarter', cbxYear: 'This year', cbxTabBook: 'Cash book', cbxTabPending: 'Not booked yet', cbxTabCount: 'Cash count',
+                cbxThu: 'Total in', cbxChi: 'Total out', cbxAll: 'All', cbxSearch: 'Number, description…', cbxRun: 'Running', cbxMore: 'Show more',
+                cbxPendingNote: 'Vouchers still being approved. Once fully signed they enter the cash book on their voucher date.',
+                cbxPick: 'Choose a company and a period to see the cash book.', cbxNoLines: 'No vouchers in this period.',
+                cbxNoPending: 'No vouchers waiting for approval.', cbxTotalRow: 'Period totals · closing balance', cbxVouchers: 'vouchers',
+                cbxOldest: 'oldest first', cbxFromStart: 'In − Out since',
                 cbTitle: 'Cash book',
                 cbNavCash: 'Cash & Vouchers',
                 labelCompany: 'Company',

@@ -319,6 +319,13 @@ test('single voucher reads: strangers refused; acknowledge only by the requester
   if (!accIsAdmin) assert.match(ack.message, /Chỉ người đề nghị/);
 });
 
+// Someone outside the company's role slots with no sample signature at all (no Signature column, none uploaded).
+// Ordered, so the pick never depends on the table's physical row order (seed rows such as TLC AP have a sample).
+const personWithoutSample = async () => (await pool.query(`SELECT LOWER(email) e FROM employees
+  WHERE status='active' AND LOWER(email) NOT IN ($1,$2,$3) AND NOT (COALESCE(extra, '{}'::jsonb) ? 'Signature')
+    AND id NOT IN (SELECT employee_id FROM employee_signatures) ORDER BY id LIMIT 1`,
+  [people.accountant, people.legal, people.treasurer])).rows[0];
+
 test('summary myTurn + approval context: whose turn, sample signature, missing sample', { skip }, async () => {
   const no = newNo();
   await call(h.handleVoucherSubmit, submitBody(no));
@@ -339,8 +346,7 @@ test('summary myTurn + approval context: whose turn, sample signature, missing s
   assert.equal((await call(h.handleVoucherApprovalContext, { voucherNumber: no })).code, 401);
 
   // A named person in the flow needs a "Signature" on their Master Employee row
-  const person = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE status='active' AND LOWER(email) NOT IN ($1,$2,$3) LIMIT 1`,
-    [people.accountant, people.legal, people.treasurer])).rows[0];
+  const person = await personWithoutSample();
   if (person) {
     await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
     const no2 = newNo();
@@ -359,17 +365,19 @@ test('summary myTurn + approval context: whose turn, sample signature, missing s
 });
 
 test('server refuses an approval when the approver has no sample signature (no "no_sample" bypass)', { skip }, async () => {
-  const person = (await pool.query(`SELECT LOWER(email) e FROM employees WHERE status='active' AND LOWER(email) NOT IN ($1,$2,$3) LIMIT 1`,
-    [people.accountant, people.legal, people.treasurer])).rows[0];
+  const person = await personWithoutSample();
   if (!person) return;
   await saveVersion(pool, { workflow: 'voucher', companyId: company.id, createdBy: 't@x.vn', steps: [{ name: 'P', approvers: [{ type: 'person', email: person.e }] }] });
   await useStepUp(pool, redis, [person.e]); // cleanup not needed: person is an existing employee, so nothing is created
-  const no = newNo();
-  await call(h.handleVoucherSubmit, submitBody(no));
-  const r = await approve(no, person.e);
-  assert.equal(r.success, false);
-  assert.match(r.message, /Chưa có chữ ký mẫu/);
-  await pool.query(`TRUNCATE approval_flows`);
+  try {
+    const no = newNo();
+    await call(h.handleVoucherSubmit, submitBody(no));
+    const r = await approve(no, person.e);
+    assert.equal(r.success, false);
+    assert.match(r.message, /Chưa có chữ ký mẫu/);
+  } finally {
+    await pool.query(`TRUNCATE approval_flows`); // a failure here must not leave this flow to the next tests
+  }
 });
 
 test('approve: a wrong password approves nothing; the 5th locks the approver for 15 minutes', { skip }, async () => {
