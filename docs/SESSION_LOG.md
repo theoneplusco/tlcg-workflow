@@ -57,7 +57,12 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
   1. `git pull`
   2. `npm install --omit=dev` (new package: `compression`)
   3. `pm2 delete tlcg-workflow && pm2 start ecosystem.config.cjs && pm2 save` (also loads the new Resend key)
-- **Left / next:** the test email after the restart; the Mini clean-up; the voucher-number fix (if wanted); the opening-balance decision.
+- **Mini clean-up (dropped by the user):** looked only, nothing deleted or changed. Findings, in case it comes back:
+  - PM2 runs 8 copies of `tlcg-workflow` (`instances: 8`, about 1.45 GB). 2 were proposed and not changed.
+  - `n8n` and `open-webui` stay (user's decision).
+  - Chrome's cache is 2.8 GB (`~/Library/Caches/Google/Chrome`) and is safe to clear with Chrome closed.
+  - Other folders are small: PM2 logs 2.9 MB (logrotate works), `~/.npm` 341 MB.
+- **Left / next:** the test email after the restart; the voucher-number fix (if wanted); the opening-balance decision.
 
 ---
 
