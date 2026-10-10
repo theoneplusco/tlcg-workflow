@@ -237,7 +237,7 @@ async function handleTestVoucherBackend({ action, useProxy = true, directUrl, vo
     let method = 'GET';
 
     if (useProxy) {
-      url = 'https://workflow.tl-c.us/api/voucher';
+      url = 'https://wf.tl-c.us/api/voucher';
     } else {
       if (directUrl) {
         url = directUrl;

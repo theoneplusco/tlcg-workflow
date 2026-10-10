@@ -1,3 +1,4 @@
+# Retired 2026-10-10: for the old workflow.tl-c.us app on Ubuntu. The live system is wf.tl-c.us (Mac Mini).
 # Caddy site block for TLCG Workflow.
 # Caddy obtains and renews TLS certificates automatically.
 #

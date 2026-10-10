@@ -377,13 +377,13 @@ POST action=approveVoucher { voucherNumber, approverEmail, approverRole, approve
 ### Action Links in Emails
 
 ```
-Approve: https://workflow.tl-c.us/approve_voucher.html
+Approve: https://wf.tl-c.us/approve_voucher.html
          ?voucherNumber=...&approverEmail=...&approverRole=...&submittedBy=...
 
-Reject:  https://workflow.tl-c.us/reject_voucher.html
+Reject:  https://wf.tl-c.us/reject_voucher.html
          ?voucherNumber=...&approverEmail=...
 
-Status:  https://workflow.tl-c.us/voucher.html
+Status:  https://wf.tl-c.us/voucher.html
          ?viewStatus={voucherNumber}
 ```
 

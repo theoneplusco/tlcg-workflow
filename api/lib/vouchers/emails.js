@@ -12,7 +12,7 @@
 import { progress, pendingStep } from '../approval/engine.js';
 import { legacyCompanyApprovers } from './compat.js';
 
-export const baseUrl = () => (process.env.APP_BASE_URL || 'https://workflow.tl-c.us').replace(/\/$/, '');
+export const baseUrl = () => (process.env.APP_BASE_URL || 'https://wf.tl-c.us').replace(/\/$/, '');
 
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const when = (iso) => (iso ? new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'N/A');

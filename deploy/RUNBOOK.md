@@ -1,5 +1,8 @@
 # Cutover runbook — workflow.tl-c.us
 
+> **Retired (2026-10-10).** This describes the old GAS-backed app at workflow.tl-c.us on the Ubuntu server (chinhnguyenserver). The live system is wf.tl-c.us on the Mac Mini; see `docs/SESSION_LOG.md` › Where things run. Kept for history only.
+
+
 Copy-paste steps for deploying to the Ubuntu server and pointing Cloudflare at
 it. Assumes steps 1–2 (Apps Script `APP_BASE_URL` + `.gs` deployment) are done.
 

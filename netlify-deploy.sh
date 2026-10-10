@@ -23,6 +23,6 @@ echo "📤 Đang deploy..."
 netlify deploy --prod --dir="."
 
 echo "✅ Deploy thành công!"
-echo "🌐 URL: https://workflow.tl-c.us"
+echo "🌐 URL: https://wf.tl-c.us"
 
 

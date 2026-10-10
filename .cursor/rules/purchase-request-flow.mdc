@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Purchase Request Flow (`purchase_request.html`)
 
-Live site: `https://workflow.tl-c.us` → Cloudflare → Ubuntu `server.js` on port 3001. Vercel is not in this path. `git pull` updates the page and Node only. `TLCG_P2P_BACKEND.gs` goes live only when pasted into the **P2P** Apps Script project and the existing web app is redeployed (Execute as: Me). Never paste `TLCG_CORE_BACKEND.gs` or `TLCG_CASH_BACKEND.gs` into that project.
+Live site: `https://wf.tl-c.us` → Cloudflare tunnel → Mac Mini "theoneplus" (`server.js` under PM2, Postgres + Redis). `workflow.tl-c.us` (Ubuntu, port 3001) was retired on 2026-10-10. Vercel is not in this path. `git pull` updates the page and Node only. `TLCG_P2P_BACKEND.gs` goes live only when pasted into the **P2P** Apps Script project and the existing web app is redeployed (Execute as: Me). Never paste `TLCG_CORE_BACKEND.gs` or `TLCG_CASH_BACKEND.gs` into that project.
 
 The page posts to `/api/voucher`, which proxies to the P2P web app (`TLCG_P2P_BACKEND_URL`). No direct GAS URL in the frontend.
 

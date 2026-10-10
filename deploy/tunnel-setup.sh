@@ -14,6 +14,12 @@
 # so a typo cannot take your tunnel down.
 set -euo pipefail
 
+# Retired 2026-10-10: this rewrites /etc/cloudflared/config.yml with the old workflow.tl-c.us route.
+# The live system is wf.tl-c.us on the Mac Mini. Refuse to run unless forced.
+if [ "${FORCE_RETIRED_SETUP:-}" != "1" ]; then
+  echo "deploy/tunnel-setup.sh is retired (workflow.tl-c.us was replaced by wf.tl-c.us). Not running."; exit 1
+fi
+
 APP=/opt/tlcg-workflow
 CFG=/etc/cloudflared/config.yml
 TUNNEL=theoneplus-tunnel

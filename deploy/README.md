@@ -1,5 +1,8 @@
 # Self-hosting TLCG Workflow on Ubuntu
 
+> **Retired (2026-10-10).** This describes the old GAS-backed app at workflow.tl-c.us on the Ubuntu server (chinhnguyenserver). The live system is wf.tl-c.us on the Mac Mini; see `docs/SESSION_LOG.md` › Where things run. Kept for history only.
+
+
 Runs the app as one Node process alongside n8n. The `api/` handlers are plain
 `(req, res)` functions with no Vercel-specific imports, so `server.js` mounts
 them on Express unchanged.

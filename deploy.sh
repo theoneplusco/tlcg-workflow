@@ -29,7 +29,7 @@ netlify deploy --prod
 if [ $? -eq 0 ]; then
     echo ""
     echo "✅ Deploy thành công!"
-    echo "🌐 Site URL: https://workflow.tl-c.us"
+    echo "🌐 Site URL: https://wf.tl-c.us"
     echo ""
     echo "💡 Tip: Bạn có thể mở site bằng lệnh: netlify open:site"
 else

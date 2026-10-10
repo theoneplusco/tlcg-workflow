@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Retired 2026-10-10: for the old workflow.tl-c.us app on Ubuntu. The live system is wf.tl-c.us (Mac Mini).
 # Deploy the latest main. Run ON THE SERVER.
 #   cd /opt/tlcg-workflow && bash deploy/update.sh
 set -euo pipefail

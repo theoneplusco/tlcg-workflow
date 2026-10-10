@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   // CORS — see api/voucher.js for the rationale. Served same-origin, so this
   // matters only for local dev and any future split-origin setup.
   const origin = req.headers.origin || '';
-  const PRIMARY_ORIGIN = process.env.APP_BASE_URL || 'https://workflow.tl-c.us';
+  const PRIMARY_ORIGIN = process.env.APP_BASE_URL || 'https://wf.tl-c.us';
   const allowedOrigins = [
     PRIMARY_ORIGIN,
     'http://localhost:3000',

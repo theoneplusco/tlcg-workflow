@@ -150,7 +150,7 @@ approvalHistory = [
 ### 4. DNS/Subdomain Setup (Wix)
 - Add CNAME record: `Name: workflow`, `Value: [netlify-site].netlify.app`
 - Wait DNS propagation (~5-30 min)
-- Test: `https://workflow.tl-c.us/index.html`
+- Test: `https://wf.tl-c.us/index.html`
 
 ---
 
@@ -187,6 +187,6 @@ approvalHistory = [
 - [ ] Test form submission with test voucher
 - [ ] Verify email notification received
 - [ ] Deploy to Netlify: `netlify deploy --prod`
-- [ ] Test at production domain: `https://workflow.tl-c.us`
+- [ ] Test at production domain: `https://wf.tl-c.us`
 - [ ] Update DNS CNAME if domain changed
 

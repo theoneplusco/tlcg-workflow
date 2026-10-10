@@ -354,14 +354,14 @@ export default async function handler(req, res) {
     }
   }
   
-  // CORS. The app is served same-origin (workflow.tl-c.us/api/*), so browsers
+  // CORS. The app is served same-origin (wf.tl-c.us/api/*), so browsers
   // normally send no Origin header at all and CORS never engages. This list
   // exists for local development and any future split-origin setup.
   //
   // Extra origins can be added via APP_ALLOWED_ORIGINS (comma-separated)
   // without editing code.
   const origin = req.headers.origin || '';
-  const PRIMARY_ORIGIN = process.env.APP_BASE_URL || 'https://workflow.tl-c.us';
+  const PRIMARY_ORIGIN = process.env.APP_BASE_URL || 'https://wf.tl-c.us';
   const allowedOrigins = [
     PRIMARY_ORIGIN,
     'http://localhost:3000',

@@ -8993,10 +8993,9 @@
 
             const subject = `[PHIẾU ${voucherType.toUpperCase()}] Yêu cầu phê duyệt - ${voucherNumber}`;
             
-            // Tạo link - Production URL
-            // TODO: Update URL này sau khi deploy lên web server
-            // Nếu đang test local, comment dòng dưới và uncomment phần auto-detect
-            const baseUrl = 'https://workflow.tl-c.us';
+            // Links in the email point at the site this page is served from (wf.tl-c.us).
+            // workflow.tl-c.us was retired on 2026-10-10.
+            const baseUrl = window.location.protocol === 'file:' ? 'https://wf.tl-c.us' : window.location.origin;
             
             // Auto-detect URL (uncomment nếu muốn tự động detect)
             // let baseUrl;

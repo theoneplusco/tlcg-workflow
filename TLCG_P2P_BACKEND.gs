@@ -302,7 +302,7 @@ const USERS_SHEET_ID = getCfg_('MASTER_SPREADSHEET_ID', '1ujmPbtEdkGLgEshfhvV8gR
 // Single source of truth for the frontend URL used in all email links.
 // Override via Script Properties: APP_BASE_URL (same key as TLCG_CASH_BACKEND).
 // Approval emails embed this, so a wrong value sends approvers to a dead link.
-const BASE_URL = getCfg_('APP_BASE_URL', 'https://workflow.tl-c.us');
+const BASE_URL = getCfg_('APP_BASE_URL', 'https://wf.tl-c.us');
 
 const CONFIG = {
   SPREADSHEET_ID: getCfg_('MASTER_SPREADSHEET_ID', '1ujmPbtEdkGLgEshfhvV8gRB6R0GLI31jsZM5rDOJS0g'),

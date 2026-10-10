@@ -9,8 +9,8 @@ The plan of record is `docs/superpowers/plans/2026-10-07-gas-exit-roadmap.md`. T
 | Place | What it is | Notes |
 |---|---|---|
 | MacBook Pro, `/Volumes/MI 02 (SSD)/CN Personal Projects/TLCG Workflow` | The working folder (shared). Cursor and Claude Desktop (local) edit it. | Source of truth. Commit and push from here. |
-| Mac Mini "theoneplus" | Runs **wf.tl-c.us** (the new Postgres server; was called mini.tl-c.us in older docs). PM2 + local Postgres + Redis + Cloudflare tunnel. | Rehearsal and new system. Deploy steps below. |
-| **workflow.tl-c.us** | The current live site staff use (GAS + Google Sheet). | **Do not touch.** It moves only on switch day (roadmap Plan 9). |
+| Mac Mini "theoneplus" | Runs **wf.tl-c.us**, the live system (Postgres; was called mini.tl-c.us in older docs). PM2 + local Postgres + Redis + Cloudflare tunnel. | Deploy steps in the entries below. |
+| Ubuntu server "chinhnguyenserver" (192.168.1.223) | Ran **workflow.tl-c.us**, the old GAS-backed app (`/opt/tlcg-workflow`, systemd `tlcg-workflow`, port 3001). Also runs n8n, cloudflared (tunnel `theoneplus-tunnel`), PostgreSQL 16, Docker. | **workflow.tl-c.us retired on 2026-10-10** (migration to the Mini completed). Server-side retirement steps: entry of 2026-10-10 (night). |
 | GitHub `theoneplusco/tlcg-workflow` | The only thing a cloud session can see. | Cloud work arrives in the folder by `git pull`. |
 
 Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
@@ -31,6 +31,24 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
 - Found: ...
 - Left / next: ...
 ```
+
+---
+
+### 2026-10-10 (night): cloud session — workflow.tl-c.us retired
+- **Decision (user):** the migration from chinhnguyenserver to the Mac Mini is complete; **wf.tl-c.us is the live system** and workflow.tl-c.us is deprecated.
+- **Did (repo):**
+  - **Links in emails:** approval links built by voucher.html now follow the site the page runs on. They were hard-coded to `https://workflow.tl-c.us`, so approvers emailed from wf.tl-c.us were sent to the old site.
+  - **Server defaults:** the `APP_BASE_URL` fallbacks (server, email links, CORS) now use wf.tl-c.us, and so do `.env.example` and the MCP test tool. `reject_payment_request.html` calls `/api/voucher` on its own site.
+  - **GAS files:** the `APP_BASE_URL` fallback and the Drive upload `Origin` in `TLCG_CASH_BACKEND.gs` / `TLCG_P2P_BACKEND.gs` now use wf.tl-c.us. They take effect only when pasted and redeployed in Apps Script; the Script Property overrides the fallback.
+  - **Docs:** `CLAUDE.md` rule 3, the Cursor rules and the Copilot notes now name wf.tl-c.us as live.
+  - **`deploy/` (the Ubuntu setup) is marked retired.** `tunnel-setup.sh` refuses to run, because it would rewrite the tunnel config with the old route.
+- **Left for the user (outside the repo, one command at a time):**
+  1. **Apps Script:** set Script Property `APP_BASE_URL` = `https://wf.tl-c.us` in the **CASH** and **P2P** projects. Workflows still served by GAS email links built from it.
+  2. **Cloudflare:** redirect `workflow.tl-c.us/*` to `https://wf.tl-c.us/$1` (301), so old emails and bookmarks still open. Don't just delete the record.
+  3. **R2 CORS** on `tlcg-attachments`: allow `PUT` from `https://wf.tl-c.us`.
+  4. **chinhnguyenserver:** stop and disable the old service (`sudo systemctl disable --now tlcg-workflow`) once the redirect works. Then remove the `workflow.tl-c.us` ingress rule from `/etc/cloudflared/config.yml` (back it up, validate, restart). Keep `/opt/tlcg-workflow` as an archive for a while.
+  5. **Tell staff** to use https://wf.tl-c.us.
+- **Earlier idea, superseded:** moving wf.tl-c.us back to chinhnguyenserver was discussed; nothing was changed on either server.
 
 ---
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildPlan, applyApproval, applyRejection, DEFAULT_STEPS } from '../../api/lib/approval/engine.js';
 import { approvalRequest, progressUpdate, finalApproved, rejected, acknowledged, batchRequest, money } from '../../api/lib/vouchers/emails.js';
 
-process.env.APP_BASE_URL = 'https://workflow.tl-c.us';
+process.env.APP_BASE_URL = 'https://wf.tl-c.us';
 const AT = '2026-10-07T03:00:00.000Z';
 const company = {
   id: 4, accountant_name: 'Nguyễn Thị Nhanh', accountant_email: 'nhanh@x.vn',
@@ -74,7 +74,7 @@ test('batch request links to the voucher page, never a one-click token', () => {
   const m = batchRequest({ email: 'chinh@x.vn', name: 'Nguyễn Văn Chinh', label: 'Đại diện pháp luật' }, [v, { ...v, voucherNumber: 'MI-PC20261007000002' }]);
   assert.equal(m.subject, '[PHÊ DUYỆT HÀNG LOẠT] 2 phiếu cần duyệt - Đại diện pháp luật');
   assert.doesNotMatch(m.html, /token=/);
-  assert.match(m.html, /https:\/\/workflow\.tl-c\.us\/voucher\.html/);
+  assert.match(m.html, /https:\/\/wf\.tl-c\.us\/voucher\.html/);
 });
 
 test('money formats like GAS (vi-VN)', () => {
