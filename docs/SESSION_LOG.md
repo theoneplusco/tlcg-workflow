@@ -10,7 +10,7 @@ The plan of record is `docs/superpowers/plans/2026-10-07-gas-exit-roadmap.md`. T
 |---|---|---|
 | MacBook Pro, `/Volumes/MI 02 (SSD)/CN Personal Projects/TLCG Workflow` | The working folder (shared). Cursor and Claude Desktop (local) edit it. | Source of truth. Commit and push from here. |
 | Mac Mini "theoneplus" | Runs **wf.tl-c.us**, the live system (Postgres; was called mini.tl-c.us in older docs). PM2 + local Postgres + Redis + Cloudflare tunnel. | Deploy steps in the entries below. |
-| Ubuntu server "chinhnguyenserver" (192.168.1.223) | Ran **workflow.tl-c.us**, the old GAS-backed app (`/opt/tlcg-workflow`, systemd `tlcg-workflow`, port 3001). Also runs n8n, cloudflared (tunnel `theoneplus-tunnel`), PostgreSQL 16, Docker. | **workflow.tl-c.us retired on 2026-10-10** (migration to the Mini completed). Server-side retirement steps: entry of 2026-10-10 (night). |
+| Ubuntu server "chinhnguyenserver" (192.168.1.223) | Ran **workflow.tl-c.us**, the old GAS-backed app (`/opt/tlcg-workflow`, systemd `tlcg-workflow`, port 3001). Also runs n8n, cloudflared (tunnel `theoneplus-tunnel`), PostgreSQL 16, Docker. | **workflow.tl-c.us retired on 2026-10-10.** **wf.tl-c.us moves here from the Mini next** (plan: entry of 2026-10-10 (night)). |
 | GitHub `theoneplusco/tlcg-workflow` | The only thing a cloud session can see. | Cloud work arrives in the folder by `git pull`. |
 
 Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
@@ -48,7 +48,14 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
   3. **R2 CORS** on `tlcg-attachments`: allow `PUT` from `https://wf.tl-c.us`.
   4. **chinhnguyenserver:** stop and disable the old service (`sudo systemctl disable --now tlcg-workflow`) once the redirect works. Then remove the `workflow.tl-c.us` ingress rule from `/etc/cloudflared/config.yml` (back it up, validate, restart). Keep `/opt/tlcg-workflow` as an archive for a while.
   5. **Tell staff** to use https://wf.tl-c.us.
-- **Earlier idea, superseded:** moving wf.tl-c.us back to chinhnguyenserver was discussed; nothing was changed on either server.
+- **Next (user's choice, option 1):** move **wf.tl-c.us from the Mac Mini to chinhnguyenserver**. Plan:
+  - Back up the Mini's database.
+  - Install next to the old app: `/opt/tlcg-wf`, systemd `tlcg-wf`, port 3002, own database in the server's PostgreSQL 16, plus Redis.
+  - Restore the backup and test on the server first.
+  - Point wf.tl-c.us at chinhnguyenserver's tunnel.
+  - Keep the Mini as a fallback for a week.
+  - Then do steps 4–5 above.
+  - Nothing has been changed on either server yet; checks are done one read-only command at a time.
 
 ---
 
