@@ -56,6 +56,7 @@ Working branch: `claude/gallant-heisenberg-mw8o7c` (not merged to `main`).
   - Keep the Mini as a fallback for a week.
   - Then do steps 4–5 above.
   - Nothing has been changed on either server yet; checks are done one read-only command at a time.
+  - **Runbook:** `deploy/MOVE-TO-CHINHNGUYENSERVER.md` (checked facts, layout, phases A rehearsal / B switch / C afterwards); service file `deploy/tlcg-wf.service`.
 
 ---
 
